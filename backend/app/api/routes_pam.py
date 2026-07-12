@@ -43,7 +43,7 @@ class RevokeRequest(BaseModel):
 
 
 @router.post("/requests")
-@limiter.limit("10/minute")
+@limiter.limit(settings.PAM_REQUEST_RATE_LIMIT)
 async def create_request(
     payload: PrivilegeRequestCreate,
     request: Request,
@@ -72,7 +72,7 @@ async def create_request(
 
 
 @router.get("/requests")
-@limiter.limit("20/minute")
+@limiter.limit(settings.PAM_LIST_RATE_LIMIT)
 async def list_requests(
     request: Request,
     user_id: str = Depends(get_current_user),
@@ -87,7 +87,7 @@ async def list_requests(
 
 
 @router.get("/requests/pending")
-@limiter.limit("20/minute")
+@limiter.limit(settings.PAM_APPROVE_RATE_LIMIT)
 async def pending_requests(
     request: Request,
     user_id: str = Depends(get_current_user),
@@ -102,7 +102,7 @@ async def pending_requests(
 
 
 @router.post("/requests/{request_id}/approve")
-@limiter.limit("20/minute")
+@limiter.limit(settings.PAM_REJECT_RATE_LIMIT)
 async def approve_request(
     request_id: str,
     payload: PrivilegeApproveRequest,
@@ -128,7 +128,7 @@ async def approve_request(
 
 
 @router.post("/requests/{request_id}/deny")
-@limiter.limit("10/minute")
+@limiter.limit(settings.PAM_CANCEL_RATE_LIMIT)
 async def deny_request(
     request_id: str,
     payload: PrivilegeDenyRequest,
@@ -149,7 +149,7 @@ async def deny_request(
 
 
 @router.post("/requests/{request_id}/cancel")
-@limiter.limit("10/minute")
+@limiter.limit(settings.PAM_REVOKE_RATE_LIMIT)
 async def cancel_request(
     request_id: str,
     request: Request,
@@ -165,7 +165,7 @@ async def cancel_request(
 
 
 @router.get("/grants")
-@limiter.limit("20/minute")
+@limiter.limit(settings.PAM_SESSIONS_RATE_LIMIT)
 async def list_grants(
     request: Request,
     user_id: str = Depends(get_current_user),
@@ -186,7 +186,7 @@ async def list_grants(
 
 
 @router.post("/grants/revoke")
-@limiter.limit("10/minute")
+@limiter.limit(settings.PAM_ACTIVITY_RATE_LIMIT)
 async def revoke_grant_endpoint(
     payload: RevokeRequest,
     request: Request,
@@ -207,7 +207,7 @@ async def revoke_grant_endpoint(
 
 
 @router.post("/cleanup")
-@limiter.limit("5/minute")
+@limiter.limit(settings.PAM_POLICY_RATE_LIMIT)
 async def cleanup_expired(
     request: Request,
     user_id: str = Depends(get_current_user),
@@ -227,7 +227,7 @@ async def cleanup_expired(
 
 
 @router.get("/check/{permission}")
-@limiter.limit("20/minute")
+@limiter.limit(settings.PAM_CONFIG_RATE_LIMIT)
 async def check_access(
     permission: str,
     request: Request,

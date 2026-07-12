@@ -17,7 +17,7 @@ class SubscribeRequest(BaseModel):
     auth: str
 
 @router.get("/vapid-public-key")
-@limiter.limit("30/minute")
+@limiter.limit(settings.PUSH_REGISTER_RATE_LIMIT)
 async def get_vapid_public_key(request: Request):
     _, pub_key = load_or_generate_vapid_keys()
     if not pub_key:
@@ -25,7 +25,7 @@ async def get_vapid_public_key(request: Request):
     return {"public_key": pub_key}
 
 @router.post("/subscribe")
-@limiter.limit("20/minute")
+@limiter.limit(settings.PUSH_UNREGISTER_RATE_LIMIT)
 async def subscribe_user(
     payload: SubscribeRequest,
     request: Request,

@@ -42,7 +42,7 @@ def _build_response_details(record: DomainVerification) -> DomainVerifyResponse:
 
 
 @router.get("/domains", response_model=List[DomainVerifyResponse])
-@limiter.limit("20/minute")
+@limiter.limit(settings.VERIFY_CHALLENGSE_RATE_LIMIT)
 async def list_domains(
     request: Request,
     db: Session = Depends(get_db),
@@ -54,7 +54,7 @@ async def list_domains(
 
 
 @router.post("/domain", response_model=DomainVerifyResponse)
-@limiter.limit("10/minute")
+@limiter.limit(settings.VERIFY_STATUS_RATE_LIMIT)
 async def initiate_verification(
     request: Request,
     payload: DomainVerifyRequest,
@@ -81,7 +81,7 @@ async def initiate_verification(
 
 
 @router.post("/domain/check", response_model=DomainCheckResponse)
-@limiter.limit("10/minute")
+@limiter.limit(settings.VERIFY_STATUS_RATE_LIMIT)
 async def check_verification(
     request: Request,
     payload: DomainCheckRequest,
@@ -130,7 +130,7 @@ async def check_verification(
 
 
 @router.delete("/domain/{id}")
-@limiter.limit("10/minute")
+@limiter.limit(settings.VERIFY_STATUS_RATE_LIMIT)
 async def delete_domain(
     id: str,
     request: Request,

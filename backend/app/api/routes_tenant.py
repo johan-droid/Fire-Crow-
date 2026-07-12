@@ -38,7 +38,7 @@ class TenantUpdate(BaseModel):
 
 
 @router.get("/")
-@limiter.limit("20/minute")
+@limiter.limit(settings.TENANT_LIST_RATE_LIMIT)
 async def list_all_tenants(
     request: Request,
     user_id: str = Depends(get_current_user),
@@ -53,7 +53,7 @@ async def list_all_tenants(
 
 
 @router.post("/")
-@limiter.limit("10/minute")
+@limiter.limit(settings.TENANT_CREATE_RATE_LIMIT)
 async def create_new_tenant(
     payload: TenantCreate,
     request: Request,
@@ -73,7 +73,7 @@ async def create_new_tenant(
 
 
 @router.get("/me")
-@limiter.limit("30/minute")
+@limiter.limit(settings.TENANT_GET_RATE_LIMIT)
 async def current_tenant(
     request: Request,
     user_id: str = Depends(get_current_user),
@@ -90,7 +90,7 @@ async def current_tenant(
 
 
 @router.get("/{tenant_id}")
-@limiter.limit("20/minute")
+@limiter.limit(settings.TENANT_UPDATE_RATE_LIMIT)
 async def get_tenant_by_id(
     tenant_id: str,
     request: Request,
@@ -106,7 +106,7 @@ async def get_tenant_by_id(
 
 
 @router.get("/slug/{slug}")
-@limiter.limit("20/minute")
+@limiter.limit(settings.TENANT_DELETE_RATE_LIMIT)
 async def get_tenant_by_slug_endpoint(
     slug: str,
     request: Request,
@@ -122,7 +122,7 @@ async def get_tenant_by_slug_endpoint(
 
 
 @router.put("/{tenant_id}")
-@limiter.limit("10/minute")
+@limiter.limit(settings.TENANT_MEMBERS_RATE_LIMIT)
 async def update_tenant_by_id(
     tenant_id: str,
     payload: TenantUpdate,
@@ -142,7 +142,7 @@ async def update_tenant_by_id(
 
 
 @router.delete("/{tenant_id}")
-@limiter.limit("10/minute")
+@limiter.limit(settings.TENANT_INVITE_RATE_LIMIT)
 async def deactivate_tenant_by_id(
     tenant_id: str,
     request: Request,
@@ -161,7 +161,7 @@ async def deactivate_tenant_by_id(
 
 
 @router.get("/{tenant_id}/stats")
-@limiter.limit("20/minute")
+@limiter.limit(settings.TENANT_REVOKE_INVITE_RATE_LIMIT)
 async def tenant_statistics(
     tenant_id: str,
     request: Request,

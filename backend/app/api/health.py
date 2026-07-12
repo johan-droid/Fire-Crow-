@@ -14,7 +14,7 @@ async def health_live() -> JSONResponse:
     return JSONResponse(status_code=200, content={"status": "live"})
 
 @router.get("/ready")
-@limiter.limit("5/minute")
+@limiter.limit(settings.HEALTH_CHECK_RATE_LIMIT)
 async def health_ready(request: Request, db: Session = Depends(get_db)) -> JSONResponse:
     """Readiness probe – checks that critical dependencies (DB, Redis) are reachable.
     Returns 200 when the service is ready to accept traffic.

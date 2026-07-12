@@ -1,17 +1,22 @@
 ```
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
 # Dependencies
-backend/venv/
-backend/.venv/
-backend/__pycache__/
-backend/.mypy_cache/
-backend/.pytest_cache/
+.venv/
+venv/
+env/
+pip-log.txt
+pip-selfcheck.json
 
-# Environment
-backend/.env
-backend/.env.local
-backend/*.env.*
+# Logs
+*.log
 
-# Logs and temp files
-backend/*.log
-backend/*.tmp
+# Environment variables
+.env
+.env.local
+.env.*
 ```

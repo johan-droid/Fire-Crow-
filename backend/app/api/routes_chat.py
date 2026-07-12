@@ -18,7 +18,7 @@ class ChatRequest(BaseModel):
     message: str
 
 @router.post("/ask")
-@limiter.limit("20/minute")
+@limiter.limit(settings.CHAT_RATE_LIMIT)
 async def ask_chat(
     payload: ChatRequest,
     request: Request,

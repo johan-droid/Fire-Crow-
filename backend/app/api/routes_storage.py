@@ -11,7 +11,7 @@ router = APIRouter(prefix="/storage", tags=["Storage"])
 
 
 @router.get("/artifacts/{artifact_id}/download")
-@limiter.limit("20/minute")
+@limiter.limit(settings.STORAGE_UPLOAD_RATE_LIMIT)
 async def download_artifact(
     artifact_id: str,
     request: Request,
@@ -29,7 +29,7 @@ async def download_artifact(
 
 
 @router.post("/artifacts/{artifact_id}/legal-hold")
-@limiter.limit("10/minute")
+@limiter.limit(settings.STORAGE_DOWNLOAD_RATE_LIMIT)
 async def set_legal_hold(
     artifact_id: str,
     request: Request,
