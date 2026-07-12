@@ -1,0 +1,15 @@
+{
+  "name": "fire-crow-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "frontend": "npm --prefix frontend run dev",
+    "backend": "cd backend && ..\\.venv\\Scripts\\uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "build": "npm install --prefix frontend && npm run build --prefix frontend",
+    "heroku-postbuild": "npm install --prefix frontend && npm run build --prefix frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

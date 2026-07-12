@@ -1,0 +1,60 @@
+{
+  "name": "Fire Crow",
+  "description": "Agentic Security Intelligence Platform",
+  "repository": "https://github.com/johan-droid/Fire-Crow-",
+  "env": {
+    "DEBUG": {
+      "value": "false"
+    },
+    "SECRET_KEY": {
+      "description": "Secret key for JWT signing (min 32 chars)",
+      "generator": "secret"
+    },
+    "ENCRYPTION_KEY": {
+      "description": "Encryption key for data at rest (min 32 chars)",
+      "generator": "secret"
+    },
+    "FRONTEND_URL": {
+      "description": "URL of the frontend (e.g. https://your-app.herokuapp.com)",
+      "required": true
+    },
+    "DATABASE_BACKEND": {
+      "value": "postgresql"
+    },
+    "GITHUB_CLIENT_ID": {
+      "description": "GitHub OAuth client ID",
+      "required": false
+    },
+    "GITHUB_CLIENT_SECRET": {
+      "description": "GitHub OAuth client secret",
+      "required": false
+    },
+    "GEMINI_API_KEY": {
+      "description": "Google Gemini API key for AI features",
+      "required": false
+    },
+    "RESEND_API_KEY": {
+      "description": "Resend API key for transactional email",
+      "required": false
+    }
+  },
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    },
+    {
+      "url": "heroku/python"
+    }
+  ],
+  "addons": [
+    {
+      "plan": "heroku-postgresql:essential-0"
+    }
+  ]
+}

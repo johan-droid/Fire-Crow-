@@ -339,6 +339,21 @@ app.include_router(tenant_router, prefix="/api/v1")
 app.include_router(verify_router, prefix="/api/v1")
 
 
+# --- Frontend static file serving (Heroku / production) ---
+_FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if _FRONTEND_DIST.is_dir():
+    from fastapi.responses import FileResponse
+
+    app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="static-assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_spa(full_path: str):
+        file_path = _FRONTEND_DIST / full_path
+        if file_path.is_file():
+            return FileResponse(str(file_path))
+        return FileResponse(str(_FRONTEND_DIST / "index.html"))
+
+
 # Graceful shutdown handler
 @app.middleware("http")
 async def graceful_shutdown(request: Request, call_next):

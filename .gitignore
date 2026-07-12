@@ -69,11 +69,8 @@ celerybeat-schedule.*
 .aider*
 
 # Node.js / Frontend leftovers
-package-lock.json
-package.json
 node_modules/
 .next/
 out/
-frontend/dist/
 frontend/node_modules/
 
