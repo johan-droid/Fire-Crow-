@@ -502,6 +502,7 @@ async def create_policy_event(
 
 
 @router.post("/register")
+@limiter.limit(settings.AUTH_REGISTER_RATE_LIMIT)
 async def register(
     request: Request,
     response: Response,
@@ -636,6 +637,7 @@ async def register(
 
 
 @router.post("/login")
+@limiter.limit(settings.AUTH_LOGIN_RATE_LIMIT)
 async def login(
     request: Request,
     response: Response,
@@ -645,6 +647,9 @@ async def login(
     _validate_privacy_consent(payload.privacy_policy_accepted, payload.privacy_policy_version)
 
     username = _normalize_username(payload.username)
+    # Enforce login attempt limit BEFORE password verification to prevent brute-force
+    _enforce_login_attempt_limit(request, username, db)
+    
     # Normalize email? Not needed for login, but we can keep it for consistency if we want to allow email as username?
     # Currently, we only support username for login. If we want to support email, we would need to adjust.
 
@@ -656,14 +661,15 @@ async def login(
         # However, to prevent user enumeration, we should always compute the hash and compare.
         # We'll use a dummy hash to compare if the user doesn't exist.
         hash_password("dummy")  # This is to prevent timing attacks by always computing a hash.
+        _record_login_failure(request, username, db)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Check password
-    if not verify_password(payload.password, user.password_hash):
+    # Check password - guard against OAuth users with no password_hash
+    if not user.password_hash or not verify_password(payload.password, user.password_hash):
         # Record login failure
         _record_login_failure(request, username, db)
         raise HTTPException(
