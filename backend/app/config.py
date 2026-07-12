@@ -7,7 +7,7 @@ from pydantic import Field, field_validator, model_validator
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
-WORKSPACE_DIR = Path(__file__).resolve().parents[2]
+WORKSPACE_DIR = Path(__file__).resolve().parents[1]
 
 # Load env files into the OS environment BEFORE instantiating Settings.
 # This sidesteps a pydantic-settings bug (v2.14.x) where its env_file
@@ -262,6 +262,8 @@ class Settings(BaseSettings):
     # --- AI Models API Keys ---
     GEMINI_API_KEY: str = Field(default="", validation_alias="GEMINI_API_KEY")
     GEMINI_MODEL: str = Field(default="gemini-1.5-flash", validation_alias="GEMINI_MODEL")
+    # Backend base URL for absolute URLs (used in OAuth redirect URIs, etc.)
+    BACKEND_BASE_URL: str = Field(default="", validation_alias="BACKEND_BASE_URL")
 
     # --- Gemini Tuning ---
     GEMINI_FALLBACK_MODEL: str = Field(default="gemini-1.5-pro", validation_alias="GEMINI_FALLBACK_MODEL")

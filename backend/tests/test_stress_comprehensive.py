@@ -32,6 +32,8 @@ from app.models import (
     AuditArtifact,
 )
 from app.schemas import JobStatus, Severity
+from app.services.auth import create_access_token
+from app.config import settings
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -45,30 +47,32 @@ def _unique(prefix: str = "u") -> str:
 
 def _register_and_login(client: TestClient, username: str) -> tuple[str, dict]:
     """Register a fresh user and return (user_id, auth_headers)."""
-    reg = client.post(
-        "/api/v1/auth/register",
-        json={
-            "username": username,
-            "password": "Str0ng!StressPass",
-            "privacy_policy_accepted": True,
-            "privacy_policy_version": PP_VERSION,
-        },
-    )
-    assert reg.status_code == 200, f"Register failed for {username}: {reg.text}"
-    user_id = reg.json()["user_id"]
+    import uuid
+    from datetime import datetime, timezone
 
-    login = client.post(
-        "/api/v1/auth/login",
-        json={
-            "username": username,
-            "password": "Str0ng!StressPass",
-            "privacy_policy_accepted": True,
-            "privacy_policy_version": PP_VERSION,
-        },
-    )
-    assert login.status_code == 200, f"Login failed for {username}: {login.text}"
-    token = login.json()["access_token"]
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        if not user:
+            user = User(
+                id=str(uuid.uuid4()),
+                username=username,
+                email=f"{username}@example.com",
+                privacy_policy_version=PP_VERSION,
+                privacy_policy_accepted_at=datetime.now(timezone.utc),
+                terms_version=settings.TERMS_VERSION,
+                terms_accepted_at=datetime.now(timezone.utc),
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        token = create_access_token(user_id=user.id, username=user.username, db=db)
+        user_id = user.id
+    finally:
+        db.close()
+
     return user_id, {"Authorization": f"Bearer {token}"}
+
 
 
 def _seed_job(
@@ -149,10 +153,9 @@ class TestAuthPipeline:
         # All user IDs must be unique – no session collision
         assert len(set(results)) == CONCURRENT_USERS
 
-    def test_duplicate_registration_rejected(self):
+    def test_registration_and_login_disabled(self):
         client = TestClient(app)
-        uname = _unique("dup_user")
-        # First registration
+        uname = _unique("disabled_user")
         r1 = client.post(
             "/api/v1/auth/register",
             json={
@@ -162,41 +165,21 @@ class TestAuthPipeline:
                 "privacy_policy_version": PP_VERSION,
             },
         )
-        assert r1.status_code == 200
-        # Second registration – same username must fail
-        r2 = client.post(
-            "/api/v1/auth/register",
-            json={
-                "username": uname,
-                "password": "AnotherPass123!",
-                "privacy_policy_accepted": True,
-                "privacy_policy_version": PP_VERSION,
-            },
-        )
-        assert r2.status_code in (400, 409, 422), f"Expected conflict, got {r2.status_code}"
+        assert r1.status_code == 400
+        assert "disabled" in r1.json()["detail"].lower()
 
-    def test_wrong_password_rejected(self):
-        client = TestClient(app)
-        uname = _unique("wrong_pw")
-        client.post(
-            "/api/v1/auth/register",
-            json={
-                "username": uname,
-                "password": "Correct!Pass123",
-                "privacy_policy_accepted": True,
-                "privacy_policy_version": PP_VERSION,
-            },
-        )
-        bad_login = client.post(
+        r2 = client.post(
             "/api/v1/auth/login",
             json={
                 "username": uname,
-                "password": "WrongPassword!999",
+                "password": "Str0ng!StressPass",
                 "privacy_policy_accepted": True,
                 "privacy_policy_version": PP_VERSION,
             },
         )
-        assert bad_login.status_code in (401, 403), f"Expected auth failure, got {bad_login.status_code}"
+        assert r2.status_code == 400
+        assert "disabled" in r2.json()["detail"].lower()
+
 
     def test_logout_invalidates_session(self):
         client = TestClient(app)

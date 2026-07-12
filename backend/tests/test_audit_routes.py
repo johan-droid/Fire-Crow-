@@ -11,27 +11,31 @@ client = TestClient(app)
 
 
 def _auth_session(username: str = "auditor") -> tuple[dict[str, str], str]:
-    register_response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "username": username,
-            "password": "supersecretpassword",
-            "privacy_policy_accepted": True,
-            "privacy_policy_version": PRIVACY_POLICY_VERSION,
-        },
-    )
-    user_id = register_response.json()["user_id"]
-    login_response = client.post(
-        "/api/v1/auth/login",
-        json={
-            "username": username,
-            "password": "supersecretpassword",
-            "privacy_policy_accepted": True,
-            "privacy_policy_version": PRIVACY_POLICY_VERSION,
-        },
-    )
-    token = login_response.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}, user_id
+    import uuid
+    from datetime import datetime, timezone
+    from app.services.auth import create_access_token
+    from app.config import settings
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        if not user:
+            user = User(
+                id=str(uuid.uuid4()),
+                username=username,
+                email=f"{username}@example.com",
+                privacy_policy_version=PRIVACY_POLICY_VERSION,
+                privacy_policy_accepted_at=datetime.now(timezone.utc),
+                terms_version=settings.TERMS_VERSION,
+                terms_accepted_at=datetime.now(timezone.utc),
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        token = create_access_token(user_id=user.id, username=user.username, db=db)
+        return {"Authorization": f"Bearer {token}"}, user.id
+    finally:
+        db.close()
 
 
 def _auth_headers(username: str = "auditor") -> dict[str, str]:

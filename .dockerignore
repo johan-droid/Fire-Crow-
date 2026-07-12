@@ -50,6 +50,7 @@ backend/.env.*
 logs/
 
 # Ignore local runtime/development artifacts
+backend/workspace/
 workspace/
 artifacts/
 temp/

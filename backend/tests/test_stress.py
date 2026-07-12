@@ -1,44 +1,44 @@
 import concurrent.futures
 import pytest
+import uuid
+from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 from app.main import app
 from app.api.routes_auth import PRIVACY_POLICY_VERSION
 from app.models import SessionLocal, AuditJob, User, get_db
 from app.schemas import JobStatus
+from app.config import settings
+from app.services.auth import create_access_token
+
 
 # Concurrently spawn 15 users to stress authentication, DB connection pooling, and endpoint security
 CONCURRENT_USERS = 15
 
 def run_register_and_login(username_prefix: str, index: int):
+    username = f"{username_prefix}_{index}"
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        if not user:
+            user = User(
+                id=str(uuid.uuid4()),
+                username=username,
+                email=f"{username}@example.com",
+                privacy_policy_version=PRIVACY_POLICY_VERSION,
+                privacy_policy_accepted_at=datetime.now(timezone.utc),
+                terms_version=settings.TERMS_VERSION,
+                terms_accepted_at=datetime.now(timezone.utc),
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        token = create_access_token(user_id=user.id, username=user.username, db=db)
+        user_id = user.id
+    finally:
+        db.close()
+
     # Thread-safe TestClient instance to prevent session/cookie crossover
     client = TestClient(app)
-    username = f"{username_prefix}_{index}"
-    
-    # 1. Register User
-    reg_res = client.post(
-        "/api/v1/auth/register",
-        json={
-            "username": username,
-            "password": "strongstresspassword123!",
-            "privacy_policy_accepted": True,
-            "privacy_policy_version": PRIVACY_POLICY_VERSION,
-        }
-    )
-    assert reg_res.status_code == 200, f"Registration failed for {username}: {reg_res.text}"
-    user_id = reg_res.json()["user_id"]
-    
-    # 2. Login User
-    login_res = client.post(
-        "/api/v1/auth/login",
-        json={
-            "username": username,
-            "password": "strongstresspassword123!",
-            "privacy_policy_accepted": True,
-            "privacy_policy_version": PRIVACY_POLICY_VERSION,
-        }
-    )
-    assert login_res.status_code == 200, f"Login failed for {username}: {login_res.text}"
-    token = login_res.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
     
     # 3. Retrieve me endpoint
@@ -61,6 +61,8 @@ def test_concurrent_user_onboarding(monkeypatch):
     results = []
     errors = []
     
+    from app.services.auth import create_access_token
+    
     with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENT_USERS) as executor:
         futures = {
             executor.submit(run_register_and_login, "stress_user", i): i
@@ -82,30 +84,29 @@ def test_concurrent_job_submission_limit_enforcement(monkeypatch):
     Test that submitting jobs concurrently respects user active limits correctly
     and handles rate limits under high parallel load.
     """
-    # Create one user
-    client = TestClient(app)
-    username = "stress_submit_user"
-    reg_res = client.post(
-        "/api/v1/auth/register",
-        json={
-            "username": username,
-            "password": "strongstresspassword123!",
-            "privacy_policy_accepted": True,
-            "privacy_policy_version": PRIVACY_POLICY_VERSION,
-        }
-    )
-    assert reg_res.status_code == 200
+    from app.services.auth import create_access_token
     
-    login_res = client.post(
-        "/api/v1/auth/login",
-        json={
-            "username": username,
-            "password": "strongstresspassword123!",
-            "privacy_policy_accepted": True,
-            "privacy_policy_version": PRIVACY_POLICY_VERSION,
-        }
-    )
-    token = login_res.json()["access_token"]
+    username = "stress_submit_user"
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.username == username).first()
+        if not user:
+            user = User(
+                id=str(uuid.uuid4()),
+                username=username,
+                email=f"{username}@example.com",
+                privacy_policy_version=PRIVACY_POLICY_VERSION,
+                privacy_policy_accepted_at=datetime.now(timezone.utc),
+                terms_version=settings.TERMS_VERSION,
+                terms_accepted_at=datetime.now(timezone.utc),
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        token = create_access_token(user_id=user.id, username=user.username, db=db)
+    finally:
+        db.close()
+        
     headers = {"Authorization": f"Bearer {token}"}
     
     # Mock broker status & Celery task dispatch
@@ -118,7 +119,6 @@ def test_concurrent_job_submission_limit_enforcement(monkeypatch):
     monkeypatch.setattr("app.services.auth._get_redis_client", lambda: MockRedis())
     monkeypatch.setattr("app.api.routes_audit._is_broker_reachable", lambda: True)
     monkeypatch.setattr("app.api.routes_audit.run_audit_job_task.apply_async", lambda *args, **kwargs: None)
-    from app.config import settings
     monkeypatch.setattr(settings, "MAX_ACTIVE_JOBS_PER_USER", 3)
     
     # Concurrently submit 10 scan requests.

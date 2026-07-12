@@ -44,7 +44,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Safe methods (GET/HEAD/OPTIONS/TRACE) do not require CSRF validation.
-        if request.method in SAFE_METHODS:
+        # Also skip CSRF for public auth endpoints (register, login) because they are
+        # unauthenticated and we rely on SameSite=strict for the session cookies we set.
+        if request.method in SAFE_METHODS or request.url.path in ["/api/v1/auth/register", "/api/v1/auth/login"]:
             response = await call_next(request)
             self._set_csrf_cookie_if_missing(request, response)
             return response

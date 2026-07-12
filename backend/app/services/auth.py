@@ -122,7 +122,17 @@ def create_access_token(
     }
     token = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
 
-    if db is not None:
+    if settings.DATABASE_BACKEND == "neo4j":
+        from app.graph.store import graph_store
+        graph_store.create_user_session(
+            session_id=jti,
+            user_id=user_id,
+            token_family=family,
+            ip_hash=hashlib.sha256((ip or "unknown").encode("utf-8")).hexdigest(),
+            user_agent_hash=hashlib.sha256((user_agent or "unknown").encode("utf-8")).hexdigest(),
+            expires_at=expire,
+        )
+    elif db is not None:
         from app.models.user import UserSession
         ip_str = ip or "unknown"
         ua_str = user_agent or "unknown"
@@ -169,7 +179,17 @@ def create_refresh_token(
     }
     token = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
 
-    if db is not None:
+    if settings.DATABASE_BACKEND == "neo4j":
+        from app.graph.store import graph_store
+        graph_store.create_user_session(
+            session_id=jti,
+            user_id=user_id,
+            token_family=family,
+            ip_hash="refresh",
+            user_agent_hash="refresh",
+            expires_at=expire,
+        )
+    elif db is not None:
         from app.models.user import UserSession
         session_obj = UserSession(
             id=jti,
@@ -292,6 +312,11 @@ def revoke_token_family(token_family: str, db: Optional[Session] = None) -> bool
     if not token_family:
         return False
 
+    if settings.DATABASE_BACKEND == "neo4j":
+        from app.graph.store import graph_store
+        count = graph_store.revoke_token_family(token_family, reason="family_revoked")
+        return count > 0
+
     revoked_any = False
     sessions: list = []
     now = _utc_now()
@@ -332,7 +357,11 @@ def revoke_access_token(payload: dict, db: Optional[Session] = None, reason: Opt
         return False
 
     revoked = False
-    if db is not None:
+    if settings.DATABASE_BACKEND == "neo4j":
+        from app.graph.store import graph_store
+        # In neo4j, we set the session as revoked
+        revoked = graph_store.set_session_revoked(str(jti), reason or "logout")
+    elif db is not None:
         from app.models.user import UserSession
         sess = db.query(UserSession).filter(UserSession.id == jti).first()
         if sess:

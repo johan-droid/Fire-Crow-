@@ -123,3 +123,19 @@ class UserActivityEvent(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="activity_events")
 
+
+class GithubCredential(Base):
+    __tablename__ = "github_credentials"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String(255), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    github_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False)
+    scopes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+

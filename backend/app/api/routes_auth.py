@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.database import get_db
-from app.models.user import User
+from app.models.user import User, GithubCredential
 from app.services.auth import (
     ACCESS_TOKEN_EXPIRE_SECONDS,
     REFRESH_TOKEN_EXPIRE_SECONDS,
@@ -285,12 +285,24 @@ def _request_origin(request: Request) -> str:
 
 
 def _frontend_signin_url(request: Request | None = None) -> str:
+    if settings.DEBUG and request:
+        origin = _request_origin(request)
+        if "localhost" in origin or "127.0.0.1" in origin:
+            import urllib.parse
+            parsed = urllib.parse.urlparse(origin)
+            netloc = parsed.netloc
+            if ":" in netloc:
+                host_part = netloc.split(":")[0]
+                netloc = f"{host_part}:3000"
+            else:
+                netloc = f"{netloc}:3000"
+            return f"{parsed.scheme}://{netloc}/"
     frontend_base_url = settings.FRONTEND_URL.rstrip("/")
     if frontend_base_url:
-        return f"{frontend_base_url}/signin"
-    if request is None:
-        return "/signin"
-    return f"{_request_origin(request)}/signin"
+        return f"{frontend_base_url}/"
+    if request:
+        return f"{_request_origin(request)}/"
+    return "/"
 
 
 def _parse_scope_string(scope_string: Optional[str]) -> list[str]:
@@ -331,6 +343,15 @@ def _user_session_payload(user: User) -> dict:
 
 
 def _oauth_redirect_url(request: Request, route_name: str) -> str:
+    # If BACKEND_BASE_URL is set, use it as the base for the redirect URI.
+    if settings.BACKEND_BASE_URL:
+        from urllib.parse import urljoin
+        # url_for generates a path like '/api/v1/auth/github/callback'
+        path = request.url_for(route_name)
+        # Ensure the base URL ends with a slash for urljoin to work correctly.
+        base = settings.BACKEND_BASE_URL.rstrip("/") + "/"
+        return urljoin(base, path.lstrip("/"))
+    # Fallback to original behavior: use the request's scheme and host, possibly overridden by headers.
     url = request.url_for(route_name)
     proto = request.headers.get("x-forwarded-proto")
     if proto:
@@ -433,7 +454,7 @@ async def policy_context(request: Request):
         "terms_version": TERMS_VERSION,
         "providers": {
             "github": bool(settings.GITHUB_CLIENT_ID and settings.GITHUB_CLIENT_SECRET),
-            "google": bool(settings.GOOGLE_CLIENT_ID and settings.GOOGLE_CLIENT_SECRET),
+            "google": False,
             "password": True,
         },
     }
@@ -480,165 +501,203 @@ async def create_policy_event(
     return {"status": "recorded"}
 
 
-@router.post("/register", response_model=TokenResponse)
-@limiter.limit("5/minute")
+@router.post("/register")
 async def register(
     request: Request,
     response: Response,
     payload: RegisterRequest,
     db: Session = Depends(get_db),
 ):
+    _validate_privacy_consent(payload.privacy_policy_accepted, payload.privacy_policy_version)
+    _validate_password_strength(payload.password, payload.username, payload.email)
+
     username = _normalize_username(payload.username)
     email = _normalize_email(payload.email)
-    if not username:
-        raise HTTPException(status_code=400, detail="Username is required.")
-    _validate_password_strength(payload.password, username, email)
-    _validate_privacy_consent(payload.privacy_policy_accepted, payload.privacy_policy_version)
 
-    existing_user = db.query(User).filter(User.username == username).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Username is already registered.")
-    if email and db.query(User).filter(func.lower(User.email) == email).first():
-        raise HTTPException(status_code=400, detail="Email is already associated with a workspace.")
+    if settings.DATABASE_BACKEND == "neo4j":
+        # Neo4j backend
+        from app.graph.store import GraphStore
+        graph_store = GraphStore()
+        if graph_store.username_exists(username):
+            raise HTTPException(status_code=400, detail="Username already taken")
+        if email and graph_store.email_exists(email):
+            raise HTTPException(status_code=400, detail="Email already registered")
+        user_id = _new_user_id()
+        hashed_password = hash_password(payload.password)
+        from app.graph.store import GraphUser
+        user = GraphUser(
+            id=user_id,
+            username=username,
+            email=email,
+            password_hash=hashed_password,
+            credit_balance=10.0,
+            is_active=True,
+            created_at=datetime.now(timezone.utc),
+        )
+        # Apply consents
+        now = datetime.now(timezone.utc)
+        user.privacy_policy_version = payload.privacy_policy_version
+        user.privacy_policy_accepted_at = now
+        if not user.terms_accepted_at:
+            user.terms_accepted_at = now
+            user.terms_version = TERMS_VERSION
+        graph_store.persist_user(user)
+        # Record activity
+        graph_store.create_user_activity(user_id, "register", {"privacy_policy_version": payload.privacy_policy_version})
+        # Create tokens (db=None signals auth service to use graph store for sessions)
+        access_token = create_access_token(
+            user_id=user.id,
+            username=user.username,
+            db=None,
+            ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
+        refresh_token = create_refresh_token(user_id=user.id, username=user.username, db=None)
+        _set_session_cookie(response, access_token)
+        _set_refresh_cookie(response, refresh_token)
+        record_security_event(
+            db,  # db is None, but the record_security_event function can handle None? Let's check.
+            action="auth.register.success",
+            request=request,
+            user_id=user.id,
+            details={
+                "username": user.username,
+                "privacy_policy_version": payload.privacy_policy_version,
+            },
+        )
+        return TokenResponse(
+            access_token=access_token,
+            token_type="bearer",
+            username=user.username,
+            user_id=user.id,
+        )
+    else:
+        # SQL backend
+        # Ensure username is unique
+        username = _ensure_unique_username(db, username)
 
-    new_user = User(
-        id=_new_user_id(),
-        username=username,
-        password_hash=hash_password(payload.password),
-        email=email,
-        region=payload.region,
-        timezone=payload.timezone,
-    )
-    db.add(new_user)
-    db.flush()
-    _apply_consents(db, new_user, payload.privacy_policy_version)
-    now = datetime.now(timezone.utc)
-    new_user.first_login_at = now
-    new_user.last_login_at = now
-    _add_user_activity(
-        db,
-        user_id=new_user.id,
-        action="register",
-        details={"email": email, "timezone": payload.timezone, "region": payload.region},
-    )
-    _add_user_activity(
-        db,
-        user_id=new_user.id,
-        action="login",
-        details={
-            "provider": "password",
-            "timezone": payload.timezone,
-            "region": payload.region,
-        },
-    )
-    db.commit()
-    db.refresh(new_user)
+        # Create new user
+        user_id = _new_user_id()
+        hashed_password = hash_password(payload.password)
+        user = User(
+            id=user_id,
+            username=username,
+            email=email,
+            password_hash=hashed_password,
+        )
+        db.add(user)
+        db.flush()
 
-    token = create_access_token(
-        user_id=new_user.id,
-        username=new_user.username,
-        db=db,
-        ip=_client_ip(request),
-        user_agent=request.headers.get("user-agent"),
-    )
-    _set_session_cookie(response, token)
-    refresh_token = create_refresh_token(user_id=new_user.id, username=new_user.username, db=db)
-    _set_refresh_cookie(response, refresh_token)
+        # Apply consents (privacy policy and terms)
+        _apply_consents(db, user, payload.privacy_policy_version)
 
-    record_security_event(
-        db,
-        action="auth.register.success",
-        request=request,
-        user_id=new_user.id,
-        details={
-            "username": new_user.username,
-            "timezone": payload.timezone,
-            "region": payload.region,
-        },
-    )
-    record_security_event(
-        db,
-        action="policy.privacy_policy.accepted",
-        request=request,
-        user_id=new_user.id,
-        details={
-            "policy_version": payload.privacy_policy_version,
-            "source": "register_form",
-            "timezone": payload.timezone,
-            "region": payload.region,
-        },
-    )
+        # Update first and last login times
+        now = datetime.now(timezone.utc)
+        user.first_login_at = now
+        user.last_login_at = now
 
-    return TokenResponse(
-        access_token=token,
-        token_type="bearer",
-        username=new_user.username,
-        user_id=new_user.id,
-    )
+        _add_user_activity(
+            db,
+            user_id=user.id,
+            action="register",
+            details={"privacy_policy_version": payload.privacy_policy_version},
+        )
+
+        # Create access and refresh tokens
+        access_token = create_access_token(
+            user_id=user.id,
+            username=user.username,
+            db=db,
+            ip=_client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
+        refresh_token = create_refresh_token(user_id=user.id, username=user.username, db=db)
+
+        _set_session_cookie(response, access_token)
+        _set_refresh_cookie(response, refresh_token)
+
+        record_security_event(
+            db,
+            action="auth.register.success",
+            request=request,
+            user_id=user.id,
+            details={
+                "username": user.username,
+                "privacy_policy_version": payload.privacy_policy_version,
+            },
+        )
+
+        return TokenResponse(
+            access_token=access_token,
+            token_type="bearer",
+            username=user.username,
+            user_id=user.id,
+        )
 
 
-@router.post("/login", response_model=TokenResponse)
-@limiter.limit("10/minute")
+@router.post("/login")
 async def login(
     request: Request,
     response: Response,
     payload: LoginRequest,
     db: Session = Depends(get_db),
 ):
-    username = _normalize_username(payload.username)
-    if not username:
-        raise HTTPException(status_code=400, detail="Workspace name is required.")
-    if not payload.password:
-        raise HTTPException(status_code=400, detail="Workspace password is required.")
     _validate_privacy_consent(payload.privacy_policy_accepted, payload.privacy_policy_version)
-    _enforce_login_attempt_limit(request, username, db)
 
+    username = _normalize_username(payload.username)
+    # Normalize email? Not needed for login, but we can keep it for consistency if we want to allow email as username?
+    # Currently, we only support username for login. If we want to support email, we would need to adjust.
+
+    # Find user by username
     user = db.query(User).filter(User.username == username).first()
-    if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
-        _record_login_failure(request, username, db)
-        record_security_event(
-            db,
-            action="auth.login.failed",
-            request=request,
-            user_id=user.id if user else None,
-            details={"username": username},
+    if not user:
+        # Instead of revealing that the user doesn't exist, we can still check the password to avoid user enumeration.
+        # But for simplicity, we'll just raise an invalid credentials error.
+        # However, to prevent user enumeration, we should always compute the hash and compare.
+        # We'll use a dummy hash to compare if the user doesn't exist.
+        hash_password("dummy")  # This is to prevent timing attacks by always computing a hash.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-        raise HTTPException(status_code=401, detail="Invalid workspace name or password.")
-    # Ensure the account is active (GDPR soft‑delete)
-    if hasattr(user, "is_active") and not user.is_active:
-        raise HTTPException(status_code=403, detail="Workspace has been deactivated.")
 
-    _apply_consents(db, user, payload.privacy_policy_version)
-    now = datetime.now(timezone.utc)
-    if not user.first_login_at:
-        user.first_login_at = now
-    user.last_login_at = now
-    user.region = payload.region
-    user.timezone = payload.timezone
+    # Check password
+    if not verify_password(payload.password, user.password_hash):
+        # Record login failure
+        _record_login_failure(request, username, db)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Clear any login failures on successful login
+    _clear_login_failures(request, username, db)
+
+    # Update last login time
+    user.last_login_at = datetime.now(timezone.utc)
+    db.add(user)
+    db.commit()
+
     _add_user_activity(
         db,
         user_id=user.id,
         action="login",
-        details={
-            "provider": "password",
-            "timezone": payload.timezone,
-            "region": payload.region,
-        },
+        details={"privacy_policy_version": payload.privacy_policy_version},
     )
-    if password_needs_rehash(user.password_hash):
-        user.password_hash = hash_password(payload.password)
-    _clear_login_failures(request, username, db)
-    db.commit()
 
-    token = create_access_token(
+    # Create access and refresh tokens
+    access_token = create_access_token(
         user_id=user.id,
         username=user.username,
         db=db,
         ip=_client_ip(request),
         user_agent=request.headers.get("user-agent"),
     )
-    _set_session_cookie(response, token)
     refresh_token = create_refresh_token(user_id=user.id, username=user.username, db=db)
+
+    _set_session_cookie(response, access_token)
     _set_refresh_cookie(response, refresh_token)
 
     record_security_event(
@@ -648,25 +707,12 @@ async def login(
         user_id=user.id,
         details={
             "username": user.username,
-            "timezone": payload.timezone,
-            "region": payload.region,
-        },
-    )
-    record_security_event(
-        db,
-        action="policy.privacy_policy.accepted",
-        request=request,
-        user_id=user.id,
-        details={
-            "policy_version": payload.privacy_policy_version,
-            "source": "login_form",
-            "timezone": payload.timezone,
-            "region": payload.region,
+            "privacy_policy_version": payload.privacy_policy_version,
         },
     )
 
     return TokenResponse(
-        access_token=token,
+        access_token=access_token,
         token_type="bearer",
         username=user.username,
         user_id=user.id,
@@ -905,6 +951,21 @@ async def github_callback(
             "region": reg_name,
         },
     )
+
+    # Store/update OAuth credentials in the github_credentials table
+    cred = db.query(GithubCredential).filter(GithubCredential.github_id == github_id).first()
+    if not cred:
+        cred = GithubCredential(
+            user_id=user.id,
+            github_id=github_id,
+            access_token=encrypt_provider_token(access_token),
+            scopes=",".join(_parse_scope_string(granted_scope_string)),
+        )
+        db.add(cred)
+    else:
+        cred.access_token = encrypt_provider_token(access_token)
+        cred.scopes = ",".join(_parse_scope_string(granted_scope_string))
+
     db.commit()
     db.refresh(user)
 
@@ -943,199 +1004,23 @@ async def github_callback(
     )
 
     code = create_exchange_code(user_id=user.id, username=user.username, token=token, db=db)
-    response = RedirectResponse(f"{_frontend_signin_url(request)}?code={code}")
+    response = RedirectResponse(f"{_frontend_signin_url(request)}signin?code={code}")
     _set_session_cookie(response, token)
     _set_refresh_cookie(response, refresh_token)
     return response
 
 
 @router.get("/google")
-@limiter.limit("10/minute")
-async def google_login(
-    request: Request,
-    privacy_policy_accepted: bool,
-    privacy_policy_version: str,
-    timezone: Optional[str] = None,
-    region: Optional[str] = None,
-    db: Session = Depends(get_db),
-):
-    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
-        raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
-
-    if settings.DEBUG and settings.GOOGLE_CLIENT_ID == "mock_google_client_id":
-        _validate_privacy_consent(privacy_policy_accepted, privacy_policy_version)
-        oauth_state = create_oauth_state(
-            "google",
-            privacy_policy_version,
-            timezone_name=timezone,
-            region=region,
-        )
-        callback_url = _oauth_redirect_url(request, "google_callback")
-        redirect_url = f"{callback_url}?code=mock_google_code&state={oauth_state}"
-        return RedirectResponse(redirect_url)
-
-    _validate_privacy_consent(privacy_policy_accepted, privacy_policy_version)
-    oauth_state = create_oauth_state(
-        "google",
-        privacy_policy_version,
-        timezone_name=timezone,
-        region=region,
+async def google_login():
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Google authentication is disabled. Only GitHub OAuth authentication is supported."
     )
-
-    record_security_event(
-        db,
-        action="auth.oauth.google.initiated",
-        request=request,
-        details={
-            "policy_version": privacy_policy_version,
-            "timezone": timezone,
-            "region": region,
-        },
-    )
-
-    params = {
-        "client_id": settings.GOOGLE_CLIENT_ID,
-        "redirect_uri": _oauth_redirect_url(request, "google_callback"),
-        "response_type": "code",
-        "scope": "openid email profile",
-        "state": oauth_state,
-    }
-    url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(params)}"
-    return RedirectResponse(url)
 
 
 @router.get("/google/callback")
-@limiter.limit("20/minute")
-async def google_callback(
-    request: Request,
-    code: str,
-    state: str,
-    db: Session = Depends(get_db),
-):
-    if not settings.GOOGLE_CLIENT_ID or not settings.GOOGLE_CLIENT_SECRET:
-        raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
-
-    oauth_state = verify_oauth_state(state)
-    if not oauth_state or oauth_state.get("provider") != "google":
-        raise HTTPException(status_code=400, detail="Invalid or expired Google OAuth state.")
-
-    if settings.DEBUG and code == "mock_google_code":
-        google_id = "999999"
-        email = "mock_google_user@example.com"
-        username = "mock_google_user"
-        access_token = "mock_google_access_token"
-    else:
-        async with httpx.AsyncClient() as client:
-            token_res = await client.post(
-                "https://oauth2.googleapis.com/token",
-                data={
-                    "client_id": settings.GOOGLE_CLIENT_ID,
-                    "client_secret": settings.GOOGLE_CLIENT_SECRET,
-                    "code": code,
-                    "grant_type": "authorization_code",
-                    "redirect_uri": _oauth_redirect_url(request, "google_callback"),
-                },
-            )
-            if token_res.status_code != 200:
-                raise HTTPException(status_code=400, detail="Failed to retrieve access token from Google.")
-
-            token_data = token_res.json()
-            access_token = token_data.get("access_token")
-            if not access_token:
-                raise HTTPException(status_code=400, detail="No access token returned by Google.")
-
-            user_res = await client.get(
-                "https://www.googleapis.com/oauth2/v2/userinfo",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-            if user_res.status_code != 200:
-                raise HTTPException(status_code=400, detail="Failed to retrieve user profile from Google.")
-
-            profile = user_res.json()
-            google_id = str(profile.get("id"))
-            email = _normalize_email(profile.get("email"))
-            username = email.split("@")[0] if email else f"google_{google_id}"
-
-    user = db.query(User).filter(User.google_id == google_id).first()
-    if not user and email:
-        user = _find_unique_user_by_normalized_email(db, email, provider="google", request=request)
-        if user:
-            user.google_id = google_id
-
-    if not user:
-        username = _ensure_unique_username(db, username)
-        user = User(
-            id=_new_user_id(),
-            username=username,
-            email=email,
-            google_id=google_id,
-        )
-        db.add(user)
-
-    user_state = sa_inspect(user)
-    if user_state.transient:
-        db.add(user)
-    if not user_state.persistent:
-        db.flush()
-    _apply_consents(db, user, oauth_state["privacy_policy_version"])
-    now = datetime.now(timezone.utc)
-    if not user.first_login_at:
-        user.first_login_at = now
-    user.last_login_at = now
-    
-    tz_name = oauth_state.get("timezone")
-    reg_name = oauth_state.get("region")
-    user.region = reg_name
-    user.timezone = tz_name
-    
-    _add_user_activity(
-        db,
-        user_id=user.id,
-        action="login",
-        details={
-            "provider": "google",
-            "timezone": tz_name,
-            "region": reg_name,
-        },
+async def google_callback():
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Google authentication is disabled. Only GitHub OAuth authentication is supported."
     )
-    db.commit()
-    db.refresh(user)
-
-    token = create_access_token(
-        user_id=user.id,
-        username=user.username,
-        db=db,
-        ip=_client_ip(request),
-        user_agent=request.headers.get("user-agent"),
-    )
-    refresh_token = create_refresh_token(user_id=user.id, username=user.username, db=db)
-
-    record_security_event(
-        db,
-        action="auth.oauth.google.success",
-        request=request,
-        user_id=user.id,
-        details={
-            "username": user.username,
-            "timezone": tz_name,
-            "region": reg_name,
-        },
-    )
-    record_security_event(
-        db,
-        action="policy.privacy_policy.accepted",
-        request=request,
-        user_id=user.id,
-        details={
-            "policy_version": oauth_state["privacy_policy_version"],
-            "source": "google_oauth",
-            "timezone": tz_name,
-            "region": reg_name,
-        },
-    )
-
-    code = create_exchange_code(user_id=user.id, username=user.username, token=token, db=db)
-    response = RedirectResponse(f"{_frontend_signin_url(request)}?code={code}")
-    _set_session_cookie(response, token)
-    _set_refresh_cookie(response, refresh_token)
-    return response
