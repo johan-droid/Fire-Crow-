@@ -173,7 +173,7 @@ class Settings(BaseSettings):
     MIN_PASSWORD_LENGTH: int = Field(default=12, validation_alias="MIN_PASSWORD_LENGTH")
     MAX_REQUEST_BODY_BYTES: int = Field(default=10 * 1024 * 1024, validation_alias="MAX_REQUEST_BODY_BYTES")  # 10MB
     MAX_JSON_BODY_BYTES: int = Field(default=2 * 1024 * 1024, validation_alias="MAX_JSON_BODY_BYTES")  # 2MB
-    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=15, validation_alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=1440, validation_alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES")
     AUTH_COOKIE_NAME: str = Field(default="fc_access_token", validation_alias="AUTH_COOKIE_NAME")
     AUTH_COOKIE_SECURE: bool = Field(default=True, validation_alias="AUTH_COOKIE_SECURE")
     AUTH_COOKIE_HTTPONLY: bool = Field(default=True, validation_alias="AUTH_COOKIE_HTTPONLY")
@@ -263,7 +263,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = Field(default="", validation_alias="GEMINI_API_KEY")
     GEMINI_MODEL: str = Field(default="gemini-1.5-flash", validation_alias="GEMINI_MODEL")
     # Backend base URL for absolute URLs (used in OAuth redirect URIs, etc.)
-    BACKEND_BASE_URL: str = Field(default="", validation_alias="BACKEND_BASE_URL")
+    BACKEND_BASE_URL: str = Field(default="https://firecrow-backend-ff41dd027fe1.herokuapp.com", validation_alias="BACKEND_BASE_URL")
 
     # --- Gemini Tuning ---
     GEMINI_FALLBACK_MODEL: str = Field(default="gemini-1.5-pro", validation_alias="GEMINI_FALLBACK_MODEL")
@@ -276,17 +276,17 @@ class Settings(BaseSettings):
     GEMINI_MIN_SECONDS_BETWEEN_CALLS: int = Field(default=1, validation_alias="GEMINI_MIN_SECONDS_BETWEEN_CALLS")
 
     # --- Orchestration Tunables ---
-    MAX_ACTIVE_JOBS_PER_USER: int = Field(default=5, validation_alias="MAX_ACTIVE_JOBS_PER_USER")
+    MAX_ACTIVE_JOBS_PER_USER: int = Field(default=2, validation_alias="MAX_ACTIVE_JOBS_PER_USER")
     BROKER_CONNECTION_TIMEOUT: float = Field(default=0.5, validation_alias="BROKER_CONNECTION_TIMEOUT")
     SSE_POLL_INTERVAL: float = Field(default=0.5, validation_alias="SSE_POLL_INTERVAL")
     SSE_HEARTBEAT_INTERVAL: float = Field(default=15.0, validation_alias="SSE_HEARTBEAT_INTERVAL")
-    REPORT_PRESIGNED_TTL: int = Field(default=3600, validation_alias="REPORT_PRESIGNED_TTL")
+    REPORT_PRESIGNED_TTL: int = Field(default=900, validation_alias="REPORT_PRESIGNED_TTL")
     REPORT_LOCAL_FALLBACK: bool = Field(default=True, validation_alias="REPORT_LOCAL_FALLBACK")
-    MAX_SCAN_DURATION: int = Field(default=2700, validation_alias="MAX_SCAN_DURATION")
-    DEFAULT_BUDGET_USD: float = Field(default=5.0, validation_alias="DEFAULT_BUDGET_USD")
-    SCANNER_COMMAND_TIMEOUT: int = Field(default=600, validation_alias="SCANNER_COMMAND_TIMEOUT")
-    SCANNER_OUTPUT_MAX_LENGTH: int = Field(default=50000, validation_alias="SCANNER_OUTPUT_MAX_LENGTH")
-    API_DISCOVERY_LIMIT: int = Field(default=50, validation_alias="API_DISCOVERY_LIMIT")
+    MAX_SCAN_DURATION: int = Field(default=1800, validation_alias="MAX_SCAN_DURATION")
+    DEFAULT_BUDGET_USD: float = Field(default=1.0, validation_alias="DEFAULT_BUDGET_USD")
+    SCANNER_COMMAND_TIMEOUT: int = Field(default=300, validation_alias="SCANNER_COMMAND_TIMEOUT")
+    SCANNER_OUTPUT_MAX_LENGTH: int = Field(default=20000, validation_alias="SCANNER_OUTPUT_MAX_LENGTH")
+    API_DISCOVERY_LIMIT: int = Field(default=30, validation_alias="API_DISCOVERY_LIMIT")
     GEMINI_FINDINGS_CHUNK_SIZE: int = Field(default=50, validation_alias="GEMINI_FINDINGS_CHUNK_SIZE")
     LLM_CHAT_ASSISTANT: bool = Field(default=False, validation_alias="LLM_CHAT_ASSISTANT")
     LLM_DASHBOARD_INSIGHT: bool = Field(default=False, validation_alias="LLM_DASHBOARD_INSIGHT")
@@ -306,10 +306,10 @@ class Settings(BaseSettings):
 
     # --- Reporter Tuning ---
     REPORT_COMPACT_MODE: bool = Field(default=True, validation_alias="REPORT_COMPACT_MODE")
-    REPORT_MAX_PAGES: int = Field(default=50, validation_alias="REPORT_MAX_PAGES")
-    REPORT_MAX_FINDINGS_IN_PDF: int = Field(default=100, validation_alias="REPORT_MAX_FINDINGS_IN_PDF")
-    REPORT_MAX_EVIDENCE_CHARS: int = Field(default=2000, validation_alias="REPORT_MAX_EVIDENCE_CHARS")
-    REPORT_MAX_REMEDIATION_CHARS: int = Field(default=2000, validation_alias="REPORT_MAX_REMEDIATION_CHARS")
+    REPORT_MAX_PAGES: int = Field(default=30, validation_alias="REPORT_MAX_PAGES")
+    REPORT_MAX_FINDINGS_IN_PDF: int = Field(default=50, validation_alias="REPORT_MAX_FINDINGS_IN_PDF")
+    REPORT_MAX_EVIDENCE_CHARS: int = Field(default=1200, validation_alias="REPORT_MAX_EVIDENCE_CHARS")
+    REPORT_MAX_REMEDIATION_CHARS: int = Field(default=1200, validation_alias="REPORT_MAX_REMEDIATION_CHARS")
     REPORT_INCLUDE_DETAILED_FINDINGS: bool = Field(default=True, validation_alias="REPORT_INCLUDE_DETAILED_FINDINGS")
     REPORT_STORE_FULL_ARTIFACT_JSON: bool = Field(default=True, validation_alias="REPORT_STORE_FULL_ARTIFACT_JSON")
     REPORT_STORE_HTML_IN_DB: bool = Field(default=True, validation_alias="REPORT_STORE_HTML_IN_DB")

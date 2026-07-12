@@ -346,8 +346,8 @@ def _oauth_redirect_url(request: Request, route_name: str) -> str:
     # If BACKEND_BASE_URL is set, use it as the base for the redirect URI.
     if settings.BACKEND_BASE_URL:
         from urllib.parse import urljoin
-        # url_for generates a path like '/api/v1/auth/github/callback'
-        path = request.url_for(route_name)
+        # url_for generates a URL object, we extract the path portion
+        path = request.url_for(route_name).path
         # Ensure the base URL ends with a slash for urljoin to work correctly.
         base = settings.BACKEND_BASE_URL.rstrip("/") + "/"
         return urljoin(base, path.lstrip("/"))

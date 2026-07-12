@@ -13,6 +13,7 @@ import uuid
 TEST_DB_PATH = Path(tempfile.gettempdir()) / f"firecrow_pytest_{uuid.uuid4().hex}.db"
 
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH.as_posix()}"
+os.environ["DATABASE_BACKEND"] = "postgresql"
 os.environ["SECRET_KEY"] = "test_secret_key_32_bytes_minimum_value"
 os.environ["ENCRYPTION_KEY"] = "test_encryption_key_32_bytes_minimum"
 os.environ["DEBUG"] = "True"
