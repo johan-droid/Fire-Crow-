@@ -1,76 +1,17 @@
-# Log files
-*.log
-*.pid
-logs/
-artifacts/
+```
+# Dependencies
+backend/venv/
+backend/.venv/
+backend/__pycache__/
+backend/.mypy_cache/
+backend/.pytest_cache/
 
-# Python cache & virtualenvs
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.venv/
-venv/
-env/
-ENV/
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Environment files
-.env
-.env.local
-.env.*
-!.env.example
+# Environment
 backend/.env
 backend/.env.local
-backend/.env.*
-!backend/.env.example
+backend/*.env.*
 
-# Database files
-*.db
-*.sqlite
-*.sqlite3
-firecrow.db
-test_firecrow.db
-
-# Workspace directories
-workspace/sent_emails/
-workspace/temp/
-workspace/storage/cache/
-workspace/scans/*/
-backend/workspace/sent_emails/
-backend/workspace/temp/
-backend/workspace/storage/cache/
-backend/workspace/scans/*/
-
-# VS Code & IDE configurations
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.claude/
-.agents/
-.codex/
-.codex-run/
-
-# VAPID Keys
-.vapid_keys.json
-
-# Celery beat scheduler
-celerybeat-schedule
-celerybeat-schedule.*
-
-# Python build and packaging
-.eggs/
-*.egg/
-*.bak
-.aider*
-
-# Node.js / Frontend leftovers
-node_modules/
-.next/
-out/
-frontend/node_modules/
-
+# Logs and temp files
+backend/*.log
+backend/*.tmp
+```
