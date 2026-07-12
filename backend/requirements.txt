@@ -3,7 +3,6 @@ uvicorn>=0.50.0
 pydantic>=2.10.0
 pydantic-settings>=2.14.2
 sqlalchemy>=2.0.51
-psycopg2-binary>=2.9.0
 neo4j>=5.28.1
 langgraph>=1.2.7
 langchain-core>=1.4.8
@@ -14,7 +13,6 @@ msgpack==1.0.8
 docker>=7.0.0
 weasyprint>=61.1
 resend>=2.32.2
-alembic>=1.18.5
 python-dotenv>=1.0.1
 pytest>=9.1.1
 pyjwt>=2.8.0
