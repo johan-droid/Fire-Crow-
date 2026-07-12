@@ -28,6 +28,32 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/refresh:
+    post:
+      tags:
+      - Authentication
+      summary: Refresh Token
+      operationId: refresh_token_api_v1_auth_refresh_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/RefreshPayload'
+              - type: 'null'
+              title: Payload
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /api/v1/auth/policy-context:
     get:
       tags:
@@ -83,8 +109,7 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/TokenResponse'
+              schema: {}
         '422':
           description: Validation Error
           content:
@@ -108,8 +133,7 @@ paths:
           description: Successful Response
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/TokenResponse'
+              schema: {}
         '422':
           description: Validation Error
           content:
@@ -150,6 +174,20 @@ paths:
       - Authentication
       summary: Get Session
       operationId: get_session_api_v1_auth_session_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/auth/activities:
+    get:
+      tags:
+      - Authentication
+      summary: Get User Activities
+      operationId: get_user_activities_api_v1_auth_activities_get
       responses:
         '200':
           description: Successful Response
@@ -236,6 +274,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/google:
+    get:
+      tags:
+      - Authentication
+      summary: Google Login
+      operationId: google_login_api_v1_auth_google_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /api/v1/auth/google/callback:
+    get:
+      tags:
+      - Authentication
+      summary: Google Callback
+      operationId: google_callback_api_v1_auth_google_callback_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
   /api/v1/audit/submit:
     post:
       tags:
@@ -538,6 +600,21 @@ paths:
               schema: {}
       security:
       - HTTPBearer: []
+  /api/v1/system/metrics:
+    get:
+      tags:
+      - System
+      summary: Prometheus Metrics
+      description: Prometheus metrics endpoint for monitoring and alerting.
+      operationId: prometheus_metrics_api_v1_system_metrics_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
   /api/v1/storage/artifacts/{artifact_id}/download:
     get:
       tags:
@@ -692,20 +769,1361 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - HTTPBearer: []
-  /health:
+  /api/v1/user/export:
     get:
-      summary: Health Check
-      operationId: health_check_health_get
+      tags:
+      - User GDPR
+      summary: Export User Data
+      description: 'Export all personal data for the authenticated user.
+
+
+        Returns a JSON blob containing the user record (excluding ``password_hash``)
+
+        and the normalized activity stream. This satisfies the GDPR *right of access*
+
+        (Art. 15).'
+      operationId: export_user_data_api_v1_user_export_get
       responses:
         '200':
           description: Successful Response
           content:
             application/json:
               schema: {}
-  /health/live:
+      security:
+      - HTTPBearer: []
+  /api/v1/user/delete:
+    delete:
+      tags:
+      - User GDPR
+      summary: Delete User
+      description: "Anonymize the current user's personal data (right\u2011to\u2011\
+        be\u2011forgotten).\n\nThe user record is **soft\u2011deleted**: PII fields\
+        \ are cleared and the\naccount is marked inactive.  The row is kept for referential\
+        \ integrity\n(audit jobs, reports, etc.) but contains no personally identifiable\
+        \ data."
+      operationId: delete_user_api_v1_user_delete_delete
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/mfa/enroll:
+    post:
+      tags:
+      - MFA
+      summary: Enroll
+      operationId: enroll_api_v1_mfa_enroll_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/mfa/activate:
+    post:
+      tags:
+      - MFA
+      summary: Activate
+      operationId: activate_api_v1_mfa_activate_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MFAActivateRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/mfa/verify:
+    post:
+      tags:
+      - MFA
+      summary: Verify
+      operationId: verify_api_v1_mfa_verify_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MFAVerifyRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/mfa/recovery:
+    post:
+      tags:
+      - MFA
+      summary: Use Recovery Code
+      operationId: use_recovery_code_api_v1_mfa_recovery_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecoveryCodeRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/mfa/regenerate-codes:
+    post:
+      tags:
+      - MFA
+      summary: Regenerate Codes
+      operationId: regenerate_codes_api_v1_mfa_regenerate_codes_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/mfa/disable:
+    post:
+      tags:
+      - MFA
+      summary: Disable
+      operationId: disable_api_v1_mfa_disable_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/mfa/status:
     get:
-      summary: Health Live
-      operationId: health_live_health_live_get
+      tags:
+      - MFA
+      summary: Status
+      operationId: status_api_v1_mfa_status_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/mfa/admin/compliance:
+    get:
+      tags:
+      - MFA
+      summary: Compliance Check
+      operationId: compliance_check_api_v1_mfa_admin_compliance_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/mfa/admin/enforce:
+    post:
+      tags:
+      - MFA
+      summary: Enforce
+      operationId: enforce_api_v1_mfa_admin_enforce_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/sso/providers:
+    get:
+      tags:
+      - SSO
+      summary: List Providers
+      operationId: list_providers_api_v1_sso_providers_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+    post:
+      tags:
+      - SSO
+      summary: Create Provider
+      operationId: create_provider_api_v1_sso_providers_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SSOProviderCreate'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/sso/providers/{provider_id}:
+    get:
+      tags:
+      - SSO
+      summary: Get Provider
+      operationId: get_provider_api_v1_sso_providers__provider_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: provider_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - SSO
+      summary: Update Provider
+      operationId: update_provider_api_v1_sso_providers__provider_id__put
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: provider_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SSOProviderUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - SSO
+      summary: Delete Provider
+      operationId: delete_provider_api_v1_sso_providers__provider_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: provider_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sso/oidc/{provider_id}/login:
+    get:
+      tags:
+      - SSO
+      summary: Oidc Login
+      operationId: oidc_login_api_v1_sso_oidc__provider_id__login_get
+      parameters:
+      - name: provider_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sso/oidc/callback:
+    get:
+      tags:
+      - SSO
+      summary: Oidc Callback
+      operationId: oidc_callback_api_v1_sso_oidc_callback_get
+      parameters:
+      - name: code
+        in: query
+        required: true
+        schema:
+          type: string
+          title: Code
+      - name: state
+        in: query
+        required: true
+        schema:
+          type: string
+          title: State
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sso/saml/{provider_id}/login:
+    post:
+      tags:
+      - SSO
+      summary: Saml Login
+      operationId: saml_login_api_v1_sso_saml__provider_id__login_post
+      parameters:
+      - name: provider_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/sso/saml/{provider_id}/callback:
+    post:
+      tags:
+      - SSO
+      summary: Saml Callback
+      operationId: saml_callback_api_v1_sso_saml__provider_id__callback_post
+      parameters:
+      - name: provider_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Provider Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/pam/requests:
+    get:
+      tags:
+      - Privileged Access Management
+      summary: List Requests
+      operationId: list_requests_api_v1_pam_requests_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+    post:
+      tags:
+      - Privileged Access Management
+      summary: Create Request
+      operationId: create_request_api_v1_pam_requests_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrivilegeRequestCreate'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/pam/requests/pending:
+    get:
+      tags:
+      - Privileged Access Management
+      summary: Pending Requests
+      operationId: pending_requests_api_v1_pam_requests_pending_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/pam/requests/{request_id}/approve:
+    post:
+      tags:
+      - Privileged Access Management
+      summary: Approve Request
+      operationId: approve_request_api_v1_pam_requests__request_id__approve_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrivilegeApproveRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/pam/requests/{request_id}/deny:
+    post:
+      tags:
+      - Privileged Access Management
+      summary: Deny Request
+      operationId: deny_request_api_v1_pam_requests__request_id__deny_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrivilegeDenyRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/pam/requests/{request_id}/cancel:
+    post:
+      tags:
+      - Privileged Access Management
+      summary: Cancel Request
+      operationId: cancel_request_api_v1_pam_requests__request_id__cancel_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/pam/grants:
+    get:
+      tags:
+      - Privileged Access Management
+      summary: List Grants
+      operationId: list_grants_api_v1_pam_grants_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/pam/grants/revoke:
+    post:
+      tags:
+      - Privileged Access Management
+      summary: Revoke Grant Endpoint
+      operationId: revoke_grant_endpoint_api_v1_pam_grants_revoke_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/pam/cleanup:
+    post:
+      tags:
+      - Privileged Access Management
+      summary: Cleanup Expired
+      operationId: cleanup_expired_api_v1_pam_cleanup_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/pam/check/{permission}:
+    get:
+      tags:
+      - Privileged Access Management
+      summary: Check Access
+      operationId: check_access_api_v1_pam_check__permission__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: permission
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Permission
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/iam/policies:
+    get:
+      tags:
+      - Identity & Access Management
+      summary: List Policies
+      operationId: list_policies_api_v1_iam_policies_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+    post:
+      tags:
+      - Identity & Access Management
+      summary: Create Policy
+      operationId: create_policy_api_v1_iam_policies_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicyCreate'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/iam/policies/{policy_id}:
+    delete:
+      tags:
+      - Identity & Access Management
+      summary: Delete Policy
+      operationId: delete_policy_api_v1_iam_policies__policy_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: policy_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Policy Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/iam/role-permissions/{role_id}:
+    get:
+      tags:
+      - Identity & Access Management
+      summary: List Role Permissions
+      operationId: list_role_permissions_api_v1_iam_role_permissions__role_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: role_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Role Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/iam/role-permissions:
+    post:
+      tags:
+      - Identity & Access Management
+      summary: Assign Permission
+      operationId: assign_permission_api_v1_iam_role_permissions_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RolePermissionAssign'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/iam/role-permissions/{permission_id}:
+    delete:
+      tags:
+      - Identity & Access Management
+      summary: Remove Permission
+      operationId: remove_permission_api_v1_iam_role_permissions__permission_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: permission_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Permission Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/iam/users/deactivate:
+    post:
+      tags:
+      - Identity & Access Management
+      summary: Deactivate User Endpoint
+      operationId: deactivate_user_endpoint_api_v1_iam_users_deactivate_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserActionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/iam/users/reactivate:
+    post:
+      tags:
+      - Identity & Access Management
+      summary: Reactivate User Endpoint
+      operationId: reactivate_user_endpoint_api_v1_iam_users_reactivate_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserActionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/iam/users/{target_user_id}:
+    delete:
+      tags:
+      - Identity & Access Management
+      summary: Delete User Endpoint
+      operationId: delete_user_endpoint_api_v1_iam_users__target_user_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: target_user_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Target User Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/iam/audit/dormant:
+    get:
+      tags:
+      - Identity & Access Management
+      summary: Dormant Users
+      operationId: dormant_users_api_v1_iam_audit_dormant_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 90
+          title: Days
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/iam/audit/shared-accounts:
+    get:
+      tags:
+      - Identity & Access Management
+      summary: Shared Accounts
+      operationId: shared_accounts_api_v1_iam_audit_shared_accounts_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: threshold_ips
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 5
+          title: Threshold Ips
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/iam/cleanup:
+    post:
+      tags:
+      - Identity & Access Management
+      summary: Cleanup Accounts
+      operationId: cleanup_accounts_api_v1_iam_cleanup_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: dormant_days
+        in: query
+        required: false
+        schema:
+          type: integer
+          default: 90
+          title: Dormant Days
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/iam/service-accounts:
+    post:
+      tags:
+      - Identity & Access Management
+      summary: Create Svc Account
+      operationId: create_svc_account_api_v1_iam_service_accounts_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceAccountCreate'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/iam/service-accounts/{account_id}/revoke:
+    post:
+      tags:
+      - Identity & Access Management
+      summary: Revoke Svc Account
+      operationId: revoke_svc_account_api_v1_iam_service_accounts__account_id__revoke_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: account_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Account Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/iam/check/{permission}:
+    get:
+      tags:
+      - Identity & Access Management
+      summary: Check Permission Endpoint
+      operationId: check_permission_endpoint_api_v1_iam_check__permission__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: permission
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Permission
+      - name: resource
+        in: query
+        required: false
+        schema:
+          type: string
+          default: '*'
+          title: Resource
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tenants/:
+    get:
+      tags:
+      - Multi-Tenancy
+      summary: List All Tenants
+      operationId: list_all_tenants_api_v1_tenants__get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+    post:
+      tags:
+      - Multi-Tenancy
+      summary: Create New Tenant
+      operationId: create_new_tenant_api_v1_tenants__post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantCreate'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/tenants/me:
+    get:
+      tags:
+      - Multi-Tenancy
+      summary: Current Tenant
+      operationId: current_tenant_api_v1_tenants_me_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - HTTPBearer: []
+  /api/v1/tenants/{tenant_id}:
+    get:
+      tags:
+      - Multi-Tenancy
+      summary: Get Tenant By Id
+      operationId: get_tenant_by_id_api_v1_tenants__tenant_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Tenant Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      tags:
+      - Multi-Tenancy
+      summary: Update Tenant By Id
+      operationId: update_tenant_by_id_api_v1_tenants__tenant_id__put
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Tenant Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TenantUpdate'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      tags:
+      - Multi-Tenancy
+      summary: Deactivate Tenant By Id
+      operationId: deactivate_tenant_by_id_api_v1_tenants__tenant_id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Tenant Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tenants/slug/{slug}:
+    get:
+      tags:
+      - Multi-Tenancy
+      summary: Get Tenant By Slug Endpoint
+      operationId: get_tenant_by_slug_endpoint_api_v1_tenants_slug__slug__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Slug
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/tenants/{tenant_id}/stats:
+    get:
+      tags:
+      - Multi-Tenancy
+      summary: Tenant Statistics
+      operationId: tenant_statistics_api_v1_tenants__tenant_id__stats_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: tenant_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Tenant Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/verify/domains:
+    get:
+      tags:
+      - Domain Verification
+      summary: List Domains
+      description: List all registered and verified domains for the current user.
+      operationId: list_domains_api_v1_verify_domains_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/DomainVerifyResponse'
+                type: array
+                title: Response List Domains Api V1 Verify Domains Get
+      security:
+      - HTTPBearer: []
+  /api/v1/verify/domain:
+    post:
+      tags:
+      - Domain Verification
+      summary: Initiate Verification
+      description: Initiate ownership verification for a domain.
+      operationId: initiate_verification_api_v1_verify_domain_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DomainVerifyRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainVerifyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/verify/domain/check:
+    post:
+      tags:
+      - Domain Verification
+      summary: Check Verification
+      description: Run verification check for a domain using the specified method.
+      operationId: check_verification_api_v1_verify_domain_check_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DomainCheckRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainCheckResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/verify/domain/{id}:
+    delete:
+      tags:
+      - Domain Verification
+      summary: Delete Domain
+      description: Remove a domain verification record.
+      operationId: delete_domain_api_v1_verify_domain__id__delete
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /health/deep:
+    get:
+      summary: Health Deep
+      operationId: health_deep_health_deep_get
       responses:
         '200':
           description: Successful Response
@@ -722,10 +2140,20 @@ paths:
           content:
             application/json:
               schema: {}
-  /health/deep:
+  /health:
     get:
-      summary: Health Deep
-      operationId: health_deep_health_deep_get
+      summary: Health Check
+      operationId: health_check_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /health/live:
+    get:
+      summary: Health Live
+      operationId: health_live_health_live_get
       responses:
         '200':
           description: Successful Response
@@ -747,6 +2175,98 @@ components:
       - job_id
       - message
       title: ChatRequest
+    DomainCheckRequest:
+      properties:
+        domain:
+          type: string
+          title: Domain
+          description: The domain to check.
+        method:
+          type: string
+          title: Method
+          description: 'Verification method: ''dns'', ''html'', or ''file''.'
+          default: dns
+      type: object
+      required:
+      - domain
+      title: DomainCheckRequest
+    DomainCheckResponse:
+      properties:
+        verified:
+          type: boolean
+          title: Verified
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - verified
+      - message
+      title: DomainCheckResponse
+    DomainVerifyRequest:
+      properties:
+        domain:
+          type: string
+          title: Domain
+          description: The domain name to request verification for.
+      type: object
+      required:
+      - domain
+      title: DomainVerifyRequest
+    DomainVerifyResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        domain:
+          type: string
+          title: Domain
+        verification_token:
+          type: string
+          title: Verification Token
+        verified:
+          type: boolean
+          title: Verified
+        verified_at:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Verified At
+        created_at:
+          type: string
+          title: Created At
+        dns_txt_name:
+          type: string
+          title: Dns Txt Name
+        dns_txt_value:
+          type: string
+          title: Dns Txt Value
+        html_meta_name:
+          type: string
+          title: Html Meta Name
+        html_meta_content:
+          type: string
+          title: Html Meta Content
+        well_known_path:
+          type: string
+          title: Well Known Path
+        well_known_content:
+          type: string
+          title: Well Known Content
+      type: object
+      required:
+      - id
+      - domain
+      - verification_token
+      - verified
+      - created_at
+      - dns_txt_name
+      - dns_txt_value
+      - html_meta_name
+      - html_meta_content
+      - well_known_path
+      - well_known_content
+      title: DomainVerifyResponse
     EmailReportRequest:
       properties:
         email:
@@ -943,6 +2463,64 @@ components:
       - privacy_policy_accepted
       - privacy_policy_version
       title: LoginRequest
+    MFAActivateRequest:
+      properties:
+        token:
+          type: string
+          title: Token
+      type: object
+      required:
+      - token
+      title: MFAActivateRequest
+    MFAVerifyRequest:
+      properties:
+        token:
+          type: string
+          title: Token
+      type: object
+      required:
+      - token
+      title: MFAVerifyRequest
+    PolicyCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+        effect:
+          type: string
+          title: Effect
+          default: allow
+        actions:
+          items:
+            type: string
+          type: array
+          title: Actions
+        resources:
+          items:
+            type: string
+          type: array
+          title: Resources
+          default:
+          - '*'
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        conditions:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Conditions
+        priority:
+          type: integer
+          title: Priority
+          default: 0
+      type: object
+      required:
+      - name
+      - actions
+      title: PolicyCreate
     PolicyEventRequest:
       properties:
         policy:
@@ -986,6 +2564,71 @@ components:
       - event_type
       - policy_version
       title: PolicyEventRequest
+    PrivilegeApproveRequest:
+      properties:
+        duration_minutes:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Duration Minutes
+      type: object
+      title: PrivilegeApproveRequest
+    PrivilegeDenyRequest:
+      properties:
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
+      type: object
+      title: PrivilegeDenyRequest
+    PrivilegeRequestCreate:
+      properties:
+        role_name:
+          type: string
+          title: Role Name
+        permission:
+          type: string
+          title: Permission
+        reason:
+          type: string
+          minLength: 10
+          title: Reason
+        requested_duration_minutes:
+          type: integer
+          maximum: 480.0
+          minimum: 1.0
+          title: Requested Duration Minutes
+        ticket_ref:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ticket Ref
+      type: object
+      required:
+      - role_name
+      - permission
+      - reason
+      - requested_duration_minutes
+      title: PrivilegeRequestCreate
+    RecoveryCodeRequest:
+      properties:
+        code:
+          type: string
+          title: Code
+      type: object
+      required:
+      - code
+      title: RecoveryCodeRequest
+    RefreshPayload:
+      properties:
+        refresh_token:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Refresh Token
+      type: object
+      title: RefreshPayload
     RegisterRequest:
       properties:
         username:
@@ -1022,6 +2665,218 @@ components:
       - privacy_policy_accepted
       - privacy_policy_version
       title: RegisterRequest
+    RevokeRequest:
+      properties:
+        grant_id:
+          type: string
+          title: Grant Id
+      type: object
+      required:
+      - grant_id
+      title: RevokeRequest
+    RolePermissionAssign:
+      properties:
+        role_id:
+          type: string
+          title: Role Id
+        permission:
+          type: string
+          title: Permission
+        resource_pattern:
+          type: string
+          title: Resource Pattern
+          default: '*'
+      type: object
+      required:
+      - role_id
+      - permission
+      title: RolePermissionAssign
+    SSOProviderCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+        provider_type:
+          type: string
+          title: Provider Type
+        issuer_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Issuer Url
+        client_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Client Id
+        client_secret:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Client Secret
+        authorization_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization Url
+        token_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Token Url
+        userinfo_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Userinfo Url
+        jwks_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Jwks Url
+        certificate:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Certificate
+        attribute_mapping:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Attribute Mapping
+        domains:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Domains
+        enforce_mfa:
+          type: boolean
+          title: Enforce Mfa
+          default: false
+        auto_provision:
+          type: boolean
+          title: Auto Provision
+          default: false
+        default_role_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Default Role Id
+      type: object
+      required:
+      - name
+      - provider_type
+      title: SSOProviderCreate
+    SSOProviderUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        issuer_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Issuer Url
+        client_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Client Id
+        client_secret:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Client Secret
+        authorization_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization Url
+        token_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Token Url
+        userinfo_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Userinfo Url
+        jwks_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Jwks Url
+        certificate:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Certificate
+        attribute_mapping:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Attribute Mapping
+        domains:
+          anyOf:
+          - items:
+              type: string
+            type: array
+          - type: 'null'
+          title: Domains
+        enforce_mfa:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Enforce Mfa
+        auto_provision:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Auto Provision
+        default_role_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Default Role Id
+        is_active:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Is Active
+      type: object
+      title: SSOProviderUpdate
+    ServiceAccountCreate:
+      properties:
+        name:
+          type: string
+          title: Name
+        permissions:
+          items:
+            type: string
+          type: array
+          title: Permissions
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        expires_in_days:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Expires In Days
+      type: object
+      required:
+      - name
+      - permissions
+      title: ServiceAccountCreate
     SubmitJobRequest:
       properties:
         repo_url:
@@ -1073,27 +2928,81 @@ components:
       - p256dh
       - auth
       title: SubscribeRequest
-    TokenResponse:
+    TenantCreate:
       properties:
-        access_token:
+        name:
           type: string
-          title: Access Token
-        token_type:
+          title: Name
+        slug:
           type: string
-          title: Token Type
-        username:
+          title: Slug
+        domain:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Domain
+        plan:
           type: string
-          title: Username
+          title: Plan
+          default: free
+        max_users:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Users
+        max_storage_gb:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Storage Gb
+      type: object
+      required:
+      - name
+      - slug
+      title: TenantCreate
+    TenantUpdate:
+      properties:
+        name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Name
+        domain:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Domain
+        plan:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Plan
+        max_users:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Users
+        max_storage_gb:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Max Storage Gb
+      type: object
+      title: TenantUpdate
+    UserActionRequest:
+      properties:
         user_id:
           type: string
           title: User Id
+        reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason
       type: object
       required:
-      - access_token
-      - token_type
-      - username
       - user_id
-      title: TokenResponse
+      title: UserActionRequest
     ValidationError:
       properties:
         loc:
