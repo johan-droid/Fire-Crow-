@@ -46,5 +46,5 @@ def _get_rate_limit_key(request: Request) -> str:
     return get_remote_address(request)
 
 
-default_limits: list[StrOrCallableStr] = [] if settings.DEBUG else ["100/hour"]
+default_limits: list[StrOrCallableStr] = [] if settings.DEBUG else [settings.DEFAULT_RATE_LIMIT]
 limiter = Limiter(key_func=_get_rate_limit_key, default_limits=default_limits)

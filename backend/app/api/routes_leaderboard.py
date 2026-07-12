@@ -11,7 +11,7 @@ router = APIRouter(prefix="/leaderboard", tags=["Leaderboard"])
 
 @router.get("")
 @router.get("/")
-@limiter.limit("20/minute")
+@limiter.limit(settings.LEADERBOARD_RATE_LIMIT)
 async def get_leaderboard(
     request: Request,
     db: Session = Depends(get_db),

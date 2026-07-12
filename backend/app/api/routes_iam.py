@@ -53,7 +53,7 @@ class ServiceAccountCreate(BaseModel):
 
 
 @router.get("/policies")
-@limiter.limit("20/minute")
+@limiter.limit(settings.IAM_IDENTITIES_RATE_LIMIT)
 async def list_policies(
     request: Request,
     user_id: str = Depends(get_current_user),
@@ -68,7 +68,7 @@ async def list_policies(
 
 
 @router.post("/policies")
-@limiter.limit("10/minute")
+@limiter.limit(settings.IAM_CREDENTIALS_RATE_LIMIT)
 async def create_policy(
     payload: PolicyCreate,
     request: Request,
@@ -94,7 +94,7 @@ async def create_policy(
 
 
 @router.delete("/policies/{policy_id}")
-@limiter.limit("10/minute")
+@limiter.limit(settings.IAM_CREDENTIALS_RATE_LIMIT)
 async def delete_policy(
     policy_id: str,
     request: Request,
@@ -115,7 +115,7 @@ async def delete_policy(
 
 
 @router.get("/role-permissions/{role_id}")
-@limiter.limit("20/minute")
+@limiter.limit(settings.IAM_IDENTITIES_RATE_LIMIT)
 async def list_role_permissions(
     role_id: str,
     request: Request,
@@ -131,7 +131,7 @@ async def list_role_permissions(
 
 
 @router.post("/role-permissions")
-@limiter.limit("10/minute")
+@limiter.limit(settings.IAM_CREDENTIALS_RATE_LIMIT)
 async def assign_permission(
     payload: RolePermissionAssign,
     request: Request,
@@ -152,7 +152,7 @@ async def assign_permission(
 
 
 @router.delete("/role-permissions/{permission_id}")
-@limiter.limit("10/minute")
+@limiter.limit(settings.IAM_CREDENTIALS_RATE_LIMIT)
 async def remove_permission(
     permission_id: str,
     request: Request,
@@ -173,7 +173,7 @@ async def remove_permission(
 
 
 @router.post("/users/deactivate")
-@limiter.limit("10/minute")
+@limiter.limit(settings.IAM_CREDENTIALS_RATE_LIMIT)
 async def deactivate_user_endpoint(
     payload: UserActionRequest,
     request: Request,
@@ -194,7 +194,7 @@ async def deactivate_user_endpoint(
 
 
 @router.post("/users/reactivate")
-@limiter.limit("10/minute")
+@limiter.limit(settings.IAM_CREDENTIALS_RATE_LIMIT)
 async def reactivate_user_endpoint(
     payload: UserActionRequest,
     request: Request,
@@ -215,7 +215,7 @@ async def reactivate_user_endpoint(
 
 
 @router.delete("/users/{target_user_id}")
-@limiter.limit("5/minute")
+@limiter.limit(settings.IAM_DEACTIVATE_ROLE_RATE_LIMIT)
 async def delete_user_endpoint(
     target_user_id: str,
     request: Request,
@@ -236,7 +236,7 @@ async def delete_user_endpoint(
 
 
 @router.get("/audit/dormant")
-@limiter.limit("10/minute")
+@limiter.limit(settings.IAM_CREDENTIALS_RATE_LIMIT)
 async def dormant_users(
     request: Request,
     days: int = 90,
@@ -252,7 +252,7 @@ async def dormant_users(
 
 
 @router.get("/audit/shared-accounts")
-@limiter.limit("10/minute")
+@limiter.limit(settings.IAM_CREDENTIALS_RATE_LIMIT)
 async def shared_accounts(
     request: Request,
     threshold_ips: int = 5,
@@ -268,7 +268,7 @@ async def shared_accounts(
 
 
 @router.post("/cleanup")
-@limiter.limit("5/minute")
+@limiter.limit(settings.IAM_DEACTIVATE_ROLE_RATE_LIMIT)
 async def cleanup_accounts(
     request: Request,
     dormant_days: int = 90,
@@ -289,7 +289,7 @@ async def cleanup_accounts(
 
 
 @router.post("/service-accounts")
-@limiter.limit("10/minute")
+@limiter.limit(settings.IAM_CREDENTIALS_RATE_LIMIT)
 async def create_svc_account(
     payload: ServiceAccountCreate,
     request: Request,
@@ -314,7 +314,7 @@ async def create_svc_account(
 
 
 @router.post("/service-accounts/{account_id}/revoke")
-@limiter.limit("10/minute")
+@limiter.limit(settings.IAM_CREDENTIALS_RATE_LIMIT)
 async def revoke_svc_account(
     account_id: str,
     request: Request,
@@ -334,7 +334,7 @@ async def revoke_svc_account(
 
 
 @router.get("/check/{permission}")
-@limiter.limit("20/minute")
+@limiter.limit(settings.IAM_IDENTITIES_RATE_LIMIT)
 async def check_permission_endpoint(
     permission: str,
     request: Request,
