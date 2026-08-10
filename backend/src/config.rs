@@ -97,6 +97,12 @@ pub struct Settings {
     #[serde(default)]
     pub r2_bucket_name: String,
     #[serde(default)]
+    pub cf_turnstile_secret_key: String,
+    #[serde(default)]
+    pub cf_turnstile_site_key: String,
+    #[serde(default)]
+    pub cf_turnstile_enabled: bool,
+    #[serde(default)]
     pub gemini_api_key: String,
     #[serde(default)]
     pub gemini_model: String,

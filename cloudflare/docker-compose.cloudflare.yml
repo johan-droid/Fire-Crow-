@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: firecrow-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: firecrow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-firecrow_secure_db_pass_2026}
+      POSTGRES_DB: firecrow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U firecrow -d firecrow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: firecrow-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD:-firecrow_redis_pass_2026}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: firecrow-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://firecrow:${POSTGRES_PASSWORD:-firecrow_secure_db_pass_2026}@postgres:5432/firecrow
+      REDIS_URL: redis://:${REDIS_PASSWORD:-firecrow_redis_pass_2026}@redis:6379
+      SECRET_KEY: ${SECRET_KEY:-a7f3b8c29e4d5f6a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-a7f3b8c29e4d5f6a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_ENDPOINT_URL: ${R2_ENDPOINT_URL:-}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:-firecrow-artifacts}
+      CF_TURNSTILE_SECRET_KEY: ${CF_TURNSTILE_SECRET_KEY:-}
+      CF_TURNSTILE_SITE_KEY: ${CF_TURNSTILE_SITE_KEY:-}
+      CF_TURNSTILE_ENABLED: ${CF_TURNSTILE_ENABLED:-false}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      PORT: 8000
+      HOST: 0.0.0.0
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: firecrow-tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN}
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

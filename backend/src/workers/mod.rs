@@ -61,14 +61,27 @@ impl WorkerPool {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
-                let _ = sqlx::query("UPDATE audit_jobs SET status='failed', error_message=$1, finished_at=$2 WHERE status='running' AND cancel_requested=true")
-                    .bind("Job cancelled by user").bind(chrono::Utc::now().naive_utc()).execute(&pool).await;
+                let _ = sqlx::query("UPDATE audit_jobs SET status=$1, error_message=$2, finished_at=$3 WHERE status=$4 AND cancel_requested=true")
+                    .bind(JobStatus::Failed)
+                    .bind("Job cancelled by user")
+                    .bind(chrono::Utc::now().naive_utc())
+                    .bind(JobStatus::Running)
+                    .execute(&pool)
+                    .await;
                 let orphaned: Vec<AuditJob> = sqlx::query_as::<_, AuditJob>("SELECT * FROM audit_jobs WHERE status=$1")
-                    .bind(JobStatus::Running.as_str()).fetch_all(&pool).await.unwrap_or_default();
+                    .bind(JobStatus::Running)
+                    .fetch_all(&pool)
+                    .await
+                    .unwrap_or_default();
                 for job in orphaned {
                     warn!("Found orphaned job: {}", job.id);
-                    let _ = sqlx::query("UPDATE audit_jobs SET status='failed', error_message=$1, finished_at=$2 WHERE id=$3")
-                        .bind("Audit job was interrupted by a server restart").bind(chrono::Utc::now().naive_utc()).bind(&job.id).execute(&pool).await;
+                    let _ = sqlx::query("UPDATE audit_jobs SET status=$1, error_message=$2, finished_at=$3 WHERE id=$4")
+                        .bind(JobStatus::Failed)
+                        .bind("Audit job was interrupted by a server restart")
+                        .bind(chrono::Utc::now().naive_utc())
+                        .bind(&job.id)
+                        .execute(&pool)
+                        .await;
                 }
             }
         });
@@ -85,14 +98,26 @@ impl WorkerPool {
                 if !*r { break; }
             }
             let queued_jobs: Vec<AuditJob> = sqlx::query_as::<_, AuditJob>("SELECT * FROM audit_jobs WHERE status=$1 ORDER BY created_at ASC LIMIT 1")
-                .bind(JobStatus::Queued.as_str()).fetch_all(&pool).await.unwrap_or_default();
+                .bind(JobStatus::Queued)
+                .fetch_all(&pool)
+                .await
+                .unwrap_or_default();
             for job in queued_jobs {
                 info!("Worker: picked up job {}", job.id);
-                let _ = sqlx::query("UPDATE audit_jobs SET status='running' WHERE id=$1").bind(&job.id).execute(&pool).await;
+                let _ = sqlx::query("UPDATE audit_jobs SET status=$1 WHERE id=$2")
+                    .bind(JobStatus::Running)
+                    .bind(&job.id)
+                    .execute(&pool)
+                    .await;
                 if let Err(e) = execute_audit_job(&pool, &job.id, &job.user_id, &job.repo_url, &job.repo_branch, None, None).await {
                     error!("Worker: job {} failed: {}", job.id, e);
-                    let _ = sqlx::query("UPDATE audit_jobs SET status='failed', error_message=$1, finished_at=$2 WHERE id=$3")
-                        .bind(e.to_string()).bind(chrono::Utc::now().naive_utc()).bind(&job.id).execute(&pool).await;
+                    let _ = sqlx::query("UPDATE audit_jobs SET status=$1, error_message=$2, finished_at=$3 WHERE id=$4")
+                        .bind(JobStatus::Failed)
+                        .bind(e.to_string())
+                        .bind(chrono::Utc::now().naive_utc())
+                        .bind(&job.id)
+                        .execute(&pool)
+                        .await;
                 }
             }
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;

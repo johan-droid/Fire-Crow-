@@ -1,0 +1,7 @@
+# Cloudflare Pages Redirect & SPA Routing Rules
+
+# Optional API proxy rule (uncomment if proxying API requests through Cloudflare Pages)
+# /api/*  https://api.firecrow.dev/api/:splat  200
+
+# Single Page Application (SPA) Fallback
+/*  /index.html  200

@@ -2,19 +2,30 @@
 
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
-use sqlx::Type;
+use sqlx::{encode::IsNull, error::BoxDynError, postgres::PgArgumentBuffer, TypeInfo};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
-#[sqlx(type_name = "text", rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum JobStatus {
     #[default]
-    Queued, Running, Completed, Failed, Cancelled, Partial,
+    Queued,
+    Running,
+    Completed,
+    Failed,
+    Cancelled,
+    Partial,
 }
 
 impl JobStatus {
     pub fn as_str(&self) -> &'static str {
-        match self { Self::Queued => "queued", Self::Running => "running", Self::Completed => "completed", Self::Failed => "failed", Self::Cancelled => "cancelled", Self::Partial => "partial" }
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Partial => "partial",
+        }
     }
 }
 
@@ -22,24 +33,99 @@ impl std::str::FromStr for JobStatus {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "queued" => Ok(Self::Queued), "running" => Ok(Self::Running),
-            "completed" => Ok(Self::Completed), "failed" => Ok(Self::Failed),
-            "cancelled" => Ok(Self::Cancelled), "partial" => Ok(Self::Partial),
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "completed" => Ok(Self::Completed),
+            "failed" => Ok(Self::Failed),
+            "cancelled" => Ok(Self::Cancelled),
+            "partial" => Ok(Self::Partial),
             _ => Err(format!("Unknown job status: {s}")),
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type, Default)]
-#[sqlx(type_name = "text", rename_all = "lowercase")]
+impl sqlx::Type<sqlx::Postgres> for JobStatus {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("jobstatus")
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        let name = ty.name().to_lowercase();
+        name == "jobstatus" || name == "job_status" || name == "text" || name == "varchar"
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for JobStatus {
+    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, BoxDynError> {
+        let s = <&str as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        s.parse::<JobStatus>().map_err(|e| e.into())
+    }
+}
+
+impl<'q> sqlx::Encode<'q, sqlx::Postgres> for JobStatus {
+    fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
+        <&str as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&self.as_str(), buf)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
-    Critical, High, Medium, Low, #[default] Info,
+    Critical,
+    High,
+    Medium,
+    Low,
+    #[default]
+    Info,
 }
 
 impl Severity {
     pub fn as_str(&self) -> &'static str {
-        match self { Self::Critical => "critical", Self::High => "high", Self::Medium => "medium", Self::Low => "low", Self::Info => "info" }
+        match self {
+            Self::Critical => "critical",
+            Self::High => "high",
+            Self::Medium => "medium",
+            Self::Low => "low",
+            Self::Info => "info",
+        }
+    }
+}
+
+impl std::str::FromStr for Severity {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "critical" => Ok(Self::Critical),
+            "high" => Ok(Self::High),
+            "medium" => Ok(Self::Medium),
+            "low" => Ok(Self::Low),
+            "info" => Ok(Self::Info),
+            _ => Ok(Self::Info),
+        }
+    }
+}
+
+impl sqlx::Type<sqlx::Postgres> for Severity {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("severity")
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        let name = ty.name().to_lowercase();
+        name == "severity" || name == "text" || name == "varchar"
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for Severity {
+    fn decode(value: sqlx::postgres::PgValueRef<'r>) -> Result<Self, BoxDynError> {
+        let s = <&str as sqlx::Decode<sqlx::Postgres>>::decode(value)?;
+        s.parse::<Severity>().map_err(|e| e.into())
+    }
+}
+
+impl<'q> sqlx::Encode<'q, sqlx::Postgres> for Severity {
+    fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
+        <&str as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&self.as_str(), buf)
     }
 }
 

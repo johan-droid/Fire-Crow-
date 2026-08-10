@@ -37,7 +37,13 @@ use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    use tracing_subscriber::EnvFilter;
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new("info,firecrow_backend=info,tower_http=info"))
+        )
+        .init();
     info!("Fire Crow Backend starting...");
 
     let settings = Settings::new().map_err(|e| {
@@ -165,7 +171,8 @@ async fn main() -> anyhow::Result<()> {
             std::time::Duration::from_secs(30)
         ))
         .layer(tower_http::catch_panic::CatchPanicLayer::new())
-        .layer(TraceLayer::new_for_http())
+        .layer(from_fn(crate::middleware::http_logger::http_audit_logger))
+        .layer(from_fn(crate::middleware::cloudflare::cloudflare_middleware))
         .layer(from_fn(request_id_middleware))
         .layer(from_fn(body_size_limit_middleware))
         .with_state(state.clone());

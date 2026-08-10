@@ -26,3 +26,4 @@ pub mod safe_llm;
 pub mod confidence;
 pub mod attack_graph;
 pub mod session;
+pub mod turnstile;

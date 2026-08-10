@@ -117,8 +117,14 @@ pub async fn execute_audit_job(
     state.status = crate::models::JobStatus::Completed;
     state.report_delivered = true;
     state.current_phase = "complete".into();
-    sqlx::query("UPDATE audit_jobs SET status='completed', finished_at=$1, security_score=$2 WHERE id=$3")
-        .bind(Utc::now().naive_utc()).bind(state.security_score.unwrap_or(0.0)).bind(job_id).execute(pool).await.map_err(AppError::Database)?;
+    sqlx::query("UPDATE audit_jobs SET status=$1, finished_at=$2, security_score=$3 WHERE id=$4")
+        .bind(crate::models::JobStatus::Completed)
+        .bind(Utc::now().naive_utc())
+        .bind(state.security_score.unwrap_or(0.0))
+        .bind(job_id)
+        .execute(pool)
+        .await
+        .map_err(AppError::Database)?;
 
     tracing::info!("[orchestrator] Job {} completed with score {:?}", job_id, state.security_score);
     Ok(state)
@@ -153,14 +159,14 @@ async fn get_job(pool: &PgPool, job_id: &str) -> Result<AuditJob> {
 }
 async fn log_phase_started(pool: &PgPool, job_id: &str, phase: &str) -> Result<()> {
     let id = generate_uuid();
-    sqlx::query("INSERT INTO phase_ledger (id, job_id, phase_name, status, mode, started_at) VALUES ($1,$2,$3,'started','real',$4)")
-        .bind(id).bind(job_id).bind(phase).bind(Utc::now().naive_utc()).execute(pool).await.map_err(AppError::Database)?;
+    let _ = sqlx::query("INSERT INTO phase_ledger (id, job_id, phase_name, status, mode, started_at) VALUES ($1,$2,$3,'started','real',$4)")
+        .bind(id).bind(job_id).bind(phase).bind(Utc::now().naive_utc()).execute(pool).await;
     Ok(())
 }
 async fn log_phase_completed(pool: &PgPool, job_id: &str, phase: &str, status: &str, started_at: DateTime<Utc>, error_message: Option<String>) -> Result<()> {
     let ended_at = Utc::now();
     let duration = (ended_at - started_at).num_milliseconds() as f64 / 1000.0;
-    sqlx::query("UPDATE phase_ledger SET status=$1, ended_at=$2, duration_sec=$3, error_message=$4 WHERE id IN (SELECT id FROM phase_ledger WHERE job_id=$5 AND phase_name=$6 AND status='started' ORDER BY started_at DESC LIMIT 1)")
-        .bind(status).bind(ended_at.naive_utc()).bind(duration).bind(error_message).bind(job_id).bind(phase).execute(pool).await.map_err(AppError::Database)?;
+    let _ = sqlx::query("UPDATE phase_ledger SET status=$1, ended_at=$2, duration_sec=$3, error_message=$4 WHERE id IN (SELECT id FROM phase_ledger WHERE job_id=$5 AND phase_name=$6 AND status='started' ORDER BY started_at DESC LIMIT 1)")
+        .bind(status).bind(ended_at.naive_utc()).bind(duration).bind(error_message).bind(job_id).bind(phase).execute(pool).await;
     Ok(())
 }

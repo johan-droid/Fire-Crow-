@@ -20,8 +20,13 @@ pub async fn submit_audit(
     Json(req): Json<SubmitJobRequest>,
 ) -> Result<Json<JobResponse>> {
     let job_id = uuid::Uuid::new_v4().to_string();
-    sqlx::query("INSERT INTO audit_jobs (id, user_id, repo_url, repo_branch, status, created_at) VALUES ($1,$2,$3,$4,'queued',$5)")
-        .bind(&job_id).bind(&user.user_id).bind(&req.repo_url).bind(req.repo_branch.as_deref().unwrap_or("main")).bind(chrono::Utc::now().naive_utc())
+    sqlx::query("INSERT INTO audit_jobs (id, user_id, repo_url, repo_branch, status, created_at) VALUES ($1,$2,$3,$4,$5,$6)")
+        .bind(&job_id)
+        .bind(&user.user_id)
+        .bind(&req.repo_url)
+        .bind(req.repo_branch.as_deref().unwrap_or("main"))
+        .bind(crate::models::JobStatus::Queued)
+        .bind(chrono::Utc::now().naive_utc())
         .execute(state.pool()).await.map_err(AppError::Database)?;
     let pool = state.pool().clone();
     let repo_url = req.repo_url.clone();
@@ -49,7 +54,11 @@ pub async fn get_job_detail(State(state): State<Arc<crate::AppState>>, Path(job_
 }
 
 pub async fn cancel_job(State(state): State<Arc<crate::AppState>>, Path(job_id): Path<String>) -> Result<Json<serde_json::Value>> {
-    sqlx::query("UPDATE audit_jobs SET cancel_requested=true, cancel_requested_at=$1, status='cancelled' WHERE id=$2").bind(chrono::Utc::now().naive_utc()).bind(job_id).execute(state.pool()).await.map_err(AppError::Database)?;
+    sqlx::query("UPDATE audit_jobs SET cancel_requested=true, cancel_requested_at=$1, status=$2 WHERE id=$3")
+        .bind(chrono::Utc::now().naive_utc())
+        .bind(crate::models::JobStatus::Cancelled)
+        .bind(job_id)
+        .execute(state.pool()).await.map_err(AppError::Database)?;
     Ok(Json(serde_json::json!({"status": "cancellation_requested"})))
 }
 

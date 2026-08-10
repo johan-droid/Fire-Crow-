@@ -8,18 +8,27 @@ use crate::models::{JobStatus, Severity};
 pub struct AuditJob {
     pub id: String,
     pub user_id: String,
+    #[sqlx(default)]
     pub tenant_id: Option<String>,
     pub repo_url: String,
     pub repo_branch: String,
     pub status: JobStatus,
     pub created_at: NaiveDateTime,
+    #[sqlx(default)]
     pub finished_at: Option<NaiveDateTime>,
+    #[sqlx(default)]
     pub cancel_requested: bool,
+    #[sqlx(default)]
     pub cancel_requested_at: Option<NaiveDateTime>,
+    #[sqlx(default)]
     pub report_pdf_url: Option<String>,
+    #[sqlx(default)]
     pub report_id: Option<String>,
+    #[sqlx(default)]
     pub error_message: Option<String>,
+    #[sqlx(default)]
     pub security_score: Option<f64>,
+    #[sqlx(default)]
     pub legal_hold: bool,
 }
 

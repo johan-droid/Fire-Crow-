@@ -4,6 +4,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use tracing::{error, info};
 use crate::error::{AppError, Result};
+
 pub fn router() -> Router<Arc<crate::AppState>> {
     Router::new()
         .route("/exchange", post(exchange_token))
@@ -12,6 +13,7 @@ pub fn router() -> Router<Arc<crate::AppState>> {
         .route("/policy-events", post(create_policy_event))
         .route("/register", post(register))
         .route("/login", post(login))
+        .route("/demo", post(demo_login))
         .route("/logout", post(logout))
         .route("/me", get(get_me))
         .route("/session", get(get_session))
@@ -95,15 +97,22 @@ pub async fn refresh_token(
 pub async fn register(State(state): State<Arc<crate::AppState>>, Json(payload): Json<serde_json::Value>) -> Result<Json<serde_json::Value>> {
     let username = payload.get("username").and_then(|v| v.as_str()).ok_or_else(|| AppError::BadRequest("Missing username".into()))?;
     let password = payload.get("password").and_then(|v| v.as_str()).ok_or_else(|| AppError::BadRequest("Missing password".into()))?;
-    if password.len() < 12 { return Err(AppError::BadRequest("Password must be at least 12 characters".into())); }
+    let email_input = payload.get("email").and_then(|v| v.as_str()).unwrap_or("");
+    let email = if email_input.trim().is_empty() {
+        format!("{}@local.firecrow", username.trim().to_lowercase())
+    } else {
+        email_input.trim().to_lowercase()
+    };
+
+    if password.len() < 8 { return Err(AppError::BadRequest("Password must be at least 8 characters".into())); }
     let password_hash = crate::services::auth::hash_password(password)?;
     let user_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().naive_utc();
-    sqlx::query("INSERT INTO users (id, username, password_hash, is_active, credit_balance, created_at) VALUES ($1,$2,$3,true,0.0,$4)")
-        .bind(&user_id).bind(username).bind(password_hash).bind(now)
+    sqlx::query("INSERT INTO users (id, username, email, password_hash, is_active, credit_balance, created_at) VALUES ($1,$2,$3,$4,true,10.0,$5)")
+        .bind(&user_id).bind(username).bind(&email).bind(password_hash).bind(now)
         .execute(state.pool()).await.map_err(AppError::Database)?;
     crate::services::security_log::record_security_event(state.pool(), Some(&user_id), None, "user_registered", None, None).await.ok();
-    Ok(Json(serde_json::json!({"user_id": user_id, "username": username})))
+    Ok(Json(serde_json::json!({"user_id": user_id, "username": username, "email": email})))
 }
 
 pub async fn login(
@@ -118,7 +127,7 @@ pub async fn login(
     if crate::services::auth::check_login_lockout(state.pool(), &lockout_key, state.settings().login_failure_window_minutes, state.settings().login_failure_limit).await? {
         return Err(AppError::AccountLocked);
     }
-    let user: Option<crate::models::User> = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE LOWER(username)=$1")
+    let user: Option<crate::models::User> = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE LOWER(username)=$1 OR LOWER(email)=$1")
         .bind(&normalized).fetch_optional(state.pool()).await.map_err(AppError::Database)?;
     let user = match user { Some(u) => u, None => { crate::services::auth::record_login_failure(state.pool(), &lockout_key).await?; return Err(AppError::InvalidCredentials); } };
     let password_hash = user.password_hash.as_deref().unwrap_or("");
@@ -146,7 +155,85 @@ pub async fn login(
 
     let jar = jar.add(access_cookie).add(refresh_cookie);
 
-    Ok((jar, Json(serde_json::json!({"access_token": access_token_str, "token_type": "bearer", "username": user.username, "user_id": user.id}))))
+    Ok((jar, Json(serde_json::json!({"access_token": access_token_str, "token_type": "bearer", "username": user.username, "user_id": user.id, "email": user.email}))))
+}
+
+pub async fn demo_login(
+    State(state): State<Arc<crate::AppState>>,
+    jar: CookieJar,
+) -> Result<(CookieJar, Json<serde_json::Value>)> {
+    let demo_username = "demo_operator";
+    let db_user_opt: Option<crate::models::User> = sqlx::query_as(
+        "SELECT * FROM users WHERE username = $1"
+    )
+    .bind(demo_username)
+    .fetch_optional(state.pool())
+    .await
+    .map_err(AppError::Database)?;
+
+    let user = if let Some(existing) = db_user_opt {
+        existing
+    } else {
+        let new_id = uuid::Uuid::new_v4().to_string();
+        let now = chrono::Utc::now().naive_utc();
+        let pwd_hash = crate::services::auth::hash_password("DemoPassword123!")?;
+        sqlx::query(
+            "INSERT INTO users (id, username, email, password_hash, is_active, credit_balance, created_at) VALUES ($1, $2, $3, $4, true, 100.0, $5)"
+        )
+        .bind(&new_id)
+        .bind(demo_username)
+        .bind("demo@firecrow.dev")
+        .bind(pwd_hash)
+        .bind(now)
+        .execute(state.pool())
+        .await
+        .map_err(AppError::Database)?;
+
+        sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = $1")
+            .bind(&new_id)
+            .fetch_one(state.pool())
+            .await
+            .map_err(AppError::Database)?
+    };
+
+    let token_family = uuid::Uuid::new_v4().to_string();
+    let (access_token_str, _) = crate::services::auth::create_access_token(
+        &user.id,
+        &user.username,
+        &state.settings().secret_key,
+        state.settings().jwt_access_token_expire_minutes,
+    )?;
+    let (refresh_token_str, _) = crate::services::auth::create_refresh_token(
+        &user.id,
+        &user.username,
+        &state.settings().secret_key,
+        &token_family,
+    )?;
+
+    let access_cookie = Cookie::build(("access_token", access_token_str.clone()))
+        .path("/")
+        .http_only(true)
+        .same_site(axum_extra::extract::cookie::SameSite::Lax)
+        .build();
+
+    let refresh_cookie = Cookie::build(("refresh_token", refresh_token_str))
+        .path("/")
+        .http_only(true)
+        .same_site(axum_extra::extract::cookie::SameSite::Lax)
+        .build();
+
+    let jar = jar.add(access_cookie).add(refresh_cookie);
+
+    Ok((
+        jar,
+        Json(serde_json::json!({
+            "access_token": access_token_str,
+            "token_type": "bearer",
+            "username": user.username,
+            "user_id": user.id,
+            "email": user.email
+        })),
+    ))
 }
 
 pub async fn logout(
@@ -159,7 +246,14 @@ pub async fn logout(
         let _ = crate::services::auth::revoke_token_jti(redis, &user.jti, ttl).await;
         let _ = crate::services::auth::revoke_token_family(redis, &user.token_family, ttl).await;
     }
-    let jar = jar.remove(Cookie::from("access_token")).remove(Cookie::from("refresh_token"));
+
+    let mut access_cookie = Cookie::build(("access_token", "")).path("/").http_only(true).build();
+    access_cookie.make_removal();
+
+    let mut refresh_cookie = Cookie::build(("refresh_token", "")).path("/").http_only(true).build();
+    refresh_cookie.make_removal();
+
+    let jar = jar.add(access_cookie).add(refresh_cookie);
     Ok((jar, Json(serde_json::json!({"status": "logged_out"}))))
 }
 
@@ -224,7 +318,6 @@ pub async fn github_callback(
         Redirect::temporary(&url)
     };
 
-    // Validate state cookie
     let stored_state = match jar.get("oauth_state").map(|c| c.value().to_string()) {
         Some(s) => s,
         None => return (jar, error_redirect("Missing OAuth state cookie")),
@@ -237,7 +330,6 @@ pub async fn github_callback(
     let base_url = state.settings().backend_base_url.trim_end_matches('/');
     let redirect_uri = format!("{}/api/v1/auth/github/callback", base_url);
 
-    // Exchange code for access token
     let client = reqwest::Client::new();
     let token_res = client.post("https://github.com/login/oauth/access_token")
         .header("Accept", "application/json")
@@ -265,7 +357,6 @@ pub async fn github_callback(
         Err(e) => return (jar, error_redirect(&format!("GitHub token parse error: {e}. Body: {token_body}"))),
     };
 
-    // Fetch GitHub user profile
     let user_res = client.get("https://api.github.com/user")
         .header("User-Agent", "Fire-Crow-Backend")
         .header("Accept", "application/vnd.github.v3+json")
@@ -289,7 +380,6 @@ pub async fn github_callback(
 
     let github_id_str = gh_user.id.to_string();
 
-    // Find or create user in DB
     let db_user_opt = sqlx::query_as::<_, crate::models::User>(
         "SELECT * FROM users WHERE github_id = $1")
         .bind(&github_id_str)
@@ -303,7 +393,6 @@ pub async fn github_callback(
         }
     };
 
-    // Try email lookup if not found by github_id
     if db_user.is_none() {
         if let Some(email) = &gh_user.email {
             db_user = match sqlx::query_as::<_, crate::models::User>(
@@ -347,7 +436,6 @@ pub async fn github_callback(
         }
     };
 
-    // Create JWT + exchange code
     let access_token_str = match crate::services::auth::create_access_token(
         &user.id, &user.username, &state.settings().secret_key,
         state.settings().jwt_access_token_expire_minutes) {

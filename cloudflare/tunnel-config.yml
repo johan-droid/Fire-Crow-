@@ -1,0 +1,22 @@
+# Cloudflare Tunnel (cloudflared) Production Configuration for Fire Crow
+# Connects Fire Crow Services securely to Cloudflare Edge without opening public ports.
+
+tunnel: FIRE_CROW_TUNNEL_ID
+credentials-file: /etc/cloudflared/FIRE_CROW_TUNNEL_ID.json
+
+ingress:
+  # Route API requests to Axum Backend
+  - hostname: api.firecrow.dev
+    service: http://backend:8000
+    originRequest:
+      connectTimeout: 30s
+      noTLSVerify: true
+
+  # Route Frontend Web Console to Frontend container or static server
+  - hostname: app.firecrow.dev
+    service: http://frontend:80
+    originRequest:
+      connectTimeout: 10s
+
+  # Fallback catch-all rule (404)
+  - service: http_status:404
