@@ -1,0 +1,16 @@
+pub mod routes_auth;
+pub mod routes_audit;
+pub mod routes_sse;
+pub mod routes_system;
+pub mod routes_storage;
+pub mod routes_chat;
+pub mod routes_leaderboard;
+pub mod routes_push;
+pub mod routes_user;
+pub mod routes_mfa;
+pub mod routes_sso;
+pub mod routes_pam;
+pub mod routes_iam;
+pub mod routes_tenant;
+pub mod routes_verify;
+pub mod routes_health;

@@ -1,0 +1,71 @@
+[package]
+name = "firecrow-backend"
+version = "1.0.0"
+edition = "2021"
+authors = ["Fire Crow"]
+description = "Agentic Security Intelligence Platform Backend — Rust rewrite"
+license = "MIT"
+
+[dependencies]
+tokio = { version = "1.43", features = ["full"] }
+axum = { version = "0.7", features = ["macros", "json", "ws"] }
+axum-extra = { version = "0.9", features = ["typed-header", "cookie"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_with = { version = "3.11", features = ["chrono_0_4", "json"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "sqlite", "chrono", "uuid", "migrate"] }
+jsonwebtoken = "9.3"
+openssl = { version = "0.10", features = ["vendored"] }
+argon2 = "0.5"
+bcrypt = { version = "0.15", features = ["std"] }
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+rand = { version = "0.8", features = ["std", "std_rng"] }
+uuid = { version = "1.11", features = ["v4", "serde"] }
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "blocking"] }
+config = "0.14"
+dotenvy = "0.15"
+chrono = { version = "0.4", features = ["serde"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "limit", "fs", "set-header", "timeout", "catch-panic"] }
+tower_governor = "0.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+tracing-appender = "0.2"
+aws-sdk-s3 = "1.76"
+aws-config = "1.5"
+aws-credential-types = "1.2"
+lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "hostname", "builder"] }
+mime_guess = "2.0"
+regex = "1.11"
+thiserror = "2.0"
+anyhow = "1.0"
+pulldown-cmark = "0.10"
+prometheus_exporter = "0.2"
+url = "2.5"
+axum-prometheus = "0.7"
+otpauth = "0.5"
+governor = "0.8"
+futures = "0.3"
+flate2 = { version = "1.0", features = ["tokio"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+cipher = { version = "0.4", features = ["alloc"] }
+hex = "0.4"
+lazy_static = "1.4"
+prometheus-client = "0.22"
+
+[dev-dependencies]
+axum-test = "15.4"
+wiremock = "0.6"
+proptest = "1.5"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

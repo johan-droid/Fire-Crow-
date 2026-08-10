@@ -36,7 +36,7 @@ GITHUB_CLIENT_ID="your_copied_client_id"
 GITHUB_CLIENT_SECRET="your_copied_client_secret"
 
 # Redirect / callback routing configuration
-BACKEND_BASE_URL="http://localhost:8000" # Your FastAPI base URL
+BACKEND_BASE_URL="http://localhost:8000" # Your Axum/Rust backend base URL
 FRONTEND_URL="http://localhost:5173"     # Your Vite+React frontend URL
 ```
 
@@ -51,7 +51,7 @@ sequenceDiagram
     autonumber
     actor User as Operator (Browser)
     participant Front as Frontend (SPA)
-    participant Back as Backend (FastAPI)
+    participant Back as Backend (Axum / Rust)
     participant GH as GitHub OAuth
 
     User->>Front: Click "Sign in with GitHub"

@@ -18,8 +18,9 @@
       "description": "URL of the frontend (e.g. https://your-app.herokuapp.com)",
       "required": true
     },
-    "DATABASE_BACKEND": {
-      "value": "postgresql"
+    "DATABASE_URL": {
+      "description": "Neon PostgreSQL database connection string",
+      "required": true
     },
     "GITHUB_CLIENT_ID": {
       "description": "GitHub OAuth client ID",
@@ -49,7 +50,7 @@
       "url": "heroku/nodejs"
     },
     {
-      "url": "heroku/python"
+      "url": "emk/heroku-buildpack-rust"
     }
   ],
   "addons": [

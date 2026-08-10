@@ -6,32 +6,57 @@ Welcome to the Fire Crow API documentation. This reference guide outlines all av
 
 ## 🔒 Authentication & Headers
 
-Fire Crow enforces a **secure-by-default** authentication strategy. Secure operations require either an HTTP Bearer Token or the `fc_access_token` session cookie.
+Fire Crow enforces a **secure-by-default** authentication strategy. Secure operations require either an HTTP Bearer Token, an API Key, or the `access_token` session cookie.
 
 ### Headers Required for Authenticated Routes
 | Header | Value | Description |
 | :--- | :--- | :--- |
-| `Authorization` | `Bearer <JWT_ACCESS_TOKEN>` | Required when token auth is used instead of session cookies. |
+| `Authorization` | `Bearer <JWT_ACCESS_TOKEN>` | Required when JWT token authentication is used instead of session cookies. |
+| `X-API-Key` | `<SERVICE_ACCOUNT_API_KEY>` | Programmatic access key for CI/CD integrations & automated worker scripts. |
 | `X-Request-ID` | `<UUID>` | Optional trace ID. If omitted, the server generates and returns one in responses. |
 | `X-CSRF-Token` | `<CSRF_TOKEN>` | Required for state-changing operations (POST, PUT, DELETE) when `CSRF_ENABLED=true`. |
 
 ---
 
+## 🔑 API Keys, Service Accounts, & Environment Credentials Reference
+
+Fire Crow integrates multiple external providers and security credentials. All sensitive API keys must be specified via environment variables or managed via the IAM Service Account API.
+
+### Environment Variable & Provider Keys Table
+| Key Name | Type | Description | Mandatory |
+| :--- | :--- | :--- | :--- |
+| `SECRET_KEY` | String (min 32 chars) | HMAC secret key used for signing and verifying JWT access tokens. | **Yes** |
+| `ENCRYPTION_KEY` | String (min 32 chars) | AES encryption key used by `CryptoManager` for encrypting secrets in DB. | **Yes** |
+| `GITHUB_CLIENT_ID` | String | GitHub OAuth 2.0 Application Client ID. | **Yes (OAuth)** |
+| `GITHUB_CLIENT_SECRET` | String | GitHub OAuth 2.0 Application Client Secret. | **Yes (OAuth)** |
+| `GITHUB_TOKEN` | String (`ghp_...`) | Personal Access Token for GitHub repo scanning & agentic code analysis. | **Recommended** |
+| `GOOGLE_CLIENT_ID` | String | Google OpenID Connect (OIDC) Client ID. | Optional |
+| `GOOGLE_CLIENT_SECRET` | String | Google OpenID Connect (OIDC) Client Secret. | Optional |
+| `GEMINI_API_KEY` | String | Google Gemini Security LLM API Key for autonomous agent reasoning loops. | **Yes (AI Audits)** |
+| `RESEND_API_KEY` | String (`re_...`) | Resend API Key for sending transactional security notification emails. | Optional |
+| `R2_ACCESS_KEY_ID` | String | Cloudflare R2 / S3 Storage Access Key ID for PDF audit reports. | Optional |
+| `R2_SECRET_ACCESS_KEY` | String | Cloudflare R2 / S3 Storage Secret Access Key. | Optional |
+| `DATABASE_URL` | String | PostgreSQL / Neon PostgreSQL connection string with SSL mode. | **Yes** |
+| `REDIS_URL` | String | Redis connection URL for token anti-replay revocation & rate limiting. | Optional |
+
+---
+
 ## 📂 Table of Contents
 1. [Authentication & Session Management](#1-authentication--session-management)
-2. [Multi-Factor Authentication (MFA)](#2-multi-factor-authentication-mfa)
-3. [Single Sign-On (SSO) & OIDC/SAML](#3-single-sign-on-sso--oidcsaml)
-4. [Privileged Access Management (PAM)](#4-privileged-access-management-pam)
-5. [Identity & Access Management (IAM)](#5-identity--access-management-iam)
-6. [Multi-Tenancy](#6-multi-tenancy)
-7. [Domain Verification](#7-domain-verification)
-8. [Security Auditing & SSE Logging](#8-security-auditing--sse-logging)
-9. [Storage & Artifact Management](#9-storage--artifact-management)
-10. [Security Assistant (Chat)](#10-security-assistant-chat)
-11. [Leaderboard & Statistics](#11-leaderboard--statistics)
-12. [Push Notifications](#12-push-notifications)
-13. [User Management & GDPR Compliance](#13-user-management--gdpr-compliance)
-14. [Health & Diagnostics](#14-health--diagnostics)
+2. [API Keys & Service Accounts (IAM)](#2-api-keys--service-accounts-iam)
+3. [Multi-Factor Authentication (MFA)](#3-multi-factor-authentication-mfa)
+4. [Single Sign-On (SSO) & OIDC/SAML](#4-single-sign-on-sso--oidcsaml)
+5. [Privileged Access Management (PAM)](#5-privileged-access-management-pam)
+6. [Identity & Access Management (IAM)](#6-identity--access-management-iam)
+7. [Multi-Tenancy](#7-multi-tenancy)
+8. [Domain Verification](#8-domain-verification)
+9. [Security Auditing & SSE Logging](#9-security-auditing--sse-logging)
+10. [Storage & Artifact Management](#10-storage--artifact-management)
+11. [Security Assistant (Chat)](#11-security-assistant-chat)
+12. [Leaderboard & Statistics](#12-leaderboard--statistics)
+13. [Push Notifications](#13-push-notifications)
+14. [User Management & GDPR Compliance](#14-user-management--gdpr-compliance)
+15. [Health & Diagnostics](#15-health--diagnostics)
 
 ---
 
@@ -129,7 +154,51 @@ Clears HTTP-only cookies and revokes sessions.
 
 ---
 
-## 2. Multi-Factor Authentication (MFA)
+## 2. API Keys & Service Accounts (IAM)
+
+All IAM service account routes are prefixed with `/api/v1/iam`.
+
+### `POST /iam/service-accounts`
+Creates a new programmatic API key / service account for CI/CD pipelines or background automated scripts.
+- **Requires Authentication** (Admin / Operator)
+- **Request Body:**
+```json
+{
+  "name": "GitHub Actions CI Pipeline",
+  "description": "API key for automated static security analysis in PR workflows",
+  "permissions": "audit:create,audit:read,report:read",
+  "expires_at": "2027-01-01T00:00:00Z"
+}
+```
+- **Response:**
+```json
+{
+  "id": "sa_8f9a2b1c",
+  "name": "GitHub Actions CI Pipeline",
+  "api_key": "fc_sa_live_9f0a8c7b6a5d4e3f2a1b0c9d8e7f6a5b",
+  "permissions": "audit:create,audit:read,report:read",
+  "created_by": "usr_9f0a28b6",
+  "is_active": true,
+  "created_at": "2026-08-10T21:45:00Z"
+}
+```
+> [!IMPORTANT]
+> The raw API key (`fc_sa_live_...`) is only returned ONCE upon creation. Store it securely in your deployment pipeline secret store.
+
+### `POST /iam/service-accounts/:id/revoke`
+Immediately revokes an active API key / service account.
+- **Requires Authentication**
+- **Response:**
+```json
+{
+  "status": "revoked",
+  "id": "sa_8f9a2b1c"
+}
+```
+
+---
+
+## 3. Multi-Factor Authentication (MFA)
 
 All MFA routes are prefixed with `/api/v1/mfa`.
 
