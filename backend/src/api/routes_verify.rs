@@ -34,7 +34,7 @@ pub async fn initiate_domain(
 
 pub async fn check_domain(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    user: crate::middleware::auth::AuthenticatedUser,
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<DomainVerification>> {

@@ -9,10 +9,6 @@ use crate::utils::generate_uuid;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 
-pub mod runtime;
-pub mod scan_plan;
-pub use runtime::*;
-pub use scan_plan::*;
 
 pub async fn execute_audit_job(
     pool: &PgPool, job_id: &str, user_id: &str, repo_url: &str, repo_branch: &str,
@@ -26,6 +22,8 @@ pub async fn execute_audit_job(
 
     tracing::info!("[orchestrator] Starting job {} for repo {}", job_id, repo_url);
 
+    let mut job_cancelled = false;
+
     // Phase 1: Intake
     let started = Utc::now();
     log_phase_started(pool, job_id, "intake").await?;
@@ -37,97 +35,131 @@ pub async fn execute_audit_job(
     let started = Utc::now();
     log_phase_started(pool, job_id, "recon").await?;
     state.current_phase = "recon".into();
-    if let Err(e) = run_recon(&mut state).await { log_phase_completed(pool, job_id, "recon", "failed", started, Some(e.to_string())).await?; record_error(&mut state, "recon", &e.to_string()); }
-    else { log_phase_completed(pool, job_id, "recon", "completed", started, None).await?; }
-
-    // Phase 3: SBOM
-    let started = Utc::now();
-    log_phase_started(pool, job_id, "sbom").await?;
-    let _ = run_dependency_scan(&mut state).await;
-    log_phase_completed(pool, job_id, "sbom", "completed", started, None).await?;
-
-    // Phase 4: API Surface
-    let started = Utc::now();
-    log_phase_started(pool, job_id, "api_surface").await?;
-    let _ = api_surface_body(&mut state).await;
-    log_phase_completed(pool, job_id, "api_surface", "completed", started, None).await?;
-
-    // Phase 5: Scanning
-    let started = Utc::now();
-    log_phase_started(pool, job_id, "scanning").await?;
-    let _ = run_sast(&mut state).await;
-    let _ = run_semgrep_scan(&mut state).await;
-    let _ = run_secret_history(&mut state).await;
-    let _ = run_iac_scan(&mut state).await;
-    let _ = run_container_scan(&mut state).await;
-    let _ = run_cicd_scan(&mut state).await;
-    let _ = run_config_scan(&mut state).await;
-    let _ = run_network_scan(&mut state).await;
-    let _ = run_authz_idor_scan(&mut state).await;
-    let _ = run_exploit_validation(&mut state).await;
-    let _ = generate_threat_model(&mut state).await;
-    log_phase_completed(pool, job_id, "scanning", "completed", started, None).await?;
-
-    // Phase 6: AI Analysis
-    let started = Utc::now();
-    log_phase_started(pool, job_id, "ai_analysis").await?;
-    state.scored_findings = state.dynamic_findings.clone();
-    let _ = run_ai_analyzer(&mut state).await;
-    let _ = cross_validate_findings(&mut state).await;
-    log_phase_completed(pool, job_id, "ai_analysis", "completed", started, None).await?;
-
-    // Phase 7: Remediation
-    let started = Utc::now();
-    log_phase_started(pool, job_id, "remediation").await?;
-    state.remediation_tasks = crate::services::remediation_planner::remediation_planner_body(&state.validated_findings);
-    log_phase_completed(pool, job_id, "remediation", "completed", started, None).await?;
-
-    // Phase 8: Attack Graph
-    let started = Utc::now();
-    log_phase_started(pool, job_id, "attack_graph").await?;
-    let attack_graph_val = crate::services::attack_graph::attack_graph_body(&state.validated_findings);
-    if let (Some(nodes), Some(edges)) = (attack_graph_val.get("nodes").and_then(|v| v.as_array()), attack_graph_val.get("edges").and_then(|v| v.as_array())) {
-        let _ = crate::graph::GraphStore::store_attack_graph(pool, job_id, nodes, edges).await;
+    if is_cancelled(pool, job_id).await? { job_cancelled = true; }
+    if !job_cancelled {
+        if let Err(e) = run_recon(&mut state).await {
+            log_phase_completed(pool, job_id, "recon", "failed", started, Some(e.to_string())).await?;
+            record_error(&mut state, "recon", &e.to_string());
+            job_cancelled = true;
+        } else {
+            log_phase_completed(pool, job_id, "recon", "completed", started, None).await?;
+        }
     }
-    state.attack_graph = attack_graph_val;
-    log_phase_completed(pool, job_id, "attack_graph", "completed", started, None).await?;
 
-    // Phase 9: Scoring
-    let started = Utc::now();
-    log_phase_started(pool, job_id, "scoring").await?;
-    compute_security_score(&mut state);
-    log_phase_completed(pool, job_id, "scoring", "completed", started, None).await?;
+    if !job_cancelled {
+        // Phase 2b: Static Analysis
+        let started = Utc::now();
+        log_phase_started(pool, job_id, "scanning").await?;
+        if is_cancelled(pool, job_id).await? { job_cancelled = true; }
+        if !job_cancelled {
+            let _ = run_sast(&mut state).await;
+            log_phase_completed(pool, job_id, "scanning", "completed", started, None).await?;
+        }
+    }
 
-    // Phase 10: Reporting
-    let started = Utc::now();
-    log_phase_started(pool, job_id, "reporting").await?;
-    state.current_phase = "reporting".into();
-    let markdown = ReportGenerator::generate_markdown(&get_job(pool, job_id).await?, &state.validated_findings, &state)?;
-    let report_id = generate_uuid();
-    sqlx::query("INSERT INTO audit_reports (id, job_id, markdown_content, created_at) VALUES ($1,$2,$3,$4)")
-        .bind(&report_id).bind(job_id).bind(&markdown).bind(Utc::now().naive_utc()).execute(pool).await.map_err(AppError::Database)?;
-    sqlx::query("UPDATE audit_jobs SET report_id=$1 WHERE id=$2").bind(&report_id).bind(job_id).execute(pool).await.map_err(AppError::Database)?;
-    log_phase_completed(pool, job_id, "reporting", "completed", started, None).await?;
+    if !job_cancelled {
+        // Phase 3: AI Analysis
+        let started = Utc::now();
+        log_phase_started(pool, job_id, "ai_analysis").await?;
+        if is_cancelled(pool, job_id).await? { job_cancelled = true; }
+        if !job_cancelled {
+            state.scored_findings = state.dynamic_findings.clone();
+            let _ = run_ai_analyzer(&mut state).await;
+            let _ = cross_validate_findings(&mut state).await;
+            log_phase_completed(pool, job_id, "ai_analysis", "completed", started, None).await?;
+        }
+    }
 
-    // Phase 11: Integrations
-    let _ = run_github_mcp(&mut state).await;
-    let _ = run_google_agent(&mut state).await;
+    if !job_cancelled {
+        // Phase 4: Remediation
+        let started = Utc::now();
+        log_phase_started(pool, job_id, "remediation").await?;
+        if is_cancelled(pool, job_id).await? { job_cancelled = true; }
+        if !job_cancelled {
+            state.remediation_tasks = crate::services::remediation_planner::remediation_planner_body(&state.validated_findings);
+            log_phase_completed(pool, job_id, "remediation", "completed", started, None).await?;
+        }
+    }
+
+    if !job_cancelled {
+        // Phase 5: Attack Graph
+        let started = Utc::now();
+        log_phase_started(pool, job_id, "attack_graph").await?;
+        if is_cancelled(pool, job_id).await? { job_cancelled = true; }
+        if !job_cancelled {
+            let attack_graph_val = crate::services::attack_graph::attack_graph_body(&state.validated_findings);
+            if let (Some(nodes), Some(edges)) = (attack_graph_val.get("nodes").and_then(|v| v.as_array()), attack_graph_val.get("edges").and_then(|v| v.as_array())) {
+                let _ = crate::graph::GraphStore::store_attack_graph(pool, job_id, nodes, edges).await;
+            }
+            state.attack_graph = attack_graph_val;
+            log_phase_completed(pool, job_id, "attack_graph", "completed", started, None).await?;
+        }
+    }
+
+    if !job_cancelled {
+        // Phase 6: Scoring
+        let started = Utc::now();
+        log_phase_started(pool, job_id, "scoring").await?;
+        if is_cancelled(pool, job_id).await? { job_cancelled = true; }
+        if !job_cancelled {
+            compute_security_score(&mut state);
+            log_phase_completed(pool, job_id, "scoring", "completed", started, None).await?;
+        }
+    }
+
+    if !job_cancelled {
+        // Phase 7: Reporting
+        let started = Utc::now();
+        log_phase_started(pool, job_id, "reporting").await?;
+        state.current_phase = "reporting".into();
+        if is_cancelled(pool, job_id).await? { job_cancelled = true; }
+        if !job_cancelled {
+            let markdown = ReportGenerator::generate_markdown(&get_job(pool, job_id).await?, &state.validated_findings, &state)?;
+            let report_id = generate_uuid();
+            sqlx::query("INSERT INTO audit_reports (id, job_id, markdown_content, created_at) VALUES ($1,$2,$3,$4)")
+                .bind(&report_id).bind(job_id).bind(&markdown).bind(Utc::now().naive_utc()).execute(pool).await.map_err(AppError::Database)?;
+            sqlx::query("UPDATE audit_jobs SET report_id=$1 WHERE id=$2").bind(&report_id).bind(job_id).execute(pool).await.map_err(AppError::Database)?;
+            log_phase_completed(pool, job_id, "reporting", "completed", started, None).await?;
+        }
+    }
 
     // Finalize
-    state.status = crate::models::JobStatus::Completed;
-    state.report_delivered = true;
-    state.current_phase = "complete".into();
-    sqlx::query("UPDATE audit_jobs SET status=$1, finished_at=$2, security_score=$3 WHERE id=$4")
-        .bind(crate::models::JobStatus::Completed)
-        .bind(Utc::now().naive_utc())
-        .bind(state.security_score.unwrap_or(0.0))
-        .bind(job_id)
-        .execute(pool)
-        .await
-        .map_err(AppError::Database)?;
+    if job_cancelled {
+        state.status = crate::models::JobStatus::Cancelled;
+        state.current_phase = "cancelled".into();
+        sqlx::query("UPDATE audit_jobs SET status=$1, finished_at=$2, error_message=$3 WHERE id=$4")
+            .bind(crate::models::JobStatus::Cancelled)
+            .bind(Utc::now().naive_utc())
+            .bind("Job cancelled by user or system")
+            .bind(job_id)
+            .execute(pool)
+            .await
+            .map_err(AppError::Database)?;
+    } else {
+        state.status = crate::models::JobStatus::Completed;
+        state.report_delivered = true;
+        state.current_phase = "complete".into();
+        sqlx::query("UPDATE audit_jobs SET status=$1, finished_at=$2, security_score=$3 WHERE id=$4")
+            .bind(crate::models::JobStatus::Completed)
+            .bind(Utc::now().naive_utc())
+            .bind(state.security_score.unwrap_or(0.0))
+            .bind(job_id)
+            .execute(pool)
+            .await
+            .map_err(AppError::Database)?;
+    }
 
     tracing::info!("[orchestrator] Job {} completed with score {:?}", job_id, state.security_score);
     Ok(state)
+}
+
+async fn is_cancelled(pool: &PgPool, job_id: &str) -> Result<bool> {
+    let row = sqlx::query_as::<_, (bool,)>("SELECT cancel_requested FROM audit_jobs WHERE id=$1")
+        .bind(job_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(AppError::Database)?;
+    Ok(row.map(|(cancelled,)| cancelled).unwrap_or(false))
 }
 
 fn compute_security_score(state: &mut AuditState) {

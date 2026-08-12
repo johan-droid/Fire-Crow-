@@ -7,15 +7,35 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
+    // Allowed origin is REQUIRED. We never fall back to "*", which would allow
+    // any site to issue credentialed cross-origin requests (HIGH-05 / CWE-942).
+    const allowedOrigin = env.ALLOWED_ORIGIN;
+    if (!allowedOrigin) {
+      return new Response(
+        JSON.stringify({ detail: "Edge Gateway misconfigured: ALLOWED_ORIGIN is not set" }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // Reject requests from a disallowed Origin outright.
+    const requestOrigin = request.headers.get("Origin");
+    if (requestOrigin && requestOrigin !== allowedOrigin && !allowedOrigin.split(",").map(o => o.trim()).includes(requestOrigin)) {
+      return new Response(
+        JSON.stringify({ detail: "Origin not allowed" }),
+        { status: 403, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
     // 1. Handle CORS Preflight Requests at Cloudflare Edge
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
         headers: {
-          "Access-Control-Allow-Origin": env.ALLOWED_ORIGIN || "*",
+          "Access-Control-Allow-Origin": allowedOrigin,
           "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
           "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, X-CSRF-Token",
           "Access-Control-Max-Age": "86400",
+          "Vary": "Origin",
         },
       });
     }
@@ -47,11 +67,15 @@ export default {
     try {
       const response = await fetch(modifiedRequest);
       const responseHeaders = new Headers(response.headers);
-      
+
       // Inject security response headers
       responseHeaders.set("X-Content-Type-Options", "nosniff");
       responseHeaders.set("X-Frame-Options", "DENY");
       responseHeaders.set("X-Edge-Proxy", "Cloudflare-Worker-FireCrow");
+      if (requestOrigin) {
+        responseHeaders.set("Access-Control-Allow-Origin", allowedOrigin);
+        responseHeaders.set("Vary", "Origin");
+      }
 
       return new Response(response.body, {
         status: response.status,

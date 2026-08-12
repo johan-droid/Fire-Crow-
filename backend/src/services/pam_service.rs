@@ -24,6 +24,10 @@ impl PamService {
             .bind(request_id)
             .fetch_optional(pool).await.map_err(AppError::Database)?.ok_or_else(|| AppError::NotFound("Request not found".into()))?;
         if request.status != "pending" { return Err(AppError::BadRequest("Request is not pending".into())); }
+        // HIGH-06: a user must never be able to approve their own privilege request.
+        if request.user_id == approver_id {
+            return Err(AppError::Forbidden("You cannot approve your own privilege request".into()));
+        }
         let now = Utc::now().naive_utc();
         let ends_at = now + chrono::Duration::minutes(duration_minutes as i64);
         sqlx::query("UPDATE pam_requests SET status='approved', approver_id=$1, started_at=$2, ends_at=$3 WHERE id=$4")

@@ -52,9 +52,12 @@ futures = "0.3"
 flate2 = { version = "1.0", features = ["tokio"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 aes = "0.8"
+aes-gcm = "0.10"
 cbc = { version = "0.1", features = ["alloc"] }
 cipher = { version = "0.4", features = ["alloc"] }
+hkdf = "0.12"
 hex = "0.4"
+percent-encoding = "2.3"
 lazy_static = "1.4"
 prometheus-client = "0.22"
 

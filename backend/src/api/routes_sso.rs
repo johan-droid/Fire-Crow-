@@ -19,7 +19,7 @@ pub async fn list_providers(
 
 pub async fn create_provider(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    _admin: crate::middleware::auth::AdminUser,
     Json(mut provider): Json<SsoProvider>,
 ) -> Result<Json<SsoProvider>> {
     if provider.id.is_empty() {
@@ -41,7 +41,7 @@ pub async fn get_provider(
 
 pub async fn update_provider(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    _admin: crate::middleware::auth::AdminUser,
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<SsoProvider>> {
@@ -70,7 +70,7 @@ pub async fn update_provider(
 
 pub async fn delete_provider(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    _admin: crate::middleware::auth::AdminUser,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
     let deleted = SsoService::delete_provider(state.pool(), &id).await?;

@@ -33,12 +33,12 @@ pub async fn create_request(
 
 pub async fn approve_request(
     State(state): State<Arc<crate::AppState>>,
-    user: crate::middleware::auth::AuthenticatedUser,
+    user: crate::middleware::auth::AdminUser,
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<PrivilegedAccessGrant>> {
     let duration_minutes = payload.get("duration_minutes").and_then(|v| v.as_i64()).unwrap_or(60) as i32;
-    PamService::approve_request(state.pool(), &id, &user.user_id, duration_minutes).await.map(Json)
+    PamService::approve_request(state.pool(), &id, &user.0.user_id, duration_minutes).await.map(Json)
 }
 
 pub async fn list_grants(
@@ -50,10 +50,10 @@ pub async fn list_grants(
 
 pub async fn revoke_grant(
     State(state): State<Arc<crate::AppState>>,
-    user: crate::middleware::auth::AuthenticatedUser,
+    user: crate::middleware::auth::AdminUser,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
-    PamService::revoke_grant(state.pool(), &id, &user.user_id).await?;
+    PamService::revoke_grant(state.pool(), &id, &user.0.user_id).await?;
     Ok(Json(serde_json::json!({"status": "revoked", "id": id})))
 }
 

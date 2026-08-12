@@ -1,43 +1,20 @@
-pub mod recon;
-pub mod sast;
-pub mod dependency_scan;
-pub mod iac_scan;
-pub mod sast_semgrep;
-pub mod secret_history;
-pub mod cicd_scan;
-pub mod container_scan;
-pub mod network;
-pub mod exploit;
-pub mod authz_idor;
-pub mod api_surface;
-pub mod sbom_graph;
-pub mod config_scan;
-pub mod threat_model;
 pub mod ai_analyzer;
-pub mod cross_validation;
-pub mod github_mcp;
-pub mod google_agent;
-pub mod verification_runner;
-pub mod attack;
+pub mod sast;
 
-pub use recon::*;
-pub use sast::*;
-pub use dependency_scan::*;
-pub use iac_scan::*;
-pub use sast_semgrep::*;
-pub use secret_history::*;
-pub use cicd_scan::*;
-pub use container_scan::*;
-pub use network::*;
-pub use exploit::*;
-pub use authz_idor::*;
-pub use api_surface::*;
-pub use sbom_graph::*;
-pub use config_scan::*;
-pub use threat_model::*;
 pub use ai_analyzer::*;
-pub use cross_validation::*;
-pub use github_mcp::*;
-pub use google_agent::*;
-pub use verification_runner::*;
-pub use attack::*;
+pub use sast::*;
+
+use crate::error::Result;
+use crate::schemas::audit_state::AuditState;
+
+/// Recon phase: currently a stub. Restore git-backed agent implementations
+/// (src/agents/recon.rs) to re-enable repository reconnaissance.
+pub async fn run_recon(_state: &mut AuditState) -> Result<()> {
+    Ok(())
+}
+
+/// Cross-validation phase: currently a stub. Restore the git-backed
+/// `cross_validation` agent to re-enable finding deduplication.
+pub async fn cross_validate_findings(_state: &mut AuditState) -> Result<()> {
+    Ok(())
+}

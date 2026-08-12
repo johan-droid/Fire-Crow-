@@ -1,7 +1,16 @@
 use crate::error::Result;
 use crate::models::AuditJob;
 use crate::schemas::audit_state::Finding;
-use crate::utils::sanitize_html_entities;
+
+fn sanitize_html_entities(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
+        .replace('/', "&#x2F;")
+}
 
 pub struct ReportGenerator;
 

@@ -7,6 +7,10 @@ impl TenantService {
     pub async fn list(pool: &sqlx::PgPool) -> Result<Vec<Tenant>> {
         sqlx::query_as::<_, Tenant>("SELECT * FROM tenants ORDER BY created_at DESC").fetch_all(pool).await.map_err(AppError::Database)
     }
+    pub async fn list_for_tenant(pool: &sqlx::PgPool, tenant_id: &str) -> Result<Vec<Tenant>> {
+        sqlx::query_as::<_, Tenant>("SELECT * FROM tenants WHERE id = $1 ORDER BY created_at DESC")
+            .bind(tenant_id).fetch_all(pool).await.map_err(AppError::Database)
+    }
     pub async fn create(pool: &sqlx::PgPool, tenant: Tenant) -> Result<Tenant> {
         sqlx::query_as::<_, Tenant>(
             "INSERT INTO tenants (id, name, slug, domain, plan, max_users, max_storage_gb, is_active, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *"

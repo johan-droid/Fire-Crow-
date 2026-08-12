@@ -20,9 +20,10 @@ pub async fn submit_audit(
     Json(req): Json<SubmitJobRequest>,
 ) -> Result<Json<JobResponse>> {
     let job_id = uuid::Uuid::new_v4().to_string();
-    sqlx::query("INSERT INTO audit_jobs (id, user_id, repo_url, repo_branch, status, created_at) VALUES ($1,$2,$3,$4,$5,$6)")
+    sqlx::query("INSERT INTO audit_jobs (id, user_id, tenant_id, repo_url, repo_branch, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)")
         .bind(&job_id)
         .bind(&user.user_id)
+        .bind(&user.tenant_id)
         .bind(&req.repo_url)
         .bind(req.repo_branch.as_deref().unwrap_or("main"))
         .bind(crate::models::JobStatus::Queued)
@@ -42,28 +43,43 @@ pub async fn submit_audit(
     Ok(Json(JobResponse::from(job)))
 }
 
-pub async fn list_jobs(State(state): State<Arc<crate::AppState>>) -> Result<Json<Vec<JobResponse>>> {
-    let jobs: Vec<crate::models::AuditJob> = sqlx::query_as::<_, crate::models::AuditJob>("SELECT * FROM audit_jobs ORDER BY created_at DESC").fetch_all(state.pool()).await.map_err(AppError::Database)?;
+pub async fn list_jobs(State(state): State<Arc<crate::AppState>>, user: crate::middleware::auth::AuthenticatedUser) -> Result<Json<Vec<JobResponse>>> {
+    let jobs: Vec<crate::models::AuditJob> = sqlx::query_as::<_, crate::models::AuditJob>("SELECT * FROM audit_jobs WHERE user_id=$1 ORDER BY created_at DESC")
+        .bind(&user.user_id)
+        .fetch_all(state.pool()).await.map_err(AppError::Database)?;
     Ok(Json(jobs.into_iter().map(JobResponse::from).collect()))
 }
 
-pub async fn get_job_detail(State(state): State<Arc<crate::AppState>>, Path(job_id): Path<String>) -> Result<Json<JobDetailResponse>> {
-    let job: crate::models::AuditJob = sqlx::query_as::<_, crate::models::AuditJob>("SELECT * FROM audit_jobs WHERE id=$1").bind(&job_id).fetch_optional(state.pool()).await.map_err(AppError::Database)?.ok_or_else(|| AppError::NotFound("Job not found".into()))?;
-    let findings: Vec<crate::models::FindingModel> = sqlx::query_as::<_, crate::models::FindingModel>("SELECT * FROM findings WHERE job_id=$1").bind(&job_id).fetch_all(state.pool()).await.map_err(AppError::Database)?;
+pub async fn get_job_detail(State(state): State<Arc<crate::AppState>>, Path(job_id): Path<String>, user: crate::middleware::auth::AuthenticatedUser) -> Result<Json<JobDetailResponse>> {
+    let job: crate::models::AuditJob = sqlx::query_as::<_, crate::models::AuditJob>("SELECT * FROM audit_jobs WHERE id=$1 AND user_id=$2")
+        .bind(&job_id)
+        .bind(&user.user_id)
+        .fetch_optional(state.pool()).await.map_err(AppError::Database)?.ok_or_else(|| AppError::NotFound("Job not found".into()))?;
+    let findings: Vec<crate::models::FindingModel> = sqlx::query_as::<_, crate::models::FindingModel>("SELECT * FROM findings WHERE job_id=$1 AND user_id=$2")
+        .bind(&job_id)
+        .bind(&user.user_id)
+        .fetch_all(state.pool()).await.map_err(AppError::Database)?;
     Ok(Json(JobDetailResponse { job: JobResponse::from(job), findings: findings.into_iter().map(FindingResponse::from).collect() }))
 }
 
-pub async fn cancel_job(State(state): State<Arc<crate::AppState>>, Path(job_id): Path<String>) -> Result<Json<serde_json::Value>> {
-    sqlx::query("UPDATE audit_jobs SET cancel_requested=true, cancel_requested_at=$1, status=$2 WHERE id=$3")
+pub async fn cancel_job(State(state): State<Arc<crate::AppState>>, Path(job_id): Path<String>, user: crate::middleware::auth::AuthenticatedUser) -> Result<Json<serde_json::Value>> {
+    let result = sqlx::query("UPDATE audit_jobs SET cancel_requested=true, cancel_requested_at=$1, status=$2 WHERE id=$3 AND user_id=$4")
         .bind(chrono::Utc::now().naive_utc())
         .bind(crate::models::JobStatus::Cancelled)
-        .bind(job_id)
+        .bind(&job_id)
+        .bind(&user.user_id)
         .execute(state.pool()).await.map_err(AppError::Database)?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound("Job not found or access denied".into()));
+    }
     Ok(Json(serde_json::json!({"status": "cancellation_requested"})))
 }
 
-pub async fn download_report(State(state): State<Arc<crate::AppState>>, Path(job_id): Path<String>) -> Result<axum::response::Response> {
-    let report: Option<crate::models::AuditReport> = sqlx::query_as::<_, crate::models::AuditReport>("SELECT * FROM audit_reports WHERE job_id=$1").bind(job_id).fetch_optional(state.pool()).await.map_err(AppError::Database)?;
+pub async fn download_report(State(state): State<Arc<crate::AppState>>, Path(job_id): Path<String>, user: crate::middleware::auth::AuthenticatedUser) -> Result<axum::response::Response> {
+    let report: Option<crate::models::AuditReport> = sqlx::query_as::<_, crate::models::AuditReport>("SELECT * FROM audit_reports WHERE job_id=$1 AND user_id=$2")
+        .bind(&job_id)
+        .bind(&user.user_id)
+        .fetch_optional(state.pool()).await.map_err(AppError::Database)?;
     let report = report.ok_or_else(|| AppError::NotFound("Report not found".into()))?;
     let markdown = report.markdown_content.unwrap_or_default();
     Ok(axum::response::Response::builder().status(200).header("Content-Type", "text/markdown").body(axum::body::Body::from(markdown)).unwrap())
@@ -75,15 +91,11 @@ pub async fn email_report(_state: State<Arc<crate::AppState>>, _job_id: Path<Str
 pub async fn get_job_insight(_state: State<Arc<crate::AppState>>, _job_id: Path<String>) -> Result<Json<serde_json::Value>> {
     Ok(Json(serde_json::json!({"insights": []})))
 }
-pub async fn get_attack_graph(State(state): State<Arc<crate::AppState>>, Path(job_id): Path<String>) -> Result<Json<serde_json::Value>> {
-    if let Ok(graph) = crate::graph::GraphStore::fetch_attack_graph(state.pool(), &job_id).await {
-        if let Some(nodes) = graph.get("nodes").and_then(|v| v.as_array()) {
-            if !nodes.is_empty() {
-                return Ok(Json(graph));
-            }
-        }
-    }
-    let findings: Vec<crate::models::FindingModel> = sqlx::query_as::<_, crate::models::FindingModel>("SELECT * FROM findings WHERE job_id=$1").bind(&job_id).fetch_all(state.pool()).await.map_err(AppError::Database)?;
+pub async fn get_attack_graph(State(state): State<Arc<crate::AppState>>, Path(job_id): Path<String>, user: crate::middleware::auth::AuthenticatedUser) -> Result<Json<serde_json::Value>> {
+    let findings: Vec<crate::models::FindingModel> = sqlx::query_as::<_, crate::models::FindingModel>("SELECT * FROM findings WHERE job_id=$1 AND user_id=$2")
+        .bind(&job_id)
+        .bind(&user.user_id)
+        .fetch_all(state.pool()).await.map_err(AppError::Database)?;
     let model_findings: Vec<crate::schemas::audit_state::Finding> = findings.into_iter().map(|f| crate::schemas::audit_state::Finding {
         id: f.id, agent_source: f.agent_source, title: f.title, description: f.description, severity: f.severity,
         cvss_vector: f.cvss_vector, cvss_score: f.cvss_score, evidence: f.evidence, remediation: f.remediation,

@@ -1,5 +1,6 @@
 use axum::{Json, Router, extract::{State, Query}, http::StatusCode, routing::{get, post}, response::Redirect};
 use axum_extra::extract::cookie::{Cookie, CookieJar};
+use percent_encoding::utf8_percent_encode;
 use serde::Deserialize;
 use std::sync::Arc;
 use tracing::{error, info};
@@ -13,7 +14,6 @@ pub fn router() -> Router<Arc<crate::AppState>> {
         .route("/policy-events", post(create_policy_event))
         .route("/register", post(register))
         .route("/login", post(login))
-        .route("/demo", post(demo_login))
         .route("/logout", post(logout))
         .route("/me", get(get_me))
         .route("/session", get(get_session))
@@ -30,28 +30,33 @@ pub async fn exchange_token(
     Json(payload): Json<serde_json::Value>,
 ) -> Result<(CookieJar, Json<serde_json::Value>)> {
     let code = payload.get("code").and_then(|v| v.as_str()).ok_or_else(|| AppError::BadRequest("Missing code".into()))?;
-    let (user_id, username, _) = crate::services::auth::verify_and_consume_exchange_code(state.pool(), code).await?
+    let (user_id, username, _encrypted_access_token) = crate::services::auth::verify_and_consume_exchange_code(state.pool(), code, state.crypto()).await?
         .ok_or_else(|| AppError::BadRequest("Invalid or expired exchange code".into()))?;
+
+    let db_user: Option<crate::models::User> = sqlx::query_as("SELECT * FROM users WHERE id = $1")
+        .bind(&user_id).fetch_optional(state.pool()).await.map_err(AppError::Database)?;
+    let tenant_id = db_user.as_ref().and_then(|u| u.tenant_id.clone()).unwrap_or_default();
+
     let token_family = uuid::Uuid::new_v4().to_string();
-    let (access_token_str, _) = crate::services::auth::create_access_token(&user_id, &username, &state.settings().secret_key, state.settings().jwt_access_token_expire_minutes)?;
-    let (refresh_token_str, _) = crate::services::auth::create_refresh_token(&user_id, &username, &state.settings().secret_key, &token_family)?;
+    let (access_token_str, _) = crate::services::auth::create_access_token(&user_id, &username, &state.settings().secret_key, &tenant_id, state.settings().jwt_access_token_expire_minutes)?;
+    let (refresh_token_str, _) = crate::services::auth::create_refresh_token(&user_id, &username, &state.settings().secret_key, &tenant_id, &token_family)?;
 
     let access_cookie = Cookie::build(("access_token", access_token_str.clone()))
         .path("/")
         .http_only(true)
-        .same_site(axum_extra::extract::cookie::SameSite::Lax)
+        .secure(!state.settings().debug)
+    .same_site(axum_extra::extract::cookie::SameSite::Strict)
         .build();
 
     let refresh_cookie = Cookie::build(("refresh_token", refresh_token_str.clone()))
         .path("/")
         .http_only(true)
-        .same_site(axum_extra::extract::cookie::SameSite::Lax)
+        .secure(!state.settings().debug)
+    .same_site(axum_extra::extract::cookie::SameSite::Strict)
         .build();
 
     let jar = jar.add(access_cookie).add(refresh_cookie);
 
-    let db_user: Option<crate::models::User> = sqlx::query_as("SELECT * FROM users WHERE id = $1")
-        .bind(&user_id).fetch_optional(state.pool()).await.map_err(AppError::Database)?;
     let email = db_user.as_ref().and_then(|u| u.email.clone());
 
     Ok((jar, Json(serde_json::json!({
@@ -71,22 +76,38 @@ pub async fn refresh_token(
     let token = payload.get("refresh_token").and_then(|v| v.as_str())
         .or_else(|| jar.get("refresh_token").map(|c| c.value()))
         .unwrap_or("");
-    let claims = crate::services::auth::validate_token(token, &state.settings().secret_key)?;
+    // Use the anti-replay validator so an already-rotated/revoked refresh token
+    // is rejected (HIGH-02/HIGH-03).
+    let claims = crate::services::auth::validate_token_with_anti_replay(token, &state.settings().secret_key, state.redis(), state.pool()).await?;
     if claims.claims.token_type != crate::services::auth::TokenType::Refresh { return Err(AppError::InvalidToken); }
+
+    let ttl = state.settings().jwt_access_token_expire_minutes * 60;
+    let old_jti = claims.claims.jti.clone();
+    let old_family = claims.claims.token_family.clone();
+    if let Some(redis) = state.redis() {
+        let _ = crate::services::auth::revoke_token_jti(redis, &old_jti, ttl).await;
+        let _ = crate::services::auth::revoke_token_family(redis, &old_family, ttl).await;
+    } else {
+        let _ = crate::services::auth::revoke_token_in_db(state.pool(), &old_jti, &old_family, ttl).await;
+    }
+
     let new_family = uuid::Uuid::new_v4().to_string();
-    let (access_token_str, _) = crate::services::auth::create_access_token(&claims.claims.sub, &claims.claims.username, &state.settings().secret_key, state.settings().jwt_access_token_expire_minutes)?;
-    let (refresh_token_str, _) = crate::services::auth::create_refresh_token(&claims.claims.sub, &claims.claims.username, &state.settings().secret_key, &new_family)?;
+    let tenant_id = claims.claims.tenant_id.clone();
+    let (access_token_str, _) = crate::services::auth::create_access_token(&claims.claims.sub, &claims.claims.username, &state.settings().secret_key, &tenant_id, state.settings().jwt_access_token_expire_minutes)?;
+    let (refresh_token_str, _) = crate::services::auth::create_refresh_token(&claims.claims.sub, &claims.claims.username, &state.settings().secret_key, &tenant_id, &new_family)?;
 
     let access_cookie = Cookie::build(("access_token", access_token_str.clone()))
         .path("/")
         .http_only(true)
-        .same_site(axum_extra::extract::cookie::SameSite::Lax)
+        .secure(!state.settings().debug)
+    .same_site(axum_extra::extract::cookie::SameSite::Strict)
         .build();
 
     let refresh_cookie = Cookie::build(("refresh_token", refresh_token_str.clone()))
         .path("/")
         .http_only(true)
-        .same_site(axum_extra::extract::cookie::SameSite::Lax)
+        .secure(!state.settings().debug)
+    .same_site(axum_extra::extract::cookie::SameSite::Strict)
         .build();
 
     let jar = jar.add(access_cookie).add(refresh_cookie);
@@ -137,20 +158,23 @@ pub async fn login(
     }
     crate::services::auth::clear_login_failures(state.pool(), &lockout_key).await?;
     let token_family = uuid::Uuid::new_v4().to_string();
-    let (access_token_str, _) = crate::services::auth::create_access_token(&user.id, &user.username, &state.settings().secret_key, state.settings().jwt_access_token_expire_minutes)?;
-    let (refresh_token_str, _) = crate::services::auth::create_refresh_token(&user.id, &user.username, &state.settings().secret_key, &token_family)?;
+    let tenant_id = user.tenant_id.clone().unwrap_or_default();
+    let (access_token_str, _) = crate::services::auth::create_access_token(&user.id, &user.username, &state.settings().secret_key, &tenant_id, state.settings().jwt_access_token_expire_minutes)?;
+    let (refresh_token_str, _) = crate::services::auth::create_refresh_token(&user.id, &user.username, &state.settings().secret_key, &tenant_id, &token_family)?;
     sqlx::query("UPDATE users SET last_login_at=$1 WHERE id=$2").bind(chrono::Utc::now().naive_utc()).bind(&user.id).execute(state.pool()).await.ok();
 
     let access_cookie = Cookie::build(("access_token", access_token_str.clone()))
         .path("/")
         .http_only(true)
-        .same_site(axum_extra::extract::cookie::SameSite::Lax)
+        .secure(!state.settings().debug)
+    .same_site(axum_extra::extract::cookie::SameSite::Strict)
         .build();
 
     let refresh_cookie = Cookie::build(("refresh_token", refresh_token_str.clone()))
         .path("/")
         .http_only(true)
-        .same_site(axum_extra::extract::cookie::SameSite::Lax)
+        .secure(!state.settings().debug)
+    .same_site(axum_extra::extract::cookie::SameSite::Strict)
         .build();
 
     let jar = jar.add(access_cookie).add(refresh_cookie);
@@ -159,81 +183,10 @@ pub async fn login(
 }
 
 pub async fn demo_login(
-    State(state): State<Arc<crate::AppState>>,
+    State(_state): State<Arc<crate::AppState>>,
     jar: CookieJar,
 ) -> Result<(CookieJar, Json<serde_json::Value>)> {
-    let demo_username = "demo_operator";
-    let db_user_opt: Option<crate::models::User> = sqlx::query_as(
-        "SELECT * FROM users WHERE username = $1"
-    )
-    .bind(demo_username)
-    .fetch_optional(state.pool())
-    .await
-    .map_err(AppError::Database)?;
-
-    let user = if let Some(existing) = db_user_opt {
-        existing
-    } else {
-        let new_id = uuid::Uuid::new_v4().to_string();
-        let now = chrono::Utc::now().naive_utc();
-        let pwd_hash = crate::services::auth::hash_password("DemoPassword123!")?;
-        sqlx::query(
-            "INSERT INTO users (id, username, email, password_hash, is_active, credit_balance, created_at) VALUES ($1, $2, $3, $4, true, 100.0, $5)"
-        )
-        .bind(&new_id)
-        .bind(demo_username)
-        .bind("demo@firecrow.dev")
-        .bind(pwd_hash)
-        .bind(now)
-        .execute(state.pool())
-        .await
-        .map_err(AppError::Database)?;
-
-        sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = $1")
-            .bind(&new_id)
-            .fetch_one(state.pool())
-            .await
-            .map_err(AppError::Database)?
-    };
-
-    let token_family = uuid::Uuid::new_v4().to_string();
-    let (access_token_str, _) = crate::services::auth::create_access_token(
-        &user.id,
-        &user.username,
-        &state.settings().secret_key,
-        state.settings().jwt_access_token_expire_minutes,
-    )?;
-    let (refresh_token_str, _) = crate::services::auth::create_refresh_token(
-        &user.id,
-        &user.username,
-        &state.settings().secret_key,
-        &token_family,
-    )?;
-
-    let access_cookie = Cookie::build(("access_token", access_token_str.clone()))
-        .path("/")
-        .http_only(true)
-        .same_site(axum_extra::extract::cookie::SameSite::Lax)
-        .build();
-
-    let refresh_cookie = Cookie::build(("refresh_token", refresh_token_str))
-        .path("/")
-        .http_only(true)
-        .same_site(axum_extra::extract::cookie::SameSite::Lax)
-        .build();
-
-    let jar = jar.add(access_cookie).add(refresh_cookie);
-
-    Ok((
-        jar,
-        Json(serde_json::json!({
-            "access_token": access_token_str,
-            "token_type": "bearer",
-            "username": user.username,
-            "user_id": user.id,
-            "email": user.email
-        })),
-    ))
+    Err(AppError::Unauthorized("Demo endpoint disabled".into()))
 }
 
 pub async fn logout(
@@ -245,6 +198,8 @@ pub async fn logout(
     if let Some(redis) = state.redis() {
         let _ = crate::services::auth::revoke_token_jti(redis, &user.jti, ttl).await;
         let _ = crate::services::auth::revoke_token_family(redis, &user.token_family, ttl).await;
+    } else {
+        let _ = crate::services::auth::revoke_token_in_db(state.pool(), &user.jti, &user.token_family, ttl).await;
     }
 
     let mut access_cookie = Cookie::build(("access_token", "")).path("/").http_only(true).build();
@@ -294,6 +249,8 @@ pub async fn github_login(State(state): State<Arc<crate::AppState>>, jar: Cookie
     let cookie = Cookie::build(("oauth_state", oauth_state.clone()))
         .path("/")
         .http_only(true)
+        .secure(!state.settings().debug)
+    .same_site(axum_extra::extract::cookie::SameSite::Lax)
         .build();
         
     let base_url = state.settings().backend_base_url.trim_end_matches('/');
@@ -350,11 +307,9 @@ pub async fn github_callback(
         Err(e) => return (jar, error_redirect(&format!("GitHub token request failed: {e}"))),
     };
 
-    info!("GitHub token response: {}", &token_body);
-
     let token_data: GitHubTokenResponse = match serde_json::from_str(&token_body) {
         Ok(t) => t,
-        Err(e) => return (jar, error_redirect(&format!("GitHub token parse error: {e}. Body: {token_body}"))),
+        Err(e) => return (jar, error_redirect(&format!("GitHub token parse error: {e}"))),
     };
 
     let user_res = client.get("https://api.github.com/user")
@@ -371,11 +326,9 @@ pub async fn github_callback(
         Err(e) => return (jar, error_redirect(&format!("GitHub user request failed: {e}"))),
     };
 
-    info!("GitHub user response: {}", &user_body);
-
     let gh_user: GitHubUser = match serde_json::from_str(&user_body) {
         Ok(u) => u,
-        Err(e) => return (jar, error_redirect(&format!("GitHub user parse error: {e}. Body: {user_body}"))),
+        Err(e) => return (jar, error_redirect(&format!("GitHub user parse error: {e}"))),
     };
 
     let github_id_str = gh_user.id.to_string();
@@ -409,9 +362,13 @@ pub async fn github_callback(
     }
 
     let user = if let Some(mut existing) = db_user {
+        let encrypted = match state.crypto().encrypt_secret(&token_data.access_token) {
+            Ok(e) => e,
+            Err(e) => return (jar, error_redirect(&format!("Token encryption failed: {e}"))),
+        };
         let _ = sqlx::query("UPDATE users SET github_id = $1, github_access_token = $2 WHERE id = $3")
             .bind(&github_id_str)
-            .bind(&token_data.access_token)
+            .bind(&encrypted)
             .bind(&existing.id)
             .execute(state.pool()).await;
         existing.github_id = Some(github_id_str);
@@ -421,10 +378,14 @@ pub async fn github_callback(
         let new_id = uuid::Uuid::new_v4().to_string();
         let username = format!("{}_{}", gh_user.login, new_id.chars().take(4).collect::<String>());
         let now = chrono::Utc::now().naive_utc();
+        let encrypted = match state.crypto().encrypt_secret(&token_data.access_token) {
+            Ok(e) => e,
+            Err(e) => return (jar, error_redirect(&format!("Token encryption failed: {e}"))),
+        };
         match sqlx::query(
             "INSERT INTO users (id, username, email, is_active, credit_balance, github_id, github_access_token, created_at) VALUES ($1, $2, $3, true, 10.0, $4, $5, $6)")
             .bind(&new_id).bind(&username).bind(&gh_user.email)
-            .bind(&github_id_str).bind(&token_data.access_token).bind(now)
+            .bind(&github_id_str).bind(&encrypted).bind(now)
             .execute(state.pool()).await {
             Ok(_) => {},
             Err(e) => return (jar, error_redirect(&format!("Failed to create user: {e}"))),
@@ -438,6 +399,7 @@ pub async fn github_callback(
 
     let access_token_str = match crate::services::auth::create_access_token(
         &user.id, &user.username, &state.settings().secret_key,
+        user.tenant_id.as_deref().unwrap_or(""),
         state.settings().jwt_access_token_expire_minutes) {
         Ok((tok, _)) => tok,
         Err(e) => return (jar, error_redirect(&format!("Token creation failed: {e}"))),
@@ -445,13 +407,14 @@ pub async fn github_callback(
 
     let exchange_code = uuid::Uuid::new_v4().to_string();
     if let Err(e) = crate::services::auth::create_exchange_code(
-        state.pool(), &exchange_code, &user.id, &user.username, &access_token_str, 120).await {
+        state.pool(), &exchange_code, &user.id, &user.username, &access_token_str, 120, state.crypto()).await {
         return (jar, error_redirect(&format!("Exchange code creation failed: {e}")));
     }
 
     let token_family = uuid::Uuid::new_v4().to_string();
     let refresh_token_str = match crate::services::auth::create_refresh_token(
-        &user.id, &user.username, &state.settings().secret_key, &token_family) {
+        &user.id, &user.username, &state.settings().secret_key,
+        user.tenant_id.as_deref().unwrap_or(""), &token_family) {
         Ok((tok, _)) => tok,
         Err(e) => return (jar, error_redirect(&format!("Refresh token creation failed: {e}"))),
     };
@@ -459,13 +422,15 @@ pub async fn github_callback(
     let access_cookie = Cookie::build(("access_token", access_token_str.clone()))
         .path("/")
         .http_only(true)
-        .same_site(axum_extra::extract::cookie::SameSite::Lax)
+        .secure(!state.settings().debug)
+    .same_site(axum_extra::extract::cookie::SameSite::Strict)
         .build();
 
     let refresh_cookie = Cookie::build(("refresh_token", refresh_token_str))
         .path("/")
         .http_only(true)
-        .same_site(axum_extra::extract::cookie::SameSite::Lax)
+        .secure(!state.settings().debug)
+    .same_site(axum_extra::extract::cookie::SameSite::Strict)
         .build();
 
     let jar = jar.add(access_cookie).add(refresh_cookie);
@@ -475,11 +440,10 @@ pub async fn github_callback(
     (jar, Redirect::temporary(&frontend_redirect))
 }
 
+// HIGH-08: previously cast `char as u8`, corrupting any non-ASCII character.
+// Uses RFC 3986 percent-encoding over UTF-8 bytes instead (preserves -_.~).
 fn urlencoding(s: &str) -> String {
-    s.chars().map(|c| {
-        if c.is_alphanumeric() || c == '-' || c == '_' || c == '.' { c.to_string() }
-        else { format!("%{:02X}", c as u8) }
-    }).collect()
+    utf8_percent_encode(s, percent_encoding::CONTROLS).to_string()
 }
 
 #[derive(serde::Deserialize)]
@@ -499,6 +463,8 @@ pub async fn google_login(State(state): State<Arc<crate::AppState>>, jar: Cookie
     let cookie = Cookie::build(("google_oauth_state", oauth_state.clone()))
         .path("/")
         .http_only(true)
+        .secure(!state.settings().debug)
+    .same_site(axum_extra::extract::cookie::SameSite::Lax)
         .build();
         
     let base_url = state.settings().backend_base_url.trim_end_matches('/');
@@ -635,6 +601,7 @@ pub async fn google_callback(
 
     let access_token_str = match crate::services::auth::create_access_token(
         &user.id, &user.username, &state.settings().secret_key,
+        user.tenant_id.as_deref().unwrap_or(""),
         state.settings().jwt_access_token_expire_minutes) {
         Ok((tok, _)) => tok,
         Err(e) => return (jar, error_redirect(&format!("Token creation failed: {e}"))),
@@ -642,7 +609,7 @@ pub async fn google_callback(
 
     let exchange_code = uuid::Uuid::new_v4().to_string();
     if let Err(e) = crate::services::auth::create_exchange_code(
-        state.pool(), &exchange_code, &user.id, &user.username, &access_token_str, 120).await {
+        state.pool(), &exchange_code, &user.id, &user.username, &access_token_str, 120, state.crypto()).await {
         return (jar, error_redirect(&format!("Exchange code creation failed: {e}")));
     }
 

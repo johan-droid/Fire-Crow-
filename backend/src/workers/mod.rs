@@ -36,11 +36,12 @@ pub struct WorkerPool {
     pool: PgPool,
     settings: Settings,
     running: Arc<RwLock<bool>>,
+    active_jobs: Arc<RwLock<Vec<String>>>,
 }
 
 impl WorkerPool {
     pub fn new(pool: PgPool, settings: Settings) -> Self {
-        Self { pool, settings, running: Arc::new(RwLock::new(false)) }
+        Self { pool, settings, running: Arc::new(RwLock::new(false)), active_jobs: Arc::new(RwLock::new(Vec::new())) }
     }
     pub async fn start(&self, num_workers: usize) {
         {
@@ -51,7 +52,8 @@ impl WorkerPool {
             let pool = self.pool.clone();
             let settings = self.settings.clone();
             let running = self.running.clone();
-            tokio::spawn(async move { Self::worker_loop(i, pool, settings, running).await; });
+            let active_jobs = self.active_jobs.clone();
+            tokio::spawn(async move { Self::worker_loop(i, pool, settings, running, active_jobs).await; });
         }
         let pool = self.pool.clone();
         let settings = self.settings.clone();
@@ -91,7 +93,7 @@ impl WorkerPool {
         *r = false;
         info!("Worker pool shutting down");
     }
-    async fn worker_loop(_id: usize, pool: sqlx::PgPool, _settings: Settings, running: Arc<RwLock<bool>>) {
+    async fn worker_loop(_id: usize, pool: sqlx::PgPool, _settings: Settings, running: Arc<RwLock<bool>>, active_jobs: Arc<RwLock<Vec<String>>>) {
         loop {
             {
                 let r = running.read().await;
@@ -109,6 +111,12 @@ impl WorkerPool {
                     .bind(&job.id)
                     .execute(&pool)
                     .await;
+
+                {
+                    let mut active = active_jobs.write().await;
+                    active.push(job.id.clone());
+                }
+
                 if let Err(e) = execute_audit_job(&pool, &job.id, &job.user_id, &job.repo_url, &job.repo_branch, None, None).await {
                     error!("Worker: job {} failed: {}", job.id, e);
                     let _ = sqlx::query("UPDATE audit_jobs SET status=$1, error_message=$2, finished_at=$3 WHERE id=$4")
@@ -118,6 +126,11 @@ impl WorkerPool {
                         .bind(&job.id)
                         .execute(&pool)
                         .await;
+                }
+
+                {
+                    let mut active = active_jobs.write().await;
+                    active.retain(|id| id != &job.id);
                 }
             }
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;

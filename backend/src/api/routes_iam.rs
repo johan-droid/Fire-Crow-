@@ -16,14 +16,15 @@ pub fn router() -> Router<Arc<crate::AppState>> {
 
 pub async fn list_policies(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    user: crate::middleware::auth::AuthenticatedUser,
 ) -> Result<Json<Vec<IamPolicy>>> {
-    IamService::list_policies(state.pool()).await.map(Json)
+    let policies = IamService::list_policies(state.pool()).await?;
+    Ok(Json(policies))
 }
 
 pub async fn create_policy(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    _admin: crate::middleware::auth::AdminUser,
     Json(mut policy): Json<IamPolicy>,
 ) -> Result<Json<IamPolicy>> {
     if policy.id.is_empty() {
@@ -34,7 +35,7 @@ pub async fn create_policy(
 
 pub async fn delete_policy(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    _admin: crate::middleware::auth::AdminUser,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
     let ok = IamService::delete_policy(state.pool(), &id).await?;
@@ -47,7 +48,7 @@ pub async fn delete_policy(
 
 pub async fn assign_permission(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    _admin: crate::middleware::auth::AdminUser,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<RolePermission>> {
     let role_id = payload.get("role_id").and_then(|v| v.as_str()).ok_or_else(|| AppError::BadRequest("Missing role_id".into()))?;
@@ -59,7 +60,7 @@ pub async fn assign_permission(
 
 pub async fn remove_permission(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    _admin: crate::middleware::auth::AdminUser,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
     let ok = IamService::remove_permission(state.pool(), &id).await?;
@@ -72,19 +73,19 @@ pub async fn remove_permission(
 
 pub async fn create_service_account(
     State(state): State<Arc<crate::AppState>>,
-    user: crate::middleware::auth::AuthenticatedUser,
+    user: crate::middleware::auth::AdminUser,
     Json(mut account): Json<ServiceAccount>,
 ) -> Result<Json<ServiceAccount>> {
     if account.id.is_empty() {
         account.id = uuid::Uuid::new_v4().to_string();
     }
-    account.created_by = user.user_id;
+    account.created_by = user.0.user_id;
     IamService::create_service_account(state.pool(), account).await.map(Json)
 }
 
 pub async fn revoke_service_account(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    _admin: crate::middleware::auth::AdminUser,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
     let ok = IamService::revoke_service_account(state.pool(), &id).await?;

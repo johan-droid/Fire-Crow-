@@ -1,32 +1,44 @@
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::URL_SAFE, Engine as _};
-use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
-use sha2::{Digest, Sha256};
+use hkdf::Hkdf;
+use rand::{rngs::OsRng, RngCore};
+use sha2::Sha256;
 use std::sync::Arc;
 
-type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
-type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
-
+/// Authenticated encryption using AES-256-GCM.
+///
+/// The key is derived from the configured `ENCRYPTION_KEY` (or `SECRET_KEY` as a
+/// fallback) using HKDF-SHA256, producing a full 256-bit key with proper domain
+/// separation. Ciphertext format: `ENC[<url-safe base64(nonce || ciphertext + tag)>]`
+/// with a random 96-bit nonce per message.
 pub struct CryptoManager {
-    key: Vec<u8>,
+    key: [u8; 32],
 }
 
 impl CryptoManager {
     pub fn new(secret_or_encryption_key: &str) -> Result<Self> {
-        let key_bytes = secret_or_encryption_key.as_bytes();
-        let hash = Sha256::digest(key_bytes);
-        let fernet_key = URL_SAFE.encode(hash);
-        Ok(Self { key: fernet_key.into_bytes() })
+        let hk = Hkdf::<Sha256>::new(None, secret_or_encryption_key.as_bytes());
+        let mut okm = [0u8; 32];
+        hk.expand(b"firecrow-aes-256-gcm-v1", &mut okm)
+            .map_err(|e| anyhow::anyhow!("HKDF key expansion failed: {e:?}"))?;
+        Ok(Self { key: okm })
     }
 
     pub fn encrypt_secret(&self, plaintext: &str) -> Result<String> {
         if plaintext.is_empty() { return Ok(plaintext.into()); }
-        let iv: [u8; 16] = rand::random();
-        let encryptor = Aes128CbcEnc::new((&self.key[..16]).into(), &iv.into());
-        let ciphertext = encryptor.encrypt_padded_vec_mut::<Pkcs7>(plaintext.as_bytes());
-        let mut result = iv.to_vec();
-        result.extend(ciphertext);
-        Ok(format!("ENC[{}]", URL_SAFE.encode(result)))
+        let cipher = Aes256Gcm::new_from_slice(&self.key).context("invalid AES-256 key")?;
+        let mut nonce = [0u8; 12];
+        OsRng.fill_bytes(&mut nonce);
+        let ciphertext = cipher
+            .encrypt(Nonce::from_slice(&nonce), plaintext.as_bytes())
+            .map_err(|e| anyhow::anyhow!("Encryption failed: {e:?}"))?;
+        let mut out = nonce.to_vec();
+        out.extend(ciphertext);
+        Ok(format!("ENC[{}]", URL_SAFE.encode(out)))
     }
 
     pub fn decrypt_secret(&self, ciphertext: &str) -> Result<String> {
@@ -35,11 +47,14 @@ impl CryptoManager {
         }
         let inner = &ciphertext[4..ciphertext.len() - 1];
         let data = URL_SAFE.decode(inner).context("Base64 decode failed")?;
-        if data.len() < 16 { anyhow::bail!("Ciphertext too short"); }
-        let iv: [u8; 16] = data[..16].try_into().unwrap();
-        let decryptor = Aes128CbcDec::new((&self.key[..16]).into(), &iv.into());
-        let plaintext_bytes = decryptor.decrypt_padded_vec_mut::<Pkcs7>(&data[16..])
-            .map_err(|e| anyhow::anyhow!("Decryption failed: {:?}", e))?;
+        if data.len() < 12 + 16 {
+            anyhow::bail!("Ciphertext too short");
+        }
+        let (nonce_bytes, ct) = data.split_at(12);
+        let cipher = Aes256Gcm::new_from_slice(&self.key).context("invalid AES-256 key")?;
+        let plaintext_bytes = cipher
+            .decrypt(Nonce::from_slice(nonce_bytes), ct)
+            .map_err(|e| anyhow::anyhow!("Decryption failed: {e:?}"))?;
         String::from_utf8(plaintext_bytes).context("Decrypted bytes are not valid UTF-8")
     }
 }

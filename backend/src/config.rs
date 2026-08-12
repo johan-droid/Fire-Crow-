@@ -18,6 +18,8 @@ pub struct Settings {
     #[serde(default)]
     pub encryption_key: String,
     pub frontend_url: String,
+    #[serde(default = "default_backend_base_url")]
+    pub backend_base_url: String,
     pub cors_origins: String,
     pub database_url: String,
     #[serde(default = "default_pool_size")]
@@ -104,8 +106,6 @@ pub struct Settings {
     pub cf_turnstile_enabled: bool,
     #[serde(default)]
     pub gemini_api_key: String,
-    #[serde(default)]
-    pub gemini_model: String,
     #[serde(default = "default_gemini_fallback")]
     pub gemini_fallback_model: String,
     #[serde(default = "default_true")]
@@ -150,14 +150,6 @@ pub struct Settings {
     pub max_request_body_bytes: i64,
     #[serde(default = "default_max_json_body")]
     pub max_json_body_bytes: i64,
-    #[serde(default)]
-    pub backend_base_url: String,
-    #[serde(default)]
-    pub sandbox_python_image: String,
-    #[serde(default)]
-    pub sandbox_node_image: String,
-    #[serde(default = "default_true")]
-    pub report_compact_mode: bool,
     #[serde(default = "default_report_max_pages")]
     pub report_max_pages: i32,
     #[serde(default = "default_report_max_findings")]
@@ -168,16 +160,6 @@ pub struct Settings {
     pub report_max_remediation_chars: i32,
     #[serde(default = "default_true")]
     pub report_include_detailed_findings: bool,
-    #[serde(default = "default_true")]
-    pub report_store_full_artifact_json: bool,
-    #[serde(default = "default_true")]
-    pub report_store_html_in_db: bool,
-    #[serde(default = "default_true")]
-    pub report_store_markdown_in_db: bool,
-    #[serde(default = "default_true")]
-    pub report_email_attach_pdf: bool,
-    #[serde(default)]
-    pub openai_api_key: String,
     #[serde(default = "default_scoring_critical")]
     pub scoring_critical: f64,
     #[serde(default = "default_scoring_high")]
@@ -201,6 +183,7 @@ fn default_pool_timeout() -> u32 { 30 }
 fn default_pool_recycle() -> u32 { 3600 }
 fn default_true() -> bool { true }
 fn default_rate_limit() -> String { "100/hour".into() }
+fn default_backend_base_url() -> String { "http://localhost:8000".into() }
 fn default_login_failure_window() -> i64 { 10 }
 fn default_login_failure_limit() -> i32 { 5 }
 fn default_jwt_expire() -> i64 { 60 * 24 }
@@ -253,8 +236,6 @@ impl Settings {
             .set_default("port", default_port())?
             .set_default("host", default_host())?
             .set_default("debug", run_mode == "development")?
-            .set_default("secret_key", "a7f3b8c29e4d5f6a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a")?
-            .set_default("encryption_key", "a7f3b8c29e4d5f6a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a")?
             .add_source(Environment::default())
             .build()?;
 
@@ -288,8 +269,9 @@ impl Settings {
             if settings.secret_key.len() < 32 {
                 return Err(ConfigError::Message("SECRET_KEY must be at least 32 characters.".into()));
             }
+
             if settings.encryption_key.is_empty() {
-                settings.encryption_key = settings.secret_key.clone();
+                return Err(ConfigError::Message("ENCRYPTION_KEY is required. Set a strong random value (min 32 chars).".into()));
             }
             if insecure_dev_values.contains(&settings.encryption_key.as_str())
                 || settings.encryption_key.len() < 32
@@ -298,7 +280,19 @@ impl Settings {
             }
         }
 
-
+        // CRIT-02: SECRET_KEY and ENCRYPTION_KEY must never be identical.
+        // Reusing one key for JWT signing AND data encryption collapses the
+        // security boundary — compromising one key compromises both.
+        if !settings.encryption_key.is_empty()
+            && !settings.secret_key.is_empty()
+            && settings.encryption_key == settings.secret_key
+        {
+            return Err(ConfigError::Message(
+                "SECRET_KEY and ENCRYPTION_KEY must be different values. Using the same \
+                 value for both collapses crypto separation (CWE-326)."
+                    .into(),
+            ));
+        }
 
         Ok(())
     }

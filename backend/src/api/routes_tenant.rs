@@ -13,14 +13,21 @@ pub fn router() -> Router<Arc<crate::AppState>> {
 
 pub async fn list_tenants(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    user: crate::middleware::auth::AuthenticatedUser,
 ) -> Result<Json<Vec<Tenant>>> {
-    TenantService::list(state.pool()).await.map(Json)
+    // CRIT-05: never leak every tenant to every user. Scope to the caller's own
+    // tenant; admins with no tenant of their own see nothing cross-tenant here.
+    let tenants = if user.tenant_id.is_empty() {
+        Vec::new()
+    } else {
+        TenantService::list_for_tenant(state.pool(), &user.tenant_id).await?
+    };
+    Ok(Json(tenants))
 }
 
 pub async fn create_tenant(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    _admin: crate::middleware::auth::AdminUser,
     Json(mut tenant): Json<Tenant>,
 ) -> Result<Json<Tenant>> {
     if tenant.id.is_empty() {
@@ -31,9 +38,13 @@ pub async fn create_tenant(
 
 pub async fn get_tenant(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    user: crate::middleware::auth::AuthenticatedUser,
     Path(id): Path<String>,
 ) -> Result<Json<Tenant>> {
+    // Scoped: users may only fetch their own tenant.
+    if !user.tenant_id.is_empty() && user.tenant_id != id {
+        return Err(AppError::Forbidden("Tenant access denied".into()));
+    }
     let t = TenantService::get_by_id(state.pool(), &id).await?;
     if let Some(tenant) = t {
         Ok(Json(tenant))
@@ -47,7 +58,7 @@ pub async fn get_tenant(
 
 pub async fn update_tenant(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    _admin: crate::middleware::auth::AdminUser,
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<Tenant>> {
@@ -67,7 +78,7 @@ pub async fn update_tenant(
 
 pub async fn deactivate_tenant(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    _admin: crate::middleware::auth::AdminUser,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
     let ok = TenantService::deactivate(state.pool(), &id).await?;

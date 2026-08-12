@@ -1,14 +1,19 @@
 //! Cloudflare Edge Headers & Client Real IP Middleware
 //! Extracts visitor real IP (`CF-Connecting-IP`), Cloudflare Ray ID (`CF-Ray`),
 //! visitor geolocation (`CF-IPCountry`), and connection protocol scheme (`CF-Visitor`).
+//!
+//! Security note (HIGH-07): `CF-*`, `X-Forwarded-For` and `X-Real-IP` headers are
+//! ONLY trusted when the request's TCP peer address is itself a Cloudflare edge IP.
+//! Otherwise an attacker connecting straight to the backend could forge headers to
+//! spoof their IP and evade rate limiting / audit logging.
 
 use axum::{
-    extract::Request,
+    extract::{ConnectInfo, Request},
     http::{HeaderMap, StatusCode},
     middleware::Next,
     response::Response,
 };
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CloudflareInfo {
@@ -31,7 +36,45 @@ impl Default for CloudflareInfo {
     }
 }
 
-/// Helper function to extract real client IP from Cloudflare or standard proxy headers
+// Cloudflare edge prefixes (https://www.cloudflare.com/ips/).
+const CF_IPV4_RANGES: &[(&str, u8)] = &[
+    ("173.245.48.0", 20), ("103.21.244.0", 22), ("103.22.200.0", 22),
+    ("103.31.4.0", 22), ("141.101.64.0", 18), ("108.162.192.0", 18),
+    ("190.93.240.0", 20), ("188.114.96.0", 20), ("197.234.240.0", 22),
+    ("198.41.128.0", 17), ("162.158.0.0", 15), ("104.16.0.0", 13),
+    ("104.24.0.0", 14), ("172.64.0.0", 13), ("131.0.72.0", 22),
+];
+
+const CF_IPV6_RANGES: &[(&str, u8)] = &[
+    ("2400:cb00::", 32), ("2606:4700::", 32), ("2803:f800::", 32),
+    ("2405:b500::", 32), ("2405:8100::", 32), ("2a06:98c0::", 29),
+    ("2c0f:f248::", 32),
+];
+
+fn cidr_contains_v4(ip: Ipv4Addr, network: &str, bits: u8) -> bool {
+    let Ok(net) = network.parse::<Ipv4Addr>() else { return false; };
+    if bits == 0 { return true; }
+    let mask = if bits >= 32 { u32::MAX } else { u32::MAX << (32 - bits) };
+    (u32::from(ip) & mask) == (u32::from(net) & mask)
+}
+
+fn cidr_contains_v6(ip: Ipv6Addr, network: &str, bits: u8) -> bool {
+    let Ok(net) = network.parse::<Ipv6Addr>() else { return false; };
+    let ip_u = u128::from(ip);
+    let net_u = u128::from(net);
+    let mask = if bits >= 128 { u128::MAX } else { u128::MAX << (128 - bits) };
+    (ip_u & mask) == (net_u & mask)
+}
+
+fn is_cloudflare_peer(peer: IpAddr) -> bool {
+    match peer {
+        IpAddr::V4(ip) => CF_IPV4_RANGES.iter().any(|(net, bits)| cidr_contains_v4(ip, net, *bits)),
+        IpAddr::V6(ip) => CF_IPV6_RANGES.iter().any(|(net, bits)| cidr_contains_v6(ip, net, *bits)),
+    }
+}
+
+/// Helper function to extract real client IP from Cloudflare or standard proxy headers.
+/// Only call this when the peer address is a trusted Cloudflare edge.
 pub fn extract_client_ip(headers: &HeaderMap, peer_ip: Option<IpAddr>) -> String {
     // 1. Prioritize Cloudflare's direct client IP header
     if let Some(cf_ip) = headers.get("cf-connecting-ip").and_then(|v| v.to_str().ok()) {
@@ -84,25 +127,41 @@ pub async fn cloudflare_middleware(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let is_behind_cf = ray_id.is_some() || headers.contains_key("cf-connecting-ip");
+    let peer_ip = req
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip());
 
-    let scheme = headers
-        .get("cf-visitor")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|json_str| {
-            serde_json::from_str::<serde_json::Value>(json_str)
-                .ok()
-                .and_then(|v| v.get("scheme").and_then(|s| s.as_str()).map(|s| s.to_string()))
-        })
-        .or_else(|| {
-            headers
-                .get("x-forwarded-proto")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string())
-        })
-        .unwrap_or_else(|| "http".to_string());
+    // HIGH-07: only trust Cloudflare headers if the connection actually came from
+    // a Cloudflare edge. Otherwise fall back to the real peer address.
+    let trusted_edge = peer_ip.map(is_cloudflare_peer).unwrap_or(false);
+    let is_behind_cf = trusted_edge && (ray_id.is_some() || headers.contains_key("cf-connecting-ip"));
 
-    let client_ip = extract_client_ip(req.headers(), None);
+    let scheme = if trusted_edge {
+        headers
+            .get("cf-visitor")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|json_str| {
+                serde_json::from_str::<serde_json::Value>(json_str)
+                    .ok()
+                    .and_then(|v| v.get("scheme").and_then(|s| s.as_str()).map(|s| s.to_string()))
+            })
+            .or_else(|| {
+                headers
+                    .get("x-forwarded-proto")
+                    .and_then(|v| v.to_str().ok())
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_else(|| "http".to_string())
+    } else {
+        peer_ip.map(|_| "https".to_string()).unwrap_or_else(|| "http".to_string())
+    };
+
+    let client_ip = if trusted_edge {
+        extract_client_ip(req.headers(), peer_ip)
+    } else {
+        peer_ip.map(|p| p.to_string()).unwrap_or_else(|| "127.0.0.1".to_string())
+    };
 
     let cf_info = CloudflareInfo {
         client_ip,
@@ -118,8 +177,10 @@ pub async fn cloudflare_middleware(
 
     // Attach CF-Ray response header if request came through Cloudflare
     if let Some(ray) = ray_id {
-        if let Ok(val) = ray.parse() {
-            response.headers_mut().insert("cf-ray", val);
+        if trusted_edge {
+            if let Ok(val) = ray.parse() {
+                response.headers_mut().insert("cf-ray", val);
+            }
         }
     }
 

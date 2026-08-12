@@ -37,59 +37,48 @@ impl TurnstileService {
             .unwrap_or_default();
 
         Self {
-            client,
-            secret_key,
-            enabled,
+            client, secret_key, enabled,
         }
     }
 
-    pub fn is_enabled(&self) -> bool {
-        self.enabled && !self.secret_key.is_empty()
-    }
-
-    /// Verifies a Turnstile response token against Cloudflare's siteverify API.
     pub async fn verify_token(&self, token: &str, remote_ip: Option<&str>) -> Result<TurnstileVerifyResponse> {
-        if !self.is_enabled() {
-            // Bypass verification when Turnstile is disabled
+        if !self.enabled || self.secret_key.is_empty() {
             return Ok(TurnstileVerifyResponse {
                 success: true,
-                error_codes: Vec::new(),
+                error_codes: vec![],
                 challenge_ts: None,
-                hostname: Some("local-bypass".into()),
+                hostname: None,
                 action: None,
                 cdata: None,
             });
         }
 
-        if token.trim().is_empty() {
-            return Err(AppError::BadRequest("Cloudflare Turnstile token missing".into()));
-        }
+        let req = TurnstileVerifyRequest {
+            secret: &self.secret_key,
+            response: token,
+            remoteip: remote_ip,
+        };
 
-        let params = [
-            ("secret", self.secret_key.as_str()),
-            ("response", token),
-        ];
-
-        let mut req = self.client.post("https://challenges.cloudflare.com/turnstile/v0/siteverify").form(&params);
-        if let Some(ip) = remote_ip {
-            req = req.query(&[("remoteip", ip)]);
-        }
-
-        let resp = req
+        let resp = self
+            .client
+            .post("https://challenges.cloudflare.com/turnstile/v0/siteverify")
+            .form(&req)
             .send()
             .await
-            .map_err(|e| AppError::Internal(format!("Cloudflare Turnstile connection failed: {}", e)))?;
+            .map_err(|e| AppError::HttpClientError(e.to_string()))?;
 
         let result: TurnstileVerifyResponse = resp
             .json()
             .await
-            .map_err(|e| AppError::Internal(format!("Failed parsing Turnstile response: {}", e)))?;
+            .map_err(|e| AppError::HttpClientError(e.to_string()))?;
 
-        if !result.success {
-            tracing::warn!("Cloudflare Turnstile verification failed: errors={:?}", result.error_codes);
-            return Err(AppError::Unauthorized("Cloudflare Turnstile security verification failed".into()));
+        if result.success {
+            Ok(result)
+        } else {
+            Err(AppError::ValidationError(format!(
+                "Turnstile verification failed: {:?}",
+                result.error_codes
+            )))
         }
-
-        Ok(result)
     }
 }

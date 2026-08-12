@@ -7,3 +7,4 @@ pub mod request_id;
 pub mod security_headers;
 pub mod cloudflare;
 pub mod http_logger;
+pub mod csrf;

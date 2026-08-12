@@ -25,13 +25,25 @@ impl MfaService {
         totp.verify(code, 1, timestamp)
     }
 
-    pub fn generate_recovery_codes(count: i32) -> Vec<String> {
-        (0..count)
-            .map(|_| {
-                let code: u32 = rand::thread_rng().gen_range(100000..999999);
-                code.to_string()
-            })
-            .collect()
+    pub fn generate_recovery_codes(count: i32) -> (Vec<String>, Vec<String>) {
+        // HIGH-09: 8-character codes from a 32-character alphabet (excluding
+        // look-alikes 0/O/1/I/l) provide >40 bits of entropy, vs ~20 bits for
+        // the old 6-digit numeric codes.
+        const ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+        let mut codes = Vec::with_capacity(count.max(0) as usize);
+        for _ in 0..count.max(0) {
+            let code: String = (0..8)
+                .map(|_| {
+                    let idx = rand::thread_rng().gen_range(0..ALPHABET.len());
+                    ALPHABET[idx] as char
+                })
+                .collect();
+            codes.push(code);
+        }
+        let code_hashes: Vec<String> = codes.iter()
+            .map(|code| MfaService::hash_recovery_code(code))
+            .collect();
+        (codes, code_hashes)
     }
 
     pub fn hash_recovery_code(code: &str) -> String {

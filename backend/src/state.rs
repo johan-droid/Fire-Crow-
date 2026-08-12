@@ -29,6 +29,7 @@ impl AppState {
     pub fn settings(&self) -> &Settings { &self.settings }
     pub fn pool(&self) -> &sqlx::PgPool { &self.pool }
     pub fn storage(&self) -> &StorageService { &self.storage }
+    pub fn crypto(&self) -> &Arc<CryptoManager> { &self.crypto }
     pub fn redis(&self) -> Option<&redis::aio::MultiplexedConnection> { self.redis.as_deref() }
     pub fn csrf(&self) -> &CsrfStore { &self.csrf }
 }
