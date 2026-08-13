@@ -11,10 +11,6 @@
     "VITE_API_URL": "https://api.firecrow.dev/api/v1",
     "NEXT_PUBLIC_API_URL": "https://api.firecrow.dev/api/v1",
     "FRONTEND_URL": "https://app.firecrow.dev",
-    "BACKEND_BASE_URL": "https://api.firecrow.dev",
-    "CORS_ORIGINS": "https://app.firecrow.dev",
-    "AUTH_COOKIE_SECURE": "true",
-    "AUTH_COOKIE_HTTPONLY": "true",
-    "AUTH_COOKIE_SAMESITE": "lax"
+    "BACKEND_BASE_URL": "https://api.firecrow.dev"
   }
 }
