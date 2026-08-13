@@ -8,6 +8,7 @@
   ],
   "vars": {
     "VITE_APP_NAME": "Fire Crow Security Console",
-    "VITE_BACKEND_URL": "http://localhost:8000"
+    "VITE_API_URL": "https://api.firecrow.dev/api/v1",
+    "NEXT_PUBLIC_API_URL": "https://api.firecrow.dev/api/v1"
   }
 }
