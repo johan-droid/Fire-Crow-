@@ -240,7 +240,10 @@ pub async fn create_exchange_code(pool: &sqlx::PgPool, code: &str, user_id: &str
     Ok(())
 }
 
-pub fn verify_oauth_state(state: &str, stored: &str) -> bool { state == stored }
+pub fn verify_oauth_state(state: &str, stored: &str) -> bool { 
+    use subtle::ConstantTimeEq;
+    state.as_bytes().ct_eq(stored.as_bytes()).unwrap_u8() == 1
+}
 
 pub fn encrypt_provider_token(crypto: &Arc<CryptoManager>, token: &str) -> Result<String> {
     crypto.encrypt_secret(token).map_err(|e| AppError::Internal(e.to_string()))
