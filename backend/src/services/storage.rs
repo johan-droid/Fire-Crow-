@@ -14,7 +14,7 @@ pub trait StorageBackend: Send + Sync {
     async fn upload(&self, data: Vec<u8>, key: &str, content_type: &str) -> Result<String>;
     async fn download(&self, key: &str) -> Result<Vec<u8>>;
     async fn delete(&self, key: &str) -> Result<()>;
-    fn presigned_url(&self, key: &str, expires_secs: i64) -> Result<String>;
+    async fn presigned_url(&self, key: &str, expires_secs: i64) -> Result<String>;
 }
 
 pub struct S3StorageBackend {
@@ -105,9 +105,16 @@ impl StorageBackend for S3StorageBackend {
         Ok(())
     }
 
-    fn presigned_url(&self, key: &str, expires_secs: i64) -> Result<String> {
-        let base = self.endpoint.as_deref().unwrap_or("https://r2.cloudflarestorage.com");
-        Ok(format!("{}/{}/{}?expires={}", base.trim_end_matches('/'), self.bucket, key, expires_secs))
+    async fn presigned_url(&self, key: &str, expires_secs: i64) -> Result<String> {
+        let expires = aws_sdk_s3::presigning::PresigningConfig::expires_in(std::time::Duration::from_secs(expires_secs as u64))
+            .map_err(|e| AppError::StorageError(format!("Invalid expiration: {}", e)))?;
+        let presigned = self.client.get_object()
+            .bucket(&self.bucket)
+            .key(key)
+            .presigned(expires)
+            .await
+            .map_err(|e| AppError::StorageError(format!("Presigning failed: {}", e)))?;
+        Ok(presigned.uri().to_string())
     }
 }
 
@@ -126,6 +133,7 @@ impl LocalStorageBackend {
 #[async_trait]
 impl StorageBackend for LocalStorageBackend {
     async fn upload(&self, data: Vec<u8>, key: &str, _content_type: &str) -> Result<String> {
+        if key.contains("..") || key.starts_with('/') { return Err(AppError::Forbidden("Invalid key".into())); }
         let path = self.base_dir.join(key);
         if let Some(parent) = path.parent() { std::fs::create_dir_all(parent).ok(); }
         std::fs::write(&path, data).map_err(|e| AppError::StorageError(format!("{e}")))?;
@@ -133,14 +141,17 @@ impl StorageBackend for LocalStorageBackend {
     }
 
     async fn download(&self, key: &str) -> Result<Vec<u8>> {
+        if key.contains("..") || key.starts_with('/') { return Err(AppError::Forbidden("Invalid key".into())); }
         std::fs::read(self.base_dir.join(key)).map_err(|e| AppError::StorageError(format!("{e}")))
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
+        if key.contains("..") || key.starts_with('/') { return Err(AppError::Forbidden("Invalid key".into())); }
         std::fs::remove_file(self.base_dir.join(key)).map_err(|e| AppError::StorageError(format!("{e}")))
     }
 
-    fn presigned_url(&self, key: &str, _expires_secs: i64) -> Result<String> {
+    async fn presigned_url(&self, key: &str, _expires_secs: i64) -> Result<String> {
+        if key.contains("..") || key.starts_with('/') { return Err(AppError::Forbidden("Invalid key".into())); }
         Ok(format!("file:///{}", self.base_dir.join(key).display()))
     }
 }
