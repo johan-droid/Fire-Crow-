@@ -19,7 +19,11 @@ impl WorkerTask {
         match self {
             Self::AuditJob { job_id, user_id, repo_url, repo_branch, custom_email } => {
                 info!("Worker: executing audit job {job_id}");
-                execute_audit_job(pool, &job_id, &user_id, &repo_url, &repo_branch, custom_email.as_deref(), None).await?;
+                match tokio::time::timeout(tokio::time::Duration::from_secs(1800), execute_audit_job(pool, &job_id, &user_id, &repo_url, &repo_branch, custom_email.as_deref(), None)).await {
+                    Ok(Err(e)) => { return Err(crate::error::AppError::Internal(format!("Job {} failed: {}", job_id, e))); }
+                    Err(_) => { return Err(crate::error::AppError::Internal(format!("Job {} timed out after 30 minutes", job_id))); }
+                    Ok(Ok(_)) => {}
+                }
                 info!("Worker: audit job {job_id} completed");
             }
             Self::Housekeeping => {
@@ -117,15 +121,28 @@ impl WorkerPool {
                     active.push(job.id.clone());
                 }
 
-                if let Err(e) = execute_audit_job(&pool, &job.id, &job.user_id, &job.repo_url, &job.repo_branch, None, None).await {
-                    error!("Worker: job {} failed: {}", job.id, e);
-                    let _ = sqlx::query("UPDATE audit_jobs SET status=$1, error_message=$2, finished_at=$3 WHERE id=$4")
-                        .bind(JobStatus::Failed)
-                        .bind(e.to_string())
-                        .bind(chrono::Utc::now().naive_utc())
-                        .bind(&job.id)
-                        .execute(&pool)
-                        .await;
+                match tokio::time::timeout(tokio::time::Duration::from_secs(1800), execute_audit_job(&pool, &job.id, &job.user_id, &job.repo_url, &job.repo_branch, None, None)).await {
+                    Ok(Err(e)) => {
+                        error!("Worker: job {} failed: {}", job.id, e);
+                        let _ = sqlx::query("UPDATE audit_jobs SET status=$1, error_message=$2, finished_at=$3 WHERE id=$4")
+                            .bind(JobStatus::Failed)
+                            .bind(e.to_string())
+                            .bind(chrono::Utc::now().naive_utc())
+                            .bind(&job.id)
+                            .execute(&pool)
+                            .await;
+                    }
+                    Err(_) => {
+                        error!("Worker: job {} timed out after 30 minutes", job.id);
+                        let _ = sqlx::query("UPDATE audit_jobs SET status=$1, error_message=$2, finished_at=$3 WHERE id=$4")
+                            .bind(JobStatus::Failed)
+                            .bind("Job timed out after 30 minutes".to_string())
+                            .bind(chrono::Utc::now().naive_utc())
+                            .bind(&job.id)
+                            .execute(&pool)
+                            .await;
+                    }
+                    Ok(Ok(_)) => {}
                 }
 
                 {
