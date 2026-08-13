@@ -105,6 +105,12 @@ pub struct Settings {
     #[serde(default)]
     pub cf_turnstile_enabled: bool,
     #[serde(default)]
+    pub dodo_payments_api_key: String,
+    #[serde(default)]
+    pub dodo_payments_webhook_secret: String,
+    #[serde(default = "default_dodo_env")]
+    pub dodo_payments_environment: String,
+    #[serde(default)]
     pub gemini_api_key: String,
     #[serde(default = "default_gemini_fallback")]
     pub gemini_fallback_model: String,
@@ -345,4 +351,8 @@ where
         Some(VecOrString::String(s)) => Ok(s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()),
         None => Ok(Vec::new()),
     }
+}
+
+fn default_dodo_env() -> String {
+    "test_mode".to_string()
 }

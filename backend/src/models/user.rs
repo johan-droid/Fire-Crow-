@@ -46,7 +46,7 @@ impl std::str::FromStr for JobStatus {
 
 impl sqlx::Type<sqlx::Postgres> for JobStatus {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
-        sqlx::postgres::PgTypeInfo::with_name("jobstatus")
+        <String as sqlx::Type<sqlx::Postgres>>::type_info()
     }
 
     fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
@@ -107,7 +107,7 @@ impl std::str::FromStr for Severity {
 
 impl sqlx::Type<sqlx::Postgres> for Severity {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
-        sqlx::postgres::PgTypeInfo::with_name("severity")
+        <String as sqlx::Type<sqlx::Postgres>>::type_info()
     }
 
     fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {

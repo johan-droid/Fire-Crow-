@@ -63,9 +63,38 @@ pub async fn execute_audit_job(
         log_phase_started(pool, job_id, "ai_analysis").await?;
         if is_cancelled(pool, job_id).await? { job_cancelled = true; }
         if !job_cancelled {
-            state.scored_findings = state.dynamic_findings.clone();
+            state.scored_findings = [state.static_findings.clone(), state.dynamic_findings.clone()].concat();
             let _ = run_ai_analyzer(&mut state).await;
             let _ = cross_validate_findings(&mut state).await;
+
+            for f in &state.validated_findings {
+                let _ = sqlx::query(
+                    "INSERT INTO findings (id, job_id, agent_source, title, description, severity, cvss_vector, cvss_score, evidence, remediation, cwe_id, owasp_category, confidence, scanner_name, scanner_mode, file_path, line_number, route, metadata_json, created_at)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)"
+                )
+                .bind(&f.id)
+                .bind(job_id)
+                .bind(&f.agent_source)
+                .bind(&f.title)
+                .bind(&f.description)
+                .bind(f.severity)
+                .bind(&f.cvss_vector)
+                .bind(f.cvss_score)
+                .bind(&f.evidence)
+                .bind(&f.remediation)
+                .bind(&f.cwe_id)
+                .bind(&f.owasp_category)
+                .bind(&f.confidence)
+                .bind(&f.scanner_name)
+                .bind(&f.scanner_mode)
+                .bind(&f.file_path)
+                .bind(f.line_number)
+                .bind(&f.route)
+                .bind(&f.metadata_json)
+                .bind(Utc::now().naive_utc())
+                .execute(pool)
+                .await;
+            }
             log_phase_completed(pool, job_id, "ai_analysis", "completed", started, None).await?;
         }
     }
@@ -181,8 +210,19 @@ fn compute_security_score(state: &mut AuditState) {
     state.risk_summary = serde_json::json!({"score": state.security_score, "risk_level": risk_level, "total_findings": all.len()});
 }
 
-fn extract_repo_owner(url: &str) -> String { url.trim_end_matches('/').split('/').nth_back(2).unwrap_or("").into() }
-fn extract_repo_name(url: &str) -> String { url.trim_end_matches('/').split('/').next_back().unwrap_or("repo").trim_end_matches(".git").into() }
+fn extract_repo_owner(url: &str) -> String {
+    let cleaned = url.trim_end_matches('/').trim_end_matches(".git");
+    if cleaned.contains("git@") {
+        cleaned.split(':').last().unwrap_or("").split('/').next().unwrap_or("").into()
+    } else {
+        cleaned.split('/').nth_back(1).unwrap_or("").into()
+    }
+}
+
+fn extract_repo_name(url: &str) -> String {
+    let cleaned = url.trim_end_matches('/').trim_end_matches(".git");
+    cleaned.split('/').next_back().unwrap_or("repo").into()
+}
 fn record_error(state: &mut AuditState, phase: &str, error: &str) {
     state.errors.push(serde_json::json!({"phase": phase, "error": error, "timestamp": Utc::now().to_rfc3339()}));
 }

@@ -15,6 +15,7 @@ pub async fn run_recon(_state: &mut AuditState) -> Result<()> {
 
 /// Cross-validation phase: currently a stub. Restore the git-backed
 /// `cross_validation` agent to re-enable finding deduplication.
-pub async fn cross_validate_findings(_state: &mut AuditState) -> Result<()> {
+pub async fn cross_validate_findings(state: &mut AuditState) -> Result<()> {
+    state.validated_findings = state.deduplicated_findings.clone();
     Ok(())
 }

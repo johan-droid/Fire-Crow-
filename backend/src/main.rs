@@ -62,7 +62,12 @@ async fn main() -> anyhow::Result<()> {
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "postgres://firecrow:firecrow@localhost:5432/firecrow".to_string());
 
-    let connect_options = std::str::FromStr::from_str(&database_url)
+    let clean_database_url = database_url
+        .replace("&channel_binding=require", "")
+        .replace("?channel_binding=require&", "?")
+        .replace("?channel_binding=require", "");
+
+    let connect_options = std::str::FromStr::from_str(&clean_database_url)
         .map(|opts: sqlx::postgres::PgConnectOptions| opts.statement_cache_capacity(0))
         .unwrap_or_default();
 
@@ -158,6 +163,7 @@ async fn main() -> anyhow::Result<()> {
         .nest("/iam", crate::api::routes_iam::router())
         .nest("/tenant", crate::api::routes_tenant::router())
         .nest("/verify", crate::api::routes_verify::router())
+        .nest("/payments/dodo", crate::api::routes_dodo::router())
         .nest("/sse", crate::api::routes_sse::router());
 
     let app = axum::Router::new()

@@ -15,6 +15,8 @@ pub mod pam;
 pub mod iam;
 pub mod tenant;
 pub mod domain_verification;
+pub mod payment;
+pub mod privacy_audit;
 
 pub use user::*;
 pub use audit_job::*;
@@ -27,3 +29,5 @@ pub use pam::*;
 pub use iam::*;
 pub use tenant::*;
 pub use domain_verification::*;
+pub use payment::*;
+pub use privacy_audit::*;

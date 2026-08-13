@@ -25,3 +25,6 @@ pub mod confidence;
 pub mod attack_graph;
 pub mod session;
 pub mod turnstile;
+pub mod payment_service;
+pub mod privacy_audit_service;
+pub mod dodo_payment_service;

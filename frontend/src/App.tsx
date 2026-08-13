@@ -1,8 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
-const API_BASE = window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
-  ? 'http://localhost:8000/api/v1'
-  : '/api/v1';
+const API_BASE = '/api/v1';
 
 interface UserProfile {
   user_id: string;
@@ -140,6 +138,8 @@ function App() {
   const [domains, setDomains] = useState<DomainVerification[]>([]);
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [mfaStatus, setMfaStatus] = useState<MfaStatus>({ enabled: false, backup_codes_remaining: 0 });
+  const [activeMonitorJobId, setActiveMonitorJobId] = useState<string | null>(null);
+  const [monitorPhases, setMonitorPhases] = useState<any[]>([]);
 
   // Modals error & submission state
   const [modalError, setModalError] = useState('');
@@ -164,13 +164,74 @@ function App() {
   const [isDomainModalOpen, setIsDomainModalOpen] = useState(false);
   const [newDomainName, setNewDomainName] = useState('');
 
+  // Dodo Payments Modal State
+  const [isDodoModalOpen, setIsDodoModalOpen] = useState(false);
+  const [dodoPackage, setDodoPackage] = useState<'starter' | 'pro' | 'enterprise'>('pro');
+  const [dodoCheckoutUrl, setDodoCheckoutUrl] = useState('');
+
+  const handleInitiateDodoCheckout = async (amount: number, packageName: string) => {
+    setIsSubmitting(true);
+    setModalError('');
+    try {
+      const res = await apiFetch('/payments/dodo/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount,
+          package_name: packageName,
+          currency: 'USD',
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to create Dodo Payments checkout session.');
+      const data = await res.json();
+      if (data.checkout_url) {
+        setDodoCheckoutUrl(data.checkout_url);
+        window.open(data.checkout_url, '_blank');
+      }
+    } catch (err: any) {
+      setModalError(err.message || 'Checkout failed');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Auth Form State
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
-  const [authUsername, setAuthUsername] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authEmail, setAuthEmail] = useState('');
   const [authFormError, setAuthFormError] = useState('');
-  const [authSubmitting, setAuthSubmitting] = useState(false);
+
+  // Landing Page Interactive State
+  const [landingTab, setLandingTab] = useState<'terminal' | 'graph' | 'diff'>('terminal');
+  const [simRepo, setSimRepo] = useState('https://github.com/johan-droid/express-api-demo.git');
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simProgress, setSimProgress] = useState(0);
+  const [simStage, setSimStage] = useState('');
+  const [simComplete, setSimComplete] = useState(false);
+
+  const handleRunSimulatedScan = (repoUrl?: string) => {
+    const targetUrl = repoUrl || simRepo;
+    if (repoUrl) setSimRepo(repoUrl);
+    setIsSimulating(true);
+    setSimProgress(20);
+    setSimStage(`Cloning ${targetUrl.split('/').pop() || 'repo'} AST structure...`);
+    setSimComplete(false);
+
+    setTimeout(() => {
+      setSimProgress(50);
+      setSimStage('Running Gemini 1.5 Pro Agentic Vulnerability Reasoning...');
+    }, 1000);
+
+    setTimeout(() => {
+      setSimProgress(80);
+      setSimStage('Simulating Docker sandbox execution & attack path verification...');
+    }, 2200);
+
+    setTimeout(() => {
+      setSimProgress(100);
+      setSimStage('Scan Complete! Discovered 2 high-severity exploits with automated patches.');
+      setIsSimulating(false);
+      setSimComplete(true);
+    }, 3400);
+  };
 
   // Fetch all real backend data in parallel using Promise.allSettled
   const fetchDashboardData = useCallback(async () => {
@@ -216,6 +277,31 @@ function App() {
       console.warn('Dashboard live data fetch error:', err);
     }
   }, []);
+
+  useEffect(() => {
+    if (view !== 'dashboard') return;
+    const targetJobId = activeMonitorJobId || (jobs.length > 0 ? jobs[0].id : null);
+    if (!targetJobId) return;
+
+    const fetchPhases = async () => {
+      try {
+        const res = await apiFetch(`/audit/job/${targetJobId}/phases`);
+        if (res.ok) {
+          const data = await res.json();
+          setMonitorPhases(data);
+        }
+      } catch (err) {
+        console.warn('Error fetching job phases:', err);
+      }
+    };
+
+    fetchPhases();
+    const interval = setInterval(fetchPhases, 3000);
+    return () => clearInterval(interval);
+  }, [view, activeMonitorJobId, jobs]);
+
+  const oauthHandledRef = useRef(false);
+  const sessionCheckedRef = useRef(false);
 
   // Check active session or OAuth exchange on mount
   useEffect(() => {
@@ -287,7 +373,6 @@ function App() {
               credit_balance: data.credit_balance,
             });
             setView('dashboard');
-            fetchDashboardData();
           }
         } catch {
           // If background meRes fails, remain logged in via exchangeData
@@ -311,8 +396,12 @@ function App() {
       window.history.replaceState({}, document.title, window.location.pathname);
       setIsLoading(false);
     } else if (code) {
+      if (oauthHandledRef.current) return;
+      oauthHandledRef.current = true;
       handleOAuthCallback(code);
     } else {
+      if (sessionCheckedRef.current) return;
+      sessionCheckedRef.current = true;
       checkSession();
     }
   }, [fetchDashboardData]);
@@ -320,105 +409,6 @@ function App() {
   const handleGitHubLogin = () => {
     const privacyVersion = '2026-06-06';
     window.location.href = `${API_BASE}/auth/github?privacy_policy_accepted=true&privacy_policy_version=${privacyVersion}`;
-  };
-
-  const handleGoogleLogin = () => {
-    window.location.href = `${API_BASE}/auth/google`;
-  };
-
-  const handlePasswordLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!authUsername || !authPassword) return;
-    setAuthFormError('');
-    setAuthSubmitting(true);
-    try {
-      const res = await apiFetch('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ username: authUsername, password: authPassword }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.access_token) {
-        localStorage.setItem('access_token', data.access_token);
-        setUser({
-          user_id: data.user_id,
-          username: data.username,
-          email: data.email || null,
-        });
-        setView('dashboard');
-        fetchDashboardData();
-      } else {
-        setAuthFormError(data.detail || data.message || 'Login failed. Invalid credentials.');
-      }
-    } catch (err: any) {
-      setAuthFormError(err.message || 'Network error logging in.');
-    } finally {
-      setAuthSubmitting(false);
-    }
-  };
-
-  const handlePasswordRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!authUsername || !authPassword) return;
-    setAuthFormError('');
-    setAuthSubmitting(true);
-    try {
-      const res = await apiFetch('/auth/register', {
-        method: 'POST',
-        body: JSON.stringify({ username: authUsername, email: authEmail, password: authPassword }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        const loginRes = await apiFetch('/auth/login', {
-          method: 'POST',
-          body: JSON.stringify({ username: authUsername, password: authPassword }),
-        });
-        const loginData = await loginRes.json().catch(() => ({}));
-        if (loginRes.ok && loginData.access_token) {
-          localStorage.setItem('access_token', loginData.access_token);
-          setUser({
-            user_id: loginData.user_id,
-            username: loginData.username,
-            email: loginData.email || null,
-          });
-          setView('dashboard');
-          fetchDashboardData();
-        } else {
-          setAuthMode('login');
-          setAuthFormError('Account created successfully! Please sign in.');
-        }
-      } else {
-        setAuthFormError(data.detail || data.message || 'Registration failed.');
-      }
-    } catch (err: any) {
-      setAuthFormError(err.message || 'Network error registering account.');
-    } finally {
-      setAuthSubmitting(false);
-    }
-  };
-
-  const handleDemoLogin = async () => {
-    setAuthFormError('');
-    setAuthSubmitting(true);
-    try {
-      const res = await apiFetch('/auth/demo', { method: 'POST' });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.access_token) {
-        localStorage.setItem('access_token', data.access_token);
-        setUser({
-          user_id: data.user_id,
-          username: data.username,
-          email: data.email || 'demo@firecrow.dev',
-        });
-        setView('dashboard');
-        fetchDashboardData();
-      } else {
-        setAuthFormError('Failed to launch demo session.');
-      }
-    } catch (err: any) {
-      setAuthFormError(err.message || 'Network error launching demo access.');
-    } finally {
-      setAuthSubmitting(false);
-    }
   };
 
   const handleLogout = async () => {
@@ -604,262 +594,350 @@ function App() {
   // Render Landing View
   if (view === 'landing') {
     return (
-      <div style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-        {/* Landing Top Navigation Bar */}
-        <header className="landing-nav">
-          <div className="landing-nav-container">
+      <div className="saas-page-bg" style={{ color: 'var(--text-primary)', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+        {/* Minimal Floating Navigation Bar */}
+        <header className="saas-nav">
+          <div className="landing-nav-container" style={{ maxWidth: '1200px', margin: '0 auto', padding: '0.85rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <img src="/fire-crow-logo.png" alt="Fire Crow Logo" className="logo-img" />
-              <span style={{ fontSize: '1.05rem', fontWeight: 800, letterSpacing: '-0.03em', color: '#fff' }}>Fire Crow</span>
-              <span className="badge badge-info" style={{ fontSize: '0.65rem' }}>v2.4 LIVE</span>
+              <img src="/fire-crow-logo.png" alt="Fire Crow Logo" className="logo-img" style={{ width: '28px', height: '28px' }} />
+              <span style={{ fontSize: '1.05rem', fontWeight: 700, letterSpacing: '-0.02em', color: '#ffffff' }}>Fire Crow</span>
+              <span style={{ fontSize: '0.7rem', color: '#71717a', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.1)', padding: '0.1rem 0.45rem', borderRadius: '4px' }}>v2.4</span>
             </div>
 
-            <nav className="landing-nav-links">
-              <a href="#features">Capabilities</a>
-              <a href="#architecture">Architecture</a>
-              <a href="#metrics">Telemetry</a>
-              <a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer">GitHub</a>
+            <nav className="landing-nav-links" style={{ display: 'flex', gap: '2rem', fontSize: '0.875rem' }}>
+              <a href="#playground" style={{ color: '#a1a1aa', textDecoration: 'none', transition: 'color 0.2s' }}>Playground</a>
+              <a href="#features" style={{ color: '#a1a1aa', textDecoration: 'none', transition: 'color 0.2s' }}>Platform</a>
+              <a href="#architecture" style={{ color: '#a1a1aa', textDecoration: 'none', transition: 'color 0.2s' }}>Architecture</a>
+              <a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer" style={{ color: '#a1a1aa', textDecoration: 'none' }}>GitHub</a>
             </nav>
 
             <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-              <button onClick={() => setView('login')} className="btn btn-primary btn-sm">
-                Sign In / Console
+              <button onClick={() => setView('login')} className="btn-saas-outline" style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+                Sign In
+              </button>
+              <button onClick={() => setView('login')} className="btn-saas-solid" style={{ padding: '0.45rem 1.1rem', fontSize: '0.82rem' }}>
+                Launch Console →
               </button>
             </div>
           </div>
         </header>
 
-        {/* Hero Section */}
-        <section style={{ padding: '5rem 1.5rem 4rem', textAlign: 'center', maxWidth: '1000px', margin: '0 auto' }}>
-          <div style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'center' }}>
-            <img src="/fire-crow-logo.png" alt="Fire Crow Flying Logo" className="logo-img-lg" />
+        {/* Ultra-Minimal Hero Section */}
+        <section style={{ padding: '7rem 1.5rem 4rem', textAlign: 'center', maxWidth: '1100px', margin: '0 auto', width: '100%' }}>
+          <div className="saas-badge">
+            <div className="saas-status-dot"></div>
+            <span>AUTONOMOUS RED TEAM ENGINE</span>
           </div>
 
-          <div className="landing-pill">
-            <span>🔥</span> AUTONOMOUS AGENTIC RED TEAM ENGINE
-          </div>
-
-          <h1 className="landing-h1">
-            Autonomously Hardening<br />Your Application Stack
+          <h1 className="saas-h1">
+            Autonomous Security Reasoning<br />
+            <span className="saas-h1-accent">for Enterprise Stacks</span>
           </h1>
 
-          <p className="landing-sub">
-            Fire Crow coordinates sandboxed security LLM agents to map repositories, execute safe exploit simulations, enforce enterprise access controls, and build compliance-ready reports.
+          <p className="saas-sub">
+            Fire Crow coordinates sandboxed security LLM agents to map application repositories, execute safe exploit simulations, enforce access controls, and generate compliance fixes.
           </p>
 
-          <div className="landing-cta">
-            <button onClick={() => setView('login')} className="btn btn-primary" style={{ padding: '0.75rem 2rem', fontSize: '0.9rem' }}>
+          <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button onClick={() => setView('login')} className="btn-saas-solid">
               Launch Control Console →
             </button>
-            <a href="#features" className="btn btn-secondary" style={{ padding: '0.75rem 1.75rem', fontSize: '0.9rem' }}>
-              Explore Architecture
+            <a href="#playground" className="btn-saas-outline">
+              ⚡ Try Interactive Scan
             </a>
           </div>
 
-          {/* Interactive Terminal Simulation Widget */}
-          <div className="terminal-window">
-            <div className="terminal-header">
-              <div className="terminal-dots">
-                <span className="terminal-dot" style={{ background: '#ef4444' }}></span>
-                <span className="terminal-dot" style={{ background: '#f59e0b' }}></span>
-                <span className="terminal-dot" style={{ background: '#22c55e' }}></span>
+          {/* Minimalist SaaS Terminal & Topology Visualizer Widget */}
+          <div className="saas-terminal-box" style={{ maxWidth: '980px', margin: '4rem auto 0' }}>
+            <div className="saas-tab-header">
+              <div style={{ display: 'flex', gap: '0.25rem' }}>
+                <button 
+                  className={`saas-tab-item ${landingTab === 'terminal' ? 'active' : ''}`}
+                  onClick={() => setLandingTab('terminal')}
+                >
+                  <span>📺</span> Tokio Agent Log
+                </button>
+                <button 
+                  className={`saas-tab-item ${landingTab === 'graph' ? 'active' : ''}`}
+                  onClick={() => setLandingTab('graph')}
+                >
+                  <span>🕸️</span> Attack Topology
+                </button>
+                <button 
+                  className={`saas-tab-item ${landingTab === 'diff' ? 'active' : ''}`}
+                  onClick={() => setLandingTab('diff')}
+                >
+                  <span>📝</span> Remediation Patch
+                </button>
               </div>
-              <span className="terminal-title">firecrow-orchestrator — tokio-async-worker</span>
-              <span className="badge badge-success" style={{ fontSize: '0.65rem' }}>SANDBOX ACTIVE</span>
+
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: '#a1a1aa' }}>
+                SANDBOX: DOCKER_NODE_RUST
+              </span>
             </div>
 
-            <div className="terminal-body">
-              <div><span className="terminal-cyan">[10:45:02 INFO]</span> Initializing Rust Axum Agentic Engine v2.4...</div>
-              <div><span className="terminal-cyan">[10:45:03 INFO]</span> Mounting Sandboxed Docker Scanner Container (Node 20 / Python 3.12)...</div>
-              <div><span className="terminal-yellow">[10:45:04 WARN]</span> Ingesting Git repository AST & constructing dependency graph...</div>
-              <div><span className="terminal-red">[10:45:06 ALERT]</span> CVE-2026-798 Detected: Hardcoded JWT signing secret fallback in <code style={{ color: '#60a5fa' }}>backend/src/config.rs:42</code></div>
-              <div><span className="terminal-green">[10:45:08 SUCCESS]</span> Gemini Security LLM generated automated remediation patch snippet.</div>
-              <div><span className="terminal-muted">[10:45:09 LOG]</span> Persisted multi-node attack graph to Neon PostgreSQL schema <code style={{ color: '#a855f7' }}>attack_graph_nodes</code></div>
-            </div>
+            {/* Tab 1: Terminal Log */}
+            {landingTab === 'terminal' && (
+              <div style={{ padding: '1.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', lineHeight: '1.7', color: '#e4e4e7', minHeight: '250px' }}>
+                <div><span style={{ color: '#38bdf8' }}>[10:45:02]</span> Initializing Rust Axum Agentic Engine v2.4 (Tokio Async Worker)...</div>
+                <div><span style={{ color: '#38bdf8' }}>[10:45:03]</span> Mounting Sandboxed Docker Scanner Container (Node 20 / Python 3.12)...</div>
+                <div><span style={{ color: '#fbbf24' }}>[10:45:04]</span> Ingesting Git repository AST & constructing dependency graph...</div>
+                <div><span style={{ color: '#f43f5e' }}>[10:45:06]</span> CVE-2026-798 Detected: Hardcoded JWT signing secret fallback in <code style={{ color: '#a5b4fc' }}>backend/src/config.rs:42</code></div>
+                <div><span style={{ color: '#4ade80' }}>[10:45:08]</span> Gemini Security LLM generated automated remediation patch snippet.</div>
+                <div><span style={{ color: '#71717a' }}>[10:45:09]</span> Persisted multi-node attack graph to Neon PostgreSQL schema <code style={{ color: '#c084fc' }}>attack_graph_nodes</code></div>
+              </div>
+            )}
+
+            {/* Tab 2: Attack Topology Map */}
+            {landingTab === 'graph' && (
+              <div style={{ padding: '2.5rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '250px', background: '#040405' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', width: '100%', maxWidth: '640px', justifyContent: 'space-between' }}>
+                  <div style={{ background: '#09090b', border: '1px solid rgba(255,255,255,0.1)', padding: '1rem 1.25rem', borderRadius: '10px', textAlign: 'center', flex: 1 }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#38bdf8' }}>ENTRYPOINT</div>
+                    <div style={{ fontSize: '0.85rem', color: '#ffffff', fontWeight: 600, marginTop: '0.2rem' }}>Web API Route</div>
+                  </div>
+                  <div style={{ width: '40px', height: '1px', background: 'rgba(255,255,255,0.2)' }}></div>
+                  <div style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', padding: '1rem 1.25rem', borderRadius: '10px', textAlign: 'center', flex: 1 }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#f43f5e' }}>VULNERABILITY</div>
+                    <div style={{ fontSize: '0.85rem', color: '#fca5a5', fontWeight: 600, marginTop: '0.2rem' }}>CVE-2026-798</div>
+                  </div>
+                  <div style={{ width: '40px', height: '1px', background: 'rgba(255,255,255,0.2)' }}></div>
+                  <div style={{ background: '#09090b', border: '1px solid rgba(255,255,255,0.1)', padding: '1rem 1.25rem', borderRadius: '10px', textAlign: 'center', flex: 1 }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#c084fc' }}>DATABASE</div>
+                    <div style={{ fontSize: '0.85rem', color: '#ffffff', fontWeight: 600, marginTop: '0.2rem' }}>PostgreSQL Cluster</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 3: Code Remediation Diff */}
+            {landingTab === 'diff' && (
+              <div style={{ padding: '1.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', lineHeight: '1.6', background: '#040405', minHeight: '250px' }}>
+                <div style={{ color: '#71717a', marginBottom: '0.75rem' }}>// Automated Patch Generated by Gemini Agent for backend/src/config.rs</div>
+                <div style={{ background: 'rgba(244, 63, 94, 0.12)', color: '#fca5a5', padding: '0.2rem 0.6rem', borderRadius: '4px', marginBottom: '0.25rem' }}>
+                  - let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "default_insecure_secret".to_string());
+                </div>
+                <div style={{ background: 'rgba(74, 222, 128, 0.12)', color: '#86efac', padding: '0.2rem 0.6rem', borderRadius: '4px' }}>
+                  + let jwt_secret = env::var("JWT_SECRET").map_err(|_| ConfigError::MissingSecret("JWT_SECRET must be set"))?;
+                </div>
+                <div style={{ color: '#4ade80', marginTop: '1rem', fontSize: '0.78rem', fontWeight: 500 }}>
+                  ✓ Verified against Rust compiler and sandboxed unit test suite.
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
-        {/* Platform Metrics Banner */}
-        <section id="metrics" style={{ background: 'rgba(11, 13, 18, 0.6)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '3rem 1.5rem', margin: '2rem 0 4rem' }}>
-          <div style={{ maxWidth: '1100px', margin: '0 auto' }} className="metrics-grid">
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '2.25rem', fontWeight: 800, color: '#fff', letterSpacing: '-0.03em' }}>100%</div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '0.25rem' }}>Docker Isolation</div>
+        {/* Minimal Interactive Scan Playground Widget */}
+        <section id="playground" style={{ padding: '3rem 1.5rem 5rem' }}>
+          <div className="saas-playground-box">
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, fontFamily: 'var(--font-mono)', color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>
+              ✦ Interactive Security Playground
             </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '2.25rem', fontWeight: 800, color: '#60a5fa', letterSpacing: '-0.03em' }}>&lt; 30s</div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '0.25rem' }}>Agent Reasoning</div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '2.25rem', fontWeight: 800, color: '#22c55e', letterSpacing: '-0.03em' }}>99.9%</div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '0.25rem' }}>Audit Accuracy</div>
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '2.25rem', fontWeight: 800, color: '#a855f7', letterSpacing: '-0.03em' }}>Zero</div>
-              <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '0.25rem' }}>False Positive Overhead</div>
-            </div>
-          </div>
-        </section>
-
-        {/* Feature Capabilities Grid */}
-        <section id="features" style={{ maxWidth: '1100px', margin: '0 auto 6rem', padding: '0 1.5rem' }}>
-          <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
-            <h2 style={{ fontSize: '2.25rem', fontWeight: 800, letterSpacing: '-0.03em', marginBottom: '0.5rem' }}>
-              Platform Capabilities
+            <h2 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#ffffff', letterSpacing: '-0.02em', marginBottom: '0.5rem' }}>
+              Test Fire Crow Agent Instantly
             </h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
-              Minimalist, high-performance security automation built for modern software teams.
+            <p style={{ color: '#a1a1aa', fontSize: '0.92rem', marginBottom: '1.75rem' }}>
+              Select a repository preset or enter your Git URL to trigger an instant agentic vulnerability scan simulation.
+            </p>
+
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
+              <span className="quick-chip" onClick={() => handleRunSimulatedScan('https://github.com/expressjs/express.git')}>
+                expressjs/express
+              </span>
+              <span className="quick-chip" onClick={() => handleRunSimulatedScan('https://github.com/tokio-rs/axum.git')}>
+                tokio-rs/axum
+              </span>
+              <span className="quick-chip" onClick={() => handleRunSimulatedScan('https://github.com/tiangolo/fastapi.git')}>
+                tiangolo/fastapi
+              </span>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <input
+                type="text"
+                value={simRepo}
+                onChange={(e) => setSimRepo(e.target.value)}
+                placeholder="https://github.com/your-org/your-repo.git"
+                className="input"
+                style={{ flex: 1, minWidth: '280px', background: '#000000', borderColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' }}
+              />
+              <button 
+                onClick={() => handleRunSimulatedScan()} 
+                disabled={isSimulating}
+                className="btn-saas-solid"
+                style={{ padding: '0.75rem 1.5rem', whiteSpace: 'nowrap' }}
+              >
+                {isSimulating ? 'Scanning...' : 'Run Scan 🚀'}
+              </button>
+            </div>
+
+            {isSimulating && (
+              <div style={{ marginTop: '1.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#a1a1aa', fontFamily: 'var(--font-mono)' }}>
+                  <span>{simStage}</span>
+                  <span>{simProgress}%</span>
+                </div>
+                <div className="progress-bar-wrap">
+                  <div className="progress-bar-fill" style={{ width: `${simProgress}%`, background: '#ffffff', boxShadow: 'none' }}></div>
+                </div>
+              </div>
+            )}
+
+            {simComplete && (
+              <div style={{ marginTop: '1.5rem', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.12)', borderRadius: '10px', padding: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+                <div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#ffffff' }}>
+                    🎉 Agent Scan Simulation Complete
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#a1a1aa', marginTop: '0.25rem' }}>
+                    {simStage}
+                  </div>
+                </div>
+                <button onClick={() => setView('login')} className="btn-saas-solid" style={{ padding: '0.45rem 1rem', fontSize: '0.8rem' }}>
+                  View Full Console Report →
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Minimal Platform Capabilities Grid */}
+        <section id="features" style={{ maxWidth: '1150px', margin: '0 auto 6rem', padding: '0 1.5rem', width: '100%' }}>
+          <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
+            <h2 style={{ fontSize: '2.25rem', fontWeight: 700, letterSpacing: '-0.03em', color: '#ffffff', marginBottom: '0.5rem' }}>
+              Enterprise Platform Capabilities
+            </h2>
+            <p style={{ color: '#a1a1aa', fontSize: '1rem', maxWidth: '580px', margin: '0 auto' }}>
+              Engineered for modern software teams requiring zero false positives and high-throughput security.
             </p>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
-            <div className="feature-card">
-              <div className="feature-icon-wrap">🤖</div>
-              <h3>Agentic Auditing</h3>
-              <p>Autonomous Google Gemini LLM reasoning loops to plan, identify, and repair zero-day code vulnerabilities.</p>
+            <div className="saas-card-minimal">
+              <div className="saas-icon-badge">🤖</div>
+              <h3>Gemini Agentic Reasoning</h3>
+              <p>Autonomous LLM loops plan, discover, and synthesize code patches for complex security vulnerabilities.</p>
             </div>
 
-            <div className="feature-card">
-              <div className="feature-icon-wrap">🛡️</div>
-              <h3>Attack Graph Generation</h3>
-              <p>Native PostgreSQL attack vector mapping that models entry points, exploits, and lateral movement paths.</p>
+            <div className="saas-card-minimal">
+              <div className="saas-icon-badge">🕸️</div>
+              <h3>Attack Topology Mapping</h3>
+              <p>PostgreSQL attack vector graph engine modeling entrypoints, exploit nodes, and lateral movement paths.</p>
             </div>
 
-            <div className="feature-card">
-              <div className="feature-icon-wrap">🔒</div>
-              <h3>Container Isolation</h3>
-              <p>Executes code analyzers and scanners inside sandboxed Docker containers to prevent environment escape.</p>
+            <div className="saas-card-minimal">
+              <div className="saas-icon-badge">🐳</div>
+              <h3>Docker Sandbox Isolation</h3>
+              <p>Executes code analyzers inside isolated Docker containers to guarantee zero host environment escape.</p>
             </div>
 
-            <div className="feature-card">
-              <div className="feature-icon-wrap">🔑</div>
-              <h3>Enterprise IAM & PAM</h3>
-              <p>Just-in-time privilege elevation, ticket tracking, service accounts, and GitHub/Google OAuth2 session security.</p>
+            <div className="saas-card-minimal">
+              <div className="saas-icon-badge">🔑</div>
+              <h3>Just-In-Time PAM & IAM</h3>
+              <p>Just-in-time privilege elevation, ticket tracking, service accounts, and GitHub/Google OAuth2 security.</p>
             </div>
 
-            <div className="feature-card">
-              <div className="feature-icon-wrap">⚡</div>
-              <h3>High-Throughput Engine</h3>
-              <p>Built natively in Rust using Axum 0.7, Tokio async workers, and SQLx for lightning-fast security execution.</p>
+            <div className="saas-card-minimal">
+              <div className="saas-icon-badge">⚡</div>
+              <h3>High-Throughput Rust Engine</h3>
+              <p>Built natively in Rust using Axum 0.7, Tokio async workers, and SQLx for high-throughput scanning.</p>
             </div>
 
-            <div className="feature-card">
-              <div className="feature-icon-wrap">📄</div>
-              <h3>Compliance PDF Reports</h3>
+            <div className="saas-card-minimal">
+              <div className="saas-icon-badge">📄</div>
+              <h3>Compliance PDF Generation</h3>
               <p>Automatically compiles audit findings, CVE mappings, and code fix instructions into structured PDF artifacts.</p>
             </div>
           </div>
         </section>
 
-        {/* Architecture & Workflow Deep Dive */}
-        <section id="architecture" style={{ background: 'rgba(11, 13, 18, 0.4)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '5rem 1.5rem' }}>
-          <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
-            <div style={{ textAlign: 'center', marginBottom: '3.5rem' }}>
-              <h2 style={{ fontSize: '2.25rem', fontWeight: 800, letterSpacing: '-0.03em', marginBottom: '0.5rem' }}>
-                How Fire Crow Works
+        {/* 4-Step Architecture Workflow & Minimal Footer */}
+        <section id="architecture" style={{ background: 'rgba(255, 255, 255, 0.01)', borderTop: '1px solid rgba(255, 255, 255, 0.07)', borderBottom: '1px solid rgba(255, 255, 255, 0.07)', padding: '5.5rem 1.5rem' }}>
+          <div style={{ maxWidth: '1150px', margin: '0 auto' }}>
+            <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
+              <h2 style={{ fontSize: '2.25rem', fontWeight: 700, letterSpacing: '-0.03em', color: '#ffffff', marginBottom: '0.5rem' }}>
+                End-to-End Autonomous Pipeline
               </h2>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
-                An end-to-end autonomous security pipeline from source repository ingestion to patch delivery.
+              <p style={{ color: '#a1a1aa', fontSize: '1rem' }}>
+                From source code ingestion to automated patch verification.
               </p>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.5rem' }}>
-              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '1.5rem' }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--blue)', marginBottom: '0.5rem' }}>STEP 01</div>
-                <h4 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem' }}>Repository Ingestion</h4>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Parses source code AST, configuration files, and dependency manifests via secure Git clones.
-                </p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
+              <div className="saas-card-minimal">
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', fontWeight: 600, color: '#38bdf8', marginBottom: '0.5rem' }}>STEP 01</div>
+                <h3>Repository Ingestion</h3>
+                <p>Parses AST structure, dependencies, and configuration files via secure Git clones.</p>
               </div>
 
-              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '1.5rem' }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--purple)', marginBottom: '0.5rem' }}>STEP 02</div>
-                <h4 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem' }}>Agentic Reasoning</h4>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Security LLM reasoning loops discover architectural vulnerabilities and construct attack graphs.
-                </p>
+              <div className="saas-card-minimal">
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', fontWeight: 600, color: '#c084fc', marginBottom: '0.5rem' }}>STEP 02</div>
+                <h3>Agentic Reasoning</h3>
+                <p>Security LLM reasoning loops discover architectural vulnerabilities and map attack graphs.</p>
               </div>
 
-              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '1.5rem' }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--yellow)', marginBottom: '0.5rem' }}>STEP 03</div>
-                <h4 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem' }}>Sandboxed Testing</h4>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Executes exploit simulations inside isolated Docker sandboxes to confirm vulnerability validity.
-                </p>
+              <div className="saas-card-minimal">
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', fontWeight: 600, color: '#fbbf24', marginBottom: '0.5rem' }}>STEP 03</div>
+                <h3>Sandboxed Testing</h3>
+                <p>Simulates exploit paths inside isolated Docker containers to confirm zero false positives.</p>
               </div>
 
-              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '1.5rem' }}>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--green)', marginBottom: '0.5rem' }}>STEP 04</div>
-                <h4 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem' }}>Patch & Report</h4>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                  Generates ready-to-merge remediation patches and exports compliance-ready PDF reports.
-                </p>
+              <div className="saas-card-minimal">
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', fontWeight: 600, color: '#4ade80', marginBottom: '0.5rem' }}>STEP 04</div>
+                <h3>Patch & Delivery</h3>
+                <p>Generates ready-to-merge remediation pull requests and compliance-ready PDF artifacts.</p>
               </div>
             </div>
           </div>
         </section>
 
-        {/* Multi-Column Site Footer */}
-        <footer className="site-footer">
-          <div className="footer-container">
-            {/* Column 1: Brand */}
-            <div className="footer-brand">
-              <div className="footer-logo">
-                <img src="/fire-crow-logo.png" alt="Fire Crow Flying Logo" className="logo-img" />
-                <span>Fire Crow</span>
+        {/* Minimal Site Footer */}
+        <footer style={{ background: '#040405', borderTop: '1px solid rgba(255, 255, 255, 0.07)', padding: '4rem 1.5rem 2rem' }}>
+          <div style={{ maxWidth: '1150px', margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '2.5rem' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                <img src="/fire-crow-logo.png" alt="Fire Crow Logo" style={{ width: '24px', height: '24px' }} />
+                <span style={{ fontWeight: 700, color: '#ffffff' }}>Fire Crow</span>
               </div>
-              <p className="footer-desc">
+              <p style={{ fontSize: '0.82rem', color: '#71717a', lineHeight: 1.6 }}>
                 Autonomous agentic security intelligence and vulnerability hardening platform built natively in Rust.
               </p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
-                <div className="status-dot status-dot-live"></div>
-                <span>HYBRID NODE STATUS: <strong>100% OPERATIONAL</strong></span>
-              </div>
             </div>
 
-            {/* Column 2: Product */}
             <div>
-              <div className="footer-col-title">Product</div>
-              <ul className="footer-links">
-                <li><a href="#features">Autonomous Scans</a></li>
-                <li><a href="#architecture">Attack Graph Mapping</a></li>
-                <li><a href="#features">Container Isolation</a></li>
-                <li><a href="#features">IAM & PAM Security</a></li>
-                <li><a href="#metrics">Live Telemetry</a></li>
+              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#ffffff', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Platform</div>
+              <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.6rem', fontSize: '0.82rem' }}>
+                <li><a href="#playground" style={{ color: '#71717a', textDecoration: 'none' }}>Live Playground</a></li>
+                <li><a href="#features" style={{ color: '#71717a', textDecoration: 'none' }}>Capabilities</a></li>
+                <li><a href="#architecture" style={{ color: '#71717a', textDecoration: 'none' }}>Architecture</a></li>
               </ul>
             </div>
 
-            {/* Column 3: Developers */}
             <div>
-              <div className="footer-col-title">Developers</div>
-              <ul className="footer-links">
-                <li><a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer">GitHub Repository</a></li>
-                <li><a href="file:///home/ashutoshsahoo/Downloads/Fire%20Crow/Fire-Crow-/API_DOCUMENTATION.md">API Documentation</a></li>
-                <li><a href="file:///home/ashutoshsahoo/Downloads/Fire%20Crow/Fire-Crow-/GITHUB_AUTH.md">OAuth Setup Guide</a></li>
-                <li><a href="#architecture">Rust Engine Specs</a></li>
+              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#ffffff', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Developers</div>
+              <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.6rem', fontSize: '0.82rem' }}>
+                <li><a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer" style={{ color: '#71717a', textDecoration: 'none' }}>GitHub Repository</a></li>
+                <li><a href="#architecture" style={{ color: '#71717a', textDecoration: 'none' }}>Rust Engine Specs</a></li>
               </ul>
             </div>
 
-            {/* Column 4: Compliance & Legal */}
             <div>
-              <div className="footer-col-title">Compliance & Legal</div>
-              <ul className="footer-links">
-                <li><a href="#">Privacy Policy</a></li>
-                <li><a href="#">Terms of Service</a></li>
-                <li><a href="#">Security Disclosures</a></li>
-                <li><a href="#">GDPR Data Rights</a></li>
+              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#ffffff', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Security</div>
+              <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.6rem', fontSize: '0.82rem', color: '#71717a' }}>
+                <li>SOC2 Type II Ready</li>
+                <li>ISO 27001 Mapping</li>
+                <li>Docker Isolated</li>
               </ul>
             </div>
           </div>
 
-          <div className="footer-bottom">
-            <div>&copy; {new Date().getFullYear()} Fire Crow Intelligence Inc. All rights reserved.</div>
+          <div style={{ maxWidth: '1150px', margin: '3rem auto 0', paddingTop: '1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', color: '#71717a', flexWrap: 'wrap', gap: '1rem' }}>
+            <div>© {new Date().getFullYear()} Fire Crow Intelligence Inc. All rights reserved.</div>
             <div style={{ display: 'flex', gap: '1.5rem' }}>
-              <a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>
-                GitHub Source
-              </a>
-              <span style={{ color: 'var(--text-muted)' }}>•</span>
-              <a href="#" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>System Health</a>
+              <span>Privacy</span>
+              <span>Terms</span>
+              <span>Status: <strong style={{ color: '#4ade80' }}>Operational</strong></span>
             </div>
           </div>
         </footer>
@@ -870,132 +948,67 @@ function App() {
   // Render Login View
   if (view === 'login') {
     return (
-      <div className="page-center" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)', padding: '1.5rem' }}>
-        <div className="login-card" style={{ width: '100%', maxWidth: '440px', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '2rem', boxShadow: '0 20px 40px rgba(0,0,0,0.4)' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '1.5rem' }}>
-            <img src="/fire-crow-logo.png" alt="Fire Crow Flying Logo" className="logo-img" style={{ width: '52px', height: '52px', borderRadius: '12px', marginBottom: '0.75rem' }} />
-            <h2 style={{ fontSize: '1.4rem', fontWeight: 800, color: '#fff', margin: 0 }}>Fire Crow Security Console</h2>
-            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>Autonomous Agentic Security Orchestration</p>
-          </div>
-
-          {/* Quick Demo Access Header Banner */}
-          <div style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.3)', borderRadius: '10px', padding: '0.85rem 1rem', marginBottom: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div>
-              <div style={{ fontSize: '0.8rem', fontWeight: 700, color: '#4ade80' }}>⚡ Quick Demo Access</div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>Launch console instantly as Demo Operator</div>
+      <div className="page-center" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#050506', backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.02) 0%, transparent 80%)', padding: '1.5rem' }}>
+        <div className="login-card" style={{ width: '100%', maxWidth: '400px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '2.5rem 2rem', boxShadow: '0 30px 60px rgba(0,0,0,0.8)', backdropFilter: 'blur(20px)', textAlign: 'center' }}>
+          
+          {/* Custom Login Tile Header */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '2rem' }}>
+            <div style={{ width: '56px', height: '56px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem', boxShadow: '0 8px 16px rgba(0,0,0,0.4)' }}>
+              <img src="/fire-crow-logo.png" alt="Fire Crow" style={{ width: '38px', height: '38px' }} />
             </div>
+            <h2 className="saas-h1-accent" style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, letterSpacing: '-0.03em', color: '#ffffff' }}>Fire Crow</h2>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.35rem', letterSpacing: '-0.01em' }}>Secure Autonomous Security Orchestration Console</p>
+          </div>
+
+          {/* Pure GitHub Signin Tile Button */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', margin: '2rem 0' }}>
             <button 
-              type="button" 
-              onClick={handleDemoLogin} 
-              disabled={authSubmitting}
-              className="btn btn-sm btn-primary" 
-              style={{ background: '#22c55e', borderColor: '#22c55e', color: '#000', fontWeight: 700, whiteSpace: 'nowrap' }}
+              onClick={handleGitHubLogin} 
+              className="btn-saas-solid" 
+              style={{ 
+                width: '100%', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                gap: '0.75rem', 
+                background: '#ffffff', 
+                color: '#000000', 
+                padding: '0.85rem', 
+                fontSize: '0.88rem', 
+                fontWeight: 700, 
+                borderRadius: '8px', 
+                border: 'none', 
+                cursor: 'pointer',
+                transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
+              }}
             >
-              {authSubmitting ? 'Entering...' : 'Enter Demo →'}
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', margin: '1rem 0', gap: '0.75rem' }}>
-            <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>OR AUTHENTICATE WITH</span>
-            <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
-          </div>
-
-          {/* Auth Tab Switcher */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', background: 'rgba(255,255,255,0.04)', borderRadius: '8px', padding: '3px', marginBottom: '1.25rem' }}>
-            <button
-              type="button"
-              onClick={() => { setAuthMode('login'); setAuthFormError(''); }}
-              style={{ padding: '0.5rem', borderRadius: '6px', border: 'none', background: authMode === 'login' ? 'var(--border)' : 'transparent', color: authMode === 'login' ? '#fff' : 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              onClick={() => { setAuthMode('register'); setAuthFormError(''); }}
-              style={{ padding: '0.5rem', borderRadius: '6px', border: 'none', background: authMode === 'register' ? 'var(--border)' : 'transparent', color: authMode === 'register' ? '#fff' : 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
-            >
-              Create Account
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
+              </svg>
+              Continue with GitHub
             </button>
           </div>
 
           {(error || authFormError) && (
-            <div className="error-box" style={{ background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#f87171', padding: '0.75rem', borderRadius: '8px', fontSize: '0.8rem', marginBottom: '1rem' }}>
+            <div className="error-box" style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#f87171', padding: '0.75rem', borderRadius: '8px', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
               {authFormError || error}
             </div>
           )}
 
-          {/* Password Form */}
-          <form onSubmit={authMode === 'login' ? handlePasswordLogin : handlePasswordRegister} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>Username or Email</label>
-              <input
-                type="text"
-                required
-                placeholder="operator_admin"
-                value={authUsername}
-                onChange={(e) => setAuthUsername(e.target.value)}
-                style={{ width: '100%', padding: '0.65rem 0.85rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: '8px', color: '#fff', fontSize: '0.85rem', outline: 'none' }}
-              />
+          {/* Secure monospaced audit info */}
+          <div style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', textAlign: 'left', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+              <span>Connection:</span>
+              <span style={{ color: '#4ade80' }}>SECURE (TLS 1.3)</span>
             </div>
-
-            {authMode === 'register' && (
-              <div>
-                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>Email Address</label>
-                <input
-                  type="email"
-                  placeholder="admin@company.com"
-                  value={authEmail}
-                  onChange={(e) => setAuthEmail(e.target.value)}
-                  style={{ width: '100%', padding: '0.65rem 0.85rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: '8px', color: '#fff', fontSize: '0.85rem', outline: 'none' }}
-                />
-              </div>
-            )}
-
-            <div>
-              <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>Password</label>
-              <input
-                type="password"
-                required
-                placeholder="••••••••••••"
-                value={authPassword}
-                onChange={(e) => setAuthPassword(e.target.value)}
-                style={{ width: '100%', padding: '0.65rem 0.85rem', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border)', borderRadius: '8px', color: '#fff', fontSize: '0.85rem', outline: 'none' }}
-              />
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span>Identity Provider:</span>
+              <span>github.com</span>
             </div>
-
-            <button
-              type="submit"
-              disabled={authSubmitting}
-              className="btn btn-primary"
-              style={{ width: '100%', padding: '0.75rem', marginTop: '0.5rem', fontSize: '0.85rem', fontWeight: 700 }}
-            >
-              {authSubmitting ? 'Authenticating...' : authMode === 'login' ? 'Sign In to Console' : 'Register Operator Account'}
-            </button>
-          </form>
-
-          {/* Social OAuth Buttons */}
-          <div style={{ marginTop: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-            <button onClick={handleGitHubLogin} className="gh-btn" style={{ width: '100%', justifyContent: 'center' }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
-              </svg>
-              Sign in with GitHub
-            </button>
-
-            <button onClick={handleGoogleLogin} className="btn btn-secondary" style={{ width: '100%', justifyContent: 'center', fontSize: '0.82rem' }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" style={{ marginRight: '8px' }}>
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
-              </svg>
-              Sign in with Google
-            </button>
           </div>
 
-          <button onClick={() => { setError(''); setAuthFormError(''); setView('landing'); }} className="btn btn-ghost" style={{ marginTop: '1.25rem', width: '100%', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            ← Back to home page
+          <button onClick={() => { setError(''); setAuthFormError(''); setView('landing'); }} className="btn btn-ghost" style={{ width: '100%', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+            ← Back to landing page
           </button>
         </div>
       </div>
@@ -1159,9 +1172,18 @@ function App() {
                   <div className="metric-sub">Elevation requests</div>
                 </div>
 
-                <div className="metric-card">
+                <div className="metric-card" style={{ position: 'relative' }}>
                   <div className="metric-label">User Balance</div>
-                  <div className="metric-value">{user?.credit_balance ?? 10.0}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div className="metric-value">{user?.credit_balance ?? 10.0}</div>
+                    <button 
+                      onClick={() => setIsDodoModalOpen(true)} 
+                      className="btn btn-primary btn-sm" 
+                      style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem' }}
+                    >
+                      💳 Top-Up (Dodo)
+                    </button>
+                  </div>
                   <div className="metric-sub">API execution credits</div>
                 </div>
               </div>
@@ -1192,7 +1214,7 @@ function App() {
                       </div>
                     ) : (
                       jobs.slice(0, 5).map(j => (
-                        <div key={j.id} onClick={() => handleViewJobDetail(j.id)} className="list-item">
+                        <div key={j.id} onClick={() => { handleViewJobDetail(j.id); setActiveMonitorJobId(j.id); }} className="list-item" style={{ borderLeft: activeMonitorJobId === j.id ? '2px solid var(--accent-green)' : undefined }}>
                           <div className="list-item-info">
                             <div className="list-item-title">{j.repo_url}</div>
                             <div className="list-item-sub">branch: {j.repo_branch} • {j.id.substring(0, 8)}</div>
@@ -1206,33 +1228,109 @@ function App() {
                   </div>
                 </div>
 
-                {/* Live Activity Feed */}
+                {/* Audit Console Tracker */}
                 <div className="panel">
                   <div className="panel-header">
                     <div className="panel-title">
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                        <polyline points="4 17 10 11 12 13 18 7 14 7 18 7 18 11"/>
                       </svg>
-                      Security Telemetry
+                      Audit Console Tracker
                     </div>
                   </div>
 
-                  <div className="panel-body" style={{ padding: '0.75rem' }}>
-                    {activities.length === 0 ? (
-                      <div className="panel-empty">
-                        <p>No activity events logged in database.</p>
-                      </div>
-                    ) : (
-                      activities.slice(0, 5).map(act => (
-                        <div key={act.id} className="list-item" style={{ cursor: 'default' }}>
-                          <div className="list-item-info">
-                            <div className="list-item-title">{act.action}</div>
-                            {act.details_json && <div className="list-item-sub">{act.details_json}</div>}
-                          </div>
-                          <span className="badge badge-neutral">{act.created_at.substring(11, 16)}</span>
-                        </div>
-                      ))
-                    )}
+                  <div className="panel-body" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {/* Progress Bar String */}
+                    <div style={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                      border: '1px solid rgba(255, 255, 255, 0.05)',
+                      borderRadius: '4px',
+                      padding: '0.65rem 0.75rem',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '0.78rem',
+                      color: '#00ff00',
+                      whiteSpace: 'pre-wrap',
+                      letterSpacing: '0.05em'
+                    }}>
+                      {(() => {
+                        const selectedJob = jobs.find(j => j.id === (activeMonitorJobId || (jobs.length > 0 ? jobs[0].id : ''))) || (jobs.length > 0 ? jobs[0] : null);
+                        let progressString = 'Status: Idle | [                    ] 0%';
+                        if (selectedJob) {
+                          if (selectedJob.status === 'completed') {
+                            progressString = `Status: Completed | [====================] 100%`;
+                          } else if (selectedJob.status === 'cancelled') {
+                            progressString = `Status: Cancelled | [xxxxxxxxxxxxxxxxxxxx] 0%`;
+                          } else if (selectedJob.status === 'failed') {
+                            progressString = `Status: Failed | [xxxxxxxxxxxxxxxxxxxx] 0%`;
+                          } else if (selectedJob.status === 'queued') {
+                            progressString = `Status: Queued | [                    ] 0%`;
+                          } else {
+                            const phaseOrder = ['intake', 'recon', 'scanning', 'ai_analysis', 'remediation', 'attack_graph', 'scoring', 'reporting'];
+                            const completedPhasesCount = monitorPhases.filter(p => p.status === 'completed').length;
+                            const percentage = Math.round((completedPhasesCount / phaseOrder.length) * 100);
+                            const barLength = 20;
+                            const filledLength = Math.round((completedPhasesCount / phaseOrder.length) * barLength);
+                            const bar = '='.repeat(filledLength) + ' '.repeat(barLength - filledLength);
+                            progressString = `Status: Running (${selectedJob.status}) | [${bar}] ${percentage}%`;
+                          }
+                        }
+                        return progressString;
+                      })()}
+                    </div>
+
+                    {/* Console Output Log */}
+                    <div style={{
+                      backgroundColor: '#000000',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      borderRadius: '4px',
+                      padding: '0.75rem',
+                      height: '180px',
+                      overflowY: 'auto',
+                      fontFamily: 'var(--font-mono)',
+                      fontSize: '0.73rem',
+                      color: '#00ff00',
+                      lineHeight: '1.4',
+                      boxShadow: 'inset 0 0 10px rgba(0,0,0,0.8)'
+                    }}>
+                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+                        {(() => {
+                          const selectedJob = jobs.find(j => j.id === (activeMonitorJobId || (jobs.length > 0 ? jobs[0].id : ''))) || (jobs.length > 0 ? jobs[0] : null);
+                          let terminalContent = '';
+                          if (!selectedJob) {
+                            terminalContent = '[SYSTEM] No active audit job found.\n[SYSTEM] Run a scan or select a job from the list to begin tracking.';
+                          } else {
+                            terminalContent += `[SYSTEM] Monitoring Job: ${selectedJob.id.substring(0, 8)}...\n`;
+                            terminalContent += `[SYSTEM] Repo: ${selectedJob.repo_url}\n`;
+                            terminalContent += '------------------------------------------------------------\n';
+                            if (monitorPhases.length === 0) {
+                              if (selectedJob.status === 'queued') {
+                                terminalContent += '[QUEUE] Job is currently queued. Waiting for worker...\n';
+                              } else {
+                                terminalContent += '[SYSTEM] Spawning scan sandbox environment...\n';
+                              }
+                            } else {
+                              monitorPhases.forEach(p => {
+                                const time = p.started_at ? p.started_at.substring(11, 19) : '00:00:00';
+                                terminalContent += `[${time}] [AGENT:${p.phase_name.toUpperCase()}] Spawning agent...\n`;
+                                if (p.status === 'completed') {
+                                  terminalContent += `[${time}] [AGENT:${p.phase_name.toUpperCase()}] Phase completed successfully in ${p.duration_sec || 0}s.\n`;
+                                } else if (p.status === 'failed') {
+                                  terminalContent += `[${time}] [AGENT:${p.phase_name.toUpperCase()}] ERROR: ${p.error_message || 'Phase execution failed'}\n`;
+                                } else {
+                                  terminalContent += `[${time}] [AGENT:${p.phase_name.toUpperCase()}] Agent is working...\n`;
+                                }
+                              });
+                            }
+                            if (selectedJob.status === 'completed') {
+                              terminalContent += '------------------------------------------------------------\n';
+                              terminalContent += '[SYSTEM] Scan sequence successfully completed.\n';
+                              terminalContent += '[SYSTEM] Discovered findings saved to PostgreSQL.\n';
+                            }
+                          }
+                          return terminalContent;
+                        })()}
+                      </pre>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1643,6 +1741,78 @@ function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Dodo Payments Checkout */}
+      {isDodoModalOpen && (
+        <div className="modal-backdrop" onClick={() => setIsDodoModalOpen(false)}>
+          <div className="modal" style={{ maxWidth: '520px' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-title">💳 Dodo Payments Checkout</div>
+                <div className="modal-sub">Select credit package to top-up account balance</div>
+              </div>
+              <button onClick={() => setIsDodoModalOpen(false)} className="btn btn-ghost btn-icon">✕</button>
+            </div>
+
+            <div className="modal-body">
+              {modalError && <div className="error-box" style={{ marginBottom: '1rem' }}>{modalError}</div>}
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
+                <div 
+                  className={`panel ${dodoPackage === 'starter' ? 'active' : ''}`}
+                  style={{ cursor: 'pointer', padding: '1rem', border: dodoPackage === 'starter' ? '2px solid var(--accent)' : '1px solid var(--border)' }}
+                  onClick={() => setDodoPackage('starter')}
+                >
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>STARTER</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#ffffff' }}>$10</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--green)' }}>+10 Scan Credits</div>
+                </div>
+
+                <div 
+                  className={`panel ${dodoPackage === 'pro' ? 'active' : ''}`}
+                  style={{ cursor: 'pointer', padding: '1rem', border: dodoPackage === 'pro' ? '2px solid var(--accent)' : '1px solid var(--border)' }}
+                  onClick={() => setDodoPackage('pro')}
+                >
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>PRO (POPULAR)</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#ffffff' }}>$25</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--green)' }}>+30 Scan Credits (+20% Bonus)</div>
+                </div>
+
+                <div 
+                  className={`panel ${dodoPackage === 'enterprise' ? 'active' : ''}`}
+                  style={{ cursor: 'pointer', padding: '1rem', border: dodoPackage === 'enterprise' ? '2px solid var(--accent)' : '1px solid var(--border)', gridColumn: 'span 2' }}
+                  onClick={() => setDodoPackage('enterprise')}
+                >
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>ENTERPRISE UNLIMITED</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#ffffff' }}>$100</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--purple)' }}>+150 Credits + Priority Docker Sandbox</div>
+                </div>
+              </div>
+
+              {dodoCheckoutUrl && (
+                <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: '8px', fontSize: '0.8rem', color: '#86efac' }}>
+                  ✓ Checkout URL generated: <a href={dodoCheckoutUrl} target="_blank" rel="noreferrer" style={{ color: '#60a5fa' }}>{dodoCheckoutUrl}</a>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer">
+              <button type="button" onClick={() => setIsDodoModalOpen(false)} className="btn btn-secondary">Cancel</button>
+              <button 
+                type="button" 
+                onClick={() => {
+                  const amount = dodoPackage === 'starter' ? 10 : dodoPackage === 'pro' ? 25 : 100;
+                  handleInitiateDodoCheckout(amount, dodoPackage);
+                }} 
+                className="btn btn-primary" 
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? 'Generating Link...' : 'Pay with Dodo Payments 💳'}
+              </button>
+            </div>
           </div>
         </div>
       )}

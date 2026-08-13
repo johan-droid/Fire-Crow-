@@ -109,12 +109,6 @@ pub async fn http_audit_logger(
 
     let req_payload_summary = safe_payload_snippet(&req_bytes, 800);
     
-    // Print unbuffered log to stdout and tracing info
-    let req_log = format!(
-        "\x1b[36m[HTTP REQ]\x1b[0m {} {} | Client: {} | Payload: {}",
-        method, uri, client_ip, req_payload_summary
-    );
-    println!("{}", req_log);
     info!(target: "http_audit", "[HTTP REQ] {} {} | Client: {} | Payload: {}", method, uri, client_ip, req_payload_summary);
 
     // Reconstruct Request
@@ -134,11 +128,6 @@ pub async fn http_audit_logger(
         .unwrap_or(false);
 
     if is_stream {
-        let res_log = format!(
-            "\x1b[32m[HTTP RES]\x1b[0m {} {} -> \x1b[33m{}\x1b[0m ({}ms) | Payload: <event-stream>",
-            method, uri, status, duration_ms
-        );
-        println!("{}", res_log);
         info!(target: "http_audit", "[HTTP RES] {} {} -> {} ({}ms) | Payload: <event-stream>", method, uri, status, duration_ms);
         return Ok(res);
     }
@@ -151,20 +140,7 @@ pub async fn http_audit_logger(
     };
 
     let res_payload_summary = safe_payload_snippet(&res_bytes, 800);
-    
-    let status_color = if status.is_success() {
-        "\x1b[32m" // Green
-    } else if status.is_client_error() {
-        "\x1b[33m" // Yellow
-    } else {
-        "\x1b[31m" // Red
-    };
 
-    let res_log = format!(
-        "\x1b[32m[HTTP RES]\x1b[0m {} {} -> {}{}\x1b[0m ({}ms) | Payload: {}",
-        method, uri, status_color, status, duration_ms, res_payload_summary
-    );
-    println!("{}", res_log);
     info!(target: "http_audit", "[HTTP RES] {} {} -> {} ({}ms) | Payload: {}", method, uri, status, duration_ms, res_payload_summary);
 
     // Reconstruct Response

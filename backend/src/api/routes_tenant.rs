@@ -1,7 +1,8 @@
 use axum::{Json, Router, extract::{Path, State}, routing::{get, post}};
 use std::sync::Arc;
 use crate::error::{AppError, Result};
-use crate::models::Tenant;
+use crate::models::{CreatePaymentRequest, PaymentRecord, Tenant};
+use crate::services::payment_service::PaymentService;
 use crate::services::tenant_service::{TenantService, TenantUpdate};
 
 pub fn router() -> Router<Arc<crate::AppState>> {
@@ -9,14 +10,13 @@ pub fn router() -> Router<Arc<crate::AppState>> {
         .route("/", get(list_tenants).post(create_tenant))
         .route("/:id", get(get_tenant).put(update_tenant))
         .route("/:id/deactivate", post(deactivate_tenant))
+        .route("/payments", get(list_payments).post(record_payment))
 }
 
 pub async fn list_tenants(
     State(state): State<Arc<crate::AppState>>,
     user: crate::middleware::auth::AuthenticatedUser,
 ) -> Result<Json<Vec<Tenant>>> {
-    // CRIT-05: never leak every tenant to every user. Scope to the caller's own
-    // tenant; admins with no tenant of their own see nothing cross-tenant here.
     let tenants = if user.tenant_id.is_empty() {
         Vec::new()
     } else {
@@ -41,7 +41,6 @@ pub async fn get_tenant(
     user: crate::middleware::auth::AuthenticatedUser,
     Path(id): Path<String>,
 ) -> Result<Json<Tenant>> {
-    // Scoped: users may only fetch their own tenant.
     if !user.tenant_id.is_empty() && user.tenant_id != id {
         return Err(AppError::Forbidden("Tenant access denied".into()));
     }
@@ -66,6 +65,9 @@ pub async fn update_tenant(
         name: payload.get("name").and_then(|v| v.as_str()).map(String::from),
         domain: payload.get("domain").and_then(|v| v.as_str()).map(String::from),
         plan: payload.get("plan").and_then(|v| v.as_str()).map(String::from),
+        usecase: payload.get("usecase").and_then(|v| v.as_str()).map(String::from),
+        industry_type: payload.get("industry_type").and_then(|v| v.as_str()).map(String::from),
+        billing_email: payload.get("billing_email").and_then(|v| v.as_str()).map(String::from),
         max_users: payload.get("max_users").and_then(|v| v.as_i64()).map(|v| v as i32),
         max_storage_gb: payload.get("max_storage_gb").and_then(|v| v.as_i64()).map(|v| v as i32),
     };
@@ -89,3 +91,19 @@ pub async fn deactivate_tenant(
     }
 }
 
+pub async fn list_payments(
+    State(state): State<Arc<crate::AppState>>,
+    user: crate::middleware::auth::AuthenticatedUser,
+) -> Result<Json<Vec<PaymentRecord>>> {
+    let records = PaymentService::list_user_payments(state.pool(), &user.user_id).await?;
+    Ok(Json(records))
+}
+
+pub async fn record_payment(
+    State(state): State<Arc<crate::AppState>>,
+    user: crate::middleware::auth::AuthenticatedUser,
+    Json(payload): Json<CreatePaymentRequest>,
+) -> Result<Json<PaymentRecord>> {
+    let record = PaymentService::record_payment(state.pool(), &user.user_id, payload).await?;
+    Ok(Json(record))
+}

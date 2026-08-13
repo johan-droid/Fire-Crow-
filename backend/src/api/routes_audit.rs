@@ -7,11 +7,13 @@ pub fn router() -> Router<Arc<crate::AppState>> {
     Router::new()
         .route("/submit", post(submit_audit))
         .route("/jobs", get(list_jobs))
-        .route("/job/{job_id}", get(get_job_detail).delete(cancel_job))
-        .route("/job/{job_id}/report", get(download_report))
-        .route("/job/{job_id}/email", post(email_report))
-        .route("/job/{job_id}/insight", get(get_job_insight))
-        .route("/job/{job_id}/graph", get(get_attack_graph))
+        .route("/privacy-logs", get(list_privacy_logs))
+        .route("/job/:job_id", get(get_job_detail).delete(cancel_job))
+        .route("/job/:job_id/phases", get(get_job_phases))
+        .route("/job/:job_id/report", get(download_report))
+        .route("/job/:job_id/email", post(email_report))
+        .route("/job/:job_id/insight", get(get_job_insight))
+        .route("/job/:job_id/graph", get(get_attack_graph))
 }
 
 pub async fn submit_audit(
@@ -20,13 +22,15 @@ pub async fn submit_audit(
     Json(req): Json<SubmitJobRequest>,
 ) -> Result<Json<JobResponse>> {
     let job_id = uuid::Uuid::new_v4().to_string();
-    sqlx::query("INSERT INTO audit_jobs (id, user_id, tenant_id, repo_url, repo_branch, status, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)")
+    sqlx::query("INSERT INTO audit_jobs (id, user_id, tenant_id, repo_url, repo_branch, status, cancel_requested, legal_hold, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)")
         .bind(&job_id)
         .bind(&user.user_id)
         .bind(&user.tenant_id)
         .bind(&req.repo_url)
         .bind(req.repo_branch.as_deref().unwrap_or("main"))
         .bind(crate::models::JobStatus::Queued)
+        .bind(false)
+        .bind(false)
         .bind(chrono::Utc::now().naive_utc())
         .execute(state.pool()).await.map_err(AppError::Database)?;
     let pool = state.pool().clone();
@@ -55,9 +59,8 @@ pub async fn get_job_detail(State(state): State<Arc<crate::AppState>>, Path(job_
         .bind(&job_id)
         .bind(&user.user_id)
         .fetch_optional(state.pool()).await.map_err(AppError::Database)?.ok_or_else(|| AppError::NotFound("Job not found".into()))?;
-    let findings: Vec<crate::models::FindingModel> = sqlx::query_as::<_, crate::models::FindingModel>("SELECT * FROM findings WHERE job_id=$1 AND user_id=$2")
+    let findings: Vec<crate::models::FindingModel> = sqlx::query_as::<_, crate::models::FindingModel>("SELECT * FROM findings WHERE job_id=$1")
         .bind(&job_id)
-        .bind(&user.user_id)
         .fetch_all(state.pool()).await.map_err(AppError::Database)?;
     Ok(Json(JobDetailResponse { job: JobResponse::from(job), findings: findings.into_iter().map(FindingResponse::from).collect() }))
 }
@@ -76,7 +79,7 @@ pub async fn cancel_job(State(state): State<Arc<crate::AppState>>, Path(job_id):
 }
 
 pub async fn download_report(State(state): State<Arc<crate::AppState>>, Path(job_id): Path<String>, user: crate::middleware::auth::AuthenticatedUser) -> Result<axum::response::Response> {
-    let report: Option<crate::models::AuditReport> = sqlx::query_as::<_, crate::models::AuditReport>("SELECT * FROM audit_reports WHERE job_id=$1 AND user_id=$2")
+    let report: Option<crate::models::AuditReport> = sqlx::query_as::<_, crate::models::AuditReport>("SELECT r.* FROM audit_reports r JOIN audit_jobs j ON r.job_id = j.id WHERE r.job_id=$1 AND j.user_id=$2")
         .bind(&job_id)
         .bind(&user.user_id)
         .fetch_optional(state.pool()).await.map_err(AppError::Database)?;
@@ -92,9 +95,13 @@ pub async fn get_job_insight(_state: State<Arc<crate::AppState>>, _job_id: Path<
     Ok(Json(serde_json::json!({"insights": []})))
 }
 pub async fn get_attack_graph(State(state): State<Arc<crate::AppState>>, Path(job_id): Path<String>, user: crate::middleware::auth::AuthenticatedUser) -> Result<Json<serde_json::Value>> {
-    let findings: Vec<crate::models::FindingModel> = sqlx::query_as::<_, crate::models::FindingModel>("SELECT * FROM findings WHERE job_id=$1 AND user_id=$2")
+    let _job: crate::models::AuditJob = sqlx::query_as::<_, crate::models::AuditJob>("SELECT * FROM audit_jobs WHERE id=$1 AND user_id=$2")
         .bind(&job_id)
         .bind(&user.user_id)
+        .fetch_optional(state.pool()).await.map_err(AppError::Database)?.ok_or_else(|| AppError::NotFound("Job not found".into()))?;
+
+    let findings: Vec<crate::models::FindingModel> = sqlx::query_as::<_, crate::models::FindingModel>("SELECT * FROM findings WHERE job_id=$1")
+        .bind(&job_id)
         .fetch_all(state.pool()).await.map_err(AppError::Database)?;
     let model_findings: Vec<crate::schemas::audit_state::Finding> = findings.into_iter().map(|f| crate::schemas::audit_state::Finding {
         id: f.id, agent_source: f.agent_source, title: f.title, description: f.description, severity: f.severity,
@@ -103,4 +110,33 @@ pub async fn get_attack_graph(State(state): State<Arc<crate::AppState>>, Path(jo
         scanner_mode: f.scanner_mode, file_path: f.file_path, line_number: f.line_number, route: f.route, metadata_json: f.metadata_json,
     }).collect();
     Ok(Json(crate::services::attack_graph::attack_graph_body(&model_findings)))
+}
+
+pub async fn list_privacy_logs(
+    State(state): State<Arc<crate::AppState>>,
+    user: crate::middleware::auth::AuthenticatedUser,
+) -> Result<Json<Vec<crate::models::PrivacyAuditLog>>> {
+    let logs = crate::services::privacy_audit_service::PrivacyAuditService::list_user_logs(state.pool(), &user.user_id).await?;
+    Ok(Json(logs))
+}
+
+pub async fn get_job_phases(
+    State(state): State<Arc<crate::AppState>>,
+    Path(job_id): Path<String>,
+    user: crate::middleware::auth::AuthenticatedUser,
+) -> Result<Json<Vec<crate::models::PhaseLedgerModel>>> {
+    let _job: crate::models::AuditJob = sqlx::query_as::<_, crate::models::AuditJob>("SELECT * FROM audit_jobs WHERE id=$1 AND user_id=$2")
+        .bind(&job_id)
+        .bind(&user.user_id)
+        .fetch_optional(state.pool()).await.map_err(AppError::Database)?.ok_or_else(|| AppError::NotFound("Job not found".into()))?;
+
+    let phases = sqlx::query_as::<_, crate::models::PhaseLedgerModel>(
+        "SELECT * FROM phase_ledger WHERE job_id = $1 ORDER BY started_at ASC"
+    )
+    .bind(&job_id)
+    .fetch_all(state.pool())
+    .await
+    .map_err(AppError::Database)?;
+
+    Ok(Json(phases))
 }
