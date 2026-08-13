@@ -6,7 +6,6 @@ use tower_governor::errors::GovernorError;
 use tower_governor::governor::GovernorConfigBuilder;
 use tower_governor::key_extractor::KeyExtractor;
 use tower_governor::GovernorLayer;
-use std::net::IpAddr;
 
 #[derive(Clone, Copy)]
 pub struct CloudflareKeyExtractor;

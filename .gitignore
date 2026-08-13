@@ -11,6 +11,9 @@
 *.pem
 *.key
 *.crt
+.dev.vars
+scripts/cf_secrets.json
+scripts/upload_cf_secrets.sh
 
 # Rust / Cargo Build Output
 target/
