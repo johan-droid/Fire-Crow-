@@ -4,5 +4,3 @@ ALTER TABLE auth_exchange_codes
     ALTER COLUMN created_at SET DEFAULT CURRENT_TIMESTAMP,
     ALTER COLUMN created_at DROP NOT NULL;
 
-ALTER TABLE auth_exchange_codes
-    ALTER COLUMN id DROP NOT NULL;
