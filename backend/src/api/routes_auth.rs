@@ -129,7 +129,7 @@ pub async fn register(State(state): State<Arc<crate::AppState>>, Json(payload): 
     let password_hash = crate::services::auth::hash_password(password)?;
     let user_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().naive_utc();
-    sqlx::query("INSERT INTO users (id, username, email, password_hash, is_active, credit_balance, created_at) VALUES ($1,$2,$3,$4,true,10.0,$5)")
+    sqlx::query("INSERT INTO users (id, username, email, password_hash, is_active, credit_balance, created_at) VALUES ($1,$2,$3,$4,true,0.0,$5)")
         .bind(&user_id).bind(username).bind(&email).bind(password_hash).bind(now)
         .execute(state.pool()).await.map_err(AppError::Database)?;
     crate::services::security_log::record_security_event(state.pool(), Some(&user_id), None, "user_registered", None, None).await.ok();
@@ -383,7 +383,7 @@ pub async fn github_callback(
             Err(e) => return (jar, error_redirect(&format!("Token encryption failed: {e}"))),
         };
         match sqlx::query(
-            "INSERT INTO users (id, username, email, is_active, credit_balance, github_id, github_access_token, created_at) VALUES ($1, $2, $3, true, 10.0, $4, $5, $6)")
+            "INSERT INTO users (id, username, email, is_active, credit_balance, github_id, github_access_token, created_at) VALUES ($1, $2, $3, true, 0.0, $4, $5, $6)")
             .bind(&new_id).bind(&username).bind(&gh_user.email)
             .bind(&github_id_str).bind(&encrypted).bind(now)
             .execute(state.pool()).await {
@@ -585,7 +585,7 @@ pub async fn google_callback(
         let username = format!("{}_{}", name_prefix.replace(' ', "_").to_lowercase(), new_id.chars().take(4).collect::<String>());
         let now = chrono::Utc::now().naive_utc();
         match sqlx::query(
-            "INSERT INTO users (id, username, email, is_active, credit_balance, google_id, created_at) VALUES ($1, $2, $3, true, 10.0, $4, $5)")
+            "INSERT INTO users (id, username, email, is_active, credit_balance, google_id, created_at) VALUES ($1, $2, $3, true, 0.0, $4, $5)")
             .bind(&new_id).bind(&username).bind(&google_user.email)
             .bind(&google_id_str).bind(now)
             .execute(state.pool()).await {

@@ -146,9 +146,14 @@ pub async fn validate_token_with_anti_replay(
     let data = validate_token(token, secret)?;
     let revoked = if let Some(r) = redis {
         let mut conn = r.clone();
-        let is_revoked: bool = redis::AsyncCommands::exists(&mut conn, format!("firecrow:revoked_jti:{}", data.claims.jti))
+        let mut is_revoked: bool = redis::AsyncCommands::exists(&mut conn, format!("firecrow:revoked_jti:{}", data.claims.jti))
             .await
             .unwrap_or(false);
+        if !is_revoked {
+            is_revoked = redis::AsyncCommands::exists(&mut conn, format!("firecrow:revoked_family:{}", data.claims.token_family))
+                .await
+                .unwrap_or(false);
+        }
         is_revoked
     } else {
         // HIGH-02: without Redis, fall back to the database revocation table so
