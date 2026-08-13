@@ -12,13 +12,16 @@ use std::net::IpAddr;
 pub struct CloudflareKeyExtractor;
 
 impl KeyExtractor for CloudflareKeyExtractor {
-    type Key = IpAddr;
+    type Key = String;
 
     fn extract<B>(&self, req: &Request<B>) -> Result<Self::Key, GovernorError> {
+        if let Some(cf_info) = req.extensions().get::<crate::middleware::cloudflare::CloudflareInfo>() {
+            return Ok(cf_info.client_ip.clone());
+        }
+        
+        // Fallback if middleware didn't run, though it should
         let ip_str = extract_client_ip(req.headers(), None);
-        ip_str
-            .parse::<IpAddr>()
-            .map_err(|_| GovernorError::UnableToExtractKey)
+        Ok(ip_str)
     }
 }
 

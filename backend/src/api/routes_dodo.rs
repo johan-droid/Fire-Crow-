@@ -1,5 +1,10 @@
 use axum::{Json, Router, extract::{Path, State}, routing::{get, post}};
+use axum::http::HeaderMap;
+use axum::body::Bytes;
 use std::sync::Arc;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+use subtle::ConstantTimeEq;
 use crate::error::{AppError, Result};
 use crate::services::dodo_payment_service::{
     DodoCheckoutSessionRequest, DodoCheckoutSessionResponse, DodoPaymentService, DodoWebhookEvent,
@@ -17,18 +22,36 @@ pub async fn create_checkout(
     user: crate::middleware::auth::AuthenticatedUser,
     Json(payload): Json<DodoCheckoutSessionRequest>,
 ) -> Result<Json<DodoCheckoutSessionResponse>> {
-    if payload.amount <= 0.0 {
-        return Err(AppError::BadRequest("Payment amount must be greater than zero".into()));
-    }
-
-    let session = DodoPaymentService::create_checkout_session(&state.settings, &user.user_id, payload).await?;
-    Ok(Json(session))
+    // P0-2: The audit engine is currently a stub, returning canned results.
+    // Billing is disabled until a real analysis engine is implemented.
+    return Err(AppError::Unauthorized("Service temporarily unavailable while audit engine is being upgraded.".into()));
 }
 
 pub async fn handle_webhook(
     State(state): State<Arc<crate::AppState>>,
-    Json(payload): Json<DodoWebhookEvent>,
+    headers: HeaderMap,
+    body: Bytes,
 ) -> Result<Json<serde_json::Value>> {
+    let signature = headers
+        .get("dodo-signature")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| AppError::Unauthorized("Missing signature".into()))?;
+
+    type HmacSha256 = Hmac<Sha256>;
+    let secret = state.settings.dodo_payments_webhook_secret.as_bytes();
+    if secret.is_empty() {
+        return Err(AppError::Internal("Webhook secret not configured".into()));
+    }
+
+    let mut mac = HmacSha256::new_from_slice(secret).map_err(|_| AppError::Internal("Invalid HMAC key".into()))?;
+    mac.update(&body);
+    let expected_sig = hex::encode(mac.finalize().into_bytes());
+
+    if expected_sig.as_bytes().ct_eq(signature.as_bytes()).unwrap_u8() == 0 {
+        return Err(AppError::Unauthorized("Invalid signature".into()));
+    }
+
+    let payload: DodoWebhookEvent = serde_json::from_slice(&body).map_err(|_| AppError::BadRequest("Invalid payload".into()))?;
     let record = DodoPaymentService::process_webhook(state.pool(), &state.settings, payload).await?;
     Ok(Json(serde_json::json!({
         "status": "success",

@@ -149,7 +149,7 @@ async fn main() -> anyhow::Result<()> {
     use crate::middleware::request_id::request_id_middleware;
 
     let api_v1 = axum::Router::new()
-        .nest("/auth", crate::api::routes_auth::router())
+        .nest("/auth", crate::api::routes_auth::router().layer(crate::middleware::rate_limit::rate_limiter("5/minute")))
         .nest("/audit", crate::api::routes_audit::router())
         .nest("/system", crate::api::routes_system::router())
         .nest("/storage", crate::api::routes_storage::router())
@@ -157,13 +157,13 @@ async fn main() -> anyhow::Result<()> {
         .nest("/leaderboard", crate::api::routes_leaderboard::router())
         .nest("/push", crate::api::routes_push::router())
         .nest("/user", crate::api::routes_user::router())
-        .nest("/mfa", crate::api::routes_mfa::router())
+        .nest("/mfa", crate::api::routes_mfa::router().layer(crate::middleware::rate_limit::rate_limiter("5/minute")))
         .nest("/sso", crate::api::routes_sso::router())
         .nest("/pam", crate::api::routes_pam::router())
         .nest("/iam", crate::api::routes_iam::router())
         .nest("/tenant", crate::api::routes_tenant::router())
         .nest("/verify", crate::api::routes_verify::router())
-        .nest("/payments/dodo", crate::api::routes_dodo::router())
+        .nest("/payments/dodo", crate::api::routes_dodo::router().layer(crate::middleware::rate_limit::rate_limiter("30/minute")))
         .nest("/sse", crate::api::routes_sse::router());
 
     let app = axum::Router::new()
@@ -178,20 +178,22 @@ async fn main() -> anyhow::Result<()> {
         ))
         .layer(tower_http::catch_panic::CatchPanicLayer::new())
         .layer(from_fn(crate::middleware::http_logger::http_audit_logger))
-        .layer(from_fn(crate::middleware::cloudflare::cloudflare_middleware))
         .layer(from_fn(request_id_middleware))
         .layer(from_fn(body_size_limit_middleware))
         .with_state(state.clone());
 
-    // Global rate limiting keyed by peer IP.
-    let mut rate_limiter_conf = tower_governor::governor::GovernorConfigBuilder::default()
+    // Global rate limiting keyed by CF extracted IP instead of Peer IP
+    let rate_limiter_conf = tower_governor::governor::GovernorConfigBuilder::default()
         .per_second(20)
         .burst_size(40)
-        .key_extractor(tower_governor::key_extractor::PeerIpKeyExtractor);
+        .key_extractor(crate::middleware::rate_limit::CloudflareKeyExtractor)
+        .finish()
+        .expect("rate limiter config is valid");
 
     let app = app.layer(tower_governor::GovernorLayer {
-        config: std::sync::Arc::new(rate_limiter_conf.finish().expect("rate limiter config is valid")),
-    });
+        config: std::sync::Arc::new(rate_limiter_conf),
+    })
+    .layer(from_fn(crate::middleware::cloudflare::cloudflare_middleware)); // P0-3: Must run before rate limiting to set CF info
 
     // Add CSRF protection when enabled.
     let app = if settings.csrf_enabled {
