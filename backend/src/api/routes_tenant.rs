@@ -101,9 +101,9 @@ pub async fn list_payments(
 
 pub async fn record_payment(
     State(state): State<Arc<crate::AppState>>,
-    user: crate::middleware::auth::AuthenticatedUser,
+    user: crate::middleware::auth::AdminUser,
     Json(payload): Json<CreatePaymentRequest>,
 ) -> Result<Json<PaymentRecord>> {
-    let record = PaymentService::record_payment(state.pool(), &user.user_id, payload).await?;
+    let record = PaymentService::record_payment(state.pool(), &user.0.user_id, payload).await?;
     Ok(Json(record))
 }
