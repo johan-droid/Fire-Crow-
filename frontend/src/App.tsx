@@ -1,6 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-const API_BASE = '/api/v1';
+const getApiBase = (): string => {
+  const viteApiUrl = import.meta.env.VITE_API_URL;
+  if (viteApiUrl && typeof viteApiUrl === 'string' && viteApiUrl.trim().length > 0) {
+    return viteApiUrl.trim();
+  }
+  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+    return 'http://localhost:8000/api/v1';
+  }
+  return '/api/v1';
+};
+
+const API_BASE = getApiBase();
 
 interface UserProfile {
   user_id: string;
