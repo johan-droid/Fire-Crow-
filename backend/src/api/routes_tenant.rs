@@ -41,7 +41,7 @@ pub async fn get_tenant(
     user: crate::middleware::auth::AuthenticatedUser,
     Path(id): Path<String>,
 ) -> Result<Json<Tenant>> {
-    if !user.tenant_id.is_empty() && user.tenant_id != id {
+    if user.tenant_id.is_empty() || user.tenant_id != id {
         return Err(AppError::Forbidden("Tenant access denied".into()));
     }
     let t = TenantService::get_by_id(state.pool(), &id).await?;

@@ -11,9 +11,15 @@ impl PamService {
         .bind(req.id).bind(req.user_id).bind(req.role_name).bind(req.permission).bind(req.reason).bind(req.requested_duration_minutes).bind(req.ticket_ref).bind(Utc::now().naive_utc())
         .fetch_one(pool).await.map_err(AppError::Database)
     }
-    pub async fn list_requests(pool: &sqlx::PgPool, _tenant_id: Option<&str>) -> Result<Vec<PrivilegedAccessRequest>> {
-        sqlx::query_as::<_, PrivilegedAccessRequest>("SELECT * FROM pam_requests ORDER BY created_at DESC")
-            .fetch_all(pool).await.map_err(AppError::Database)
+    pub async fn list_requests(pool: &sqlx::PgPool, user_id: Option<&str>) -> Result<Vec<PrivilegedAccessRequest>> {
+        if let Some(uid) = user_id {
+            sqlx::query_as::<_, PrivilegedAccessRequest>("SELECT * FROM pam_requests WHERE user_id = $1 ORDER BY created_at DESC")
+                .bind(uid)
+                .fetch_all(pool).await.map_err(AppError::Database)
+        } else {
+            sqlx::query_as::<_, PrivilegedAccessRequest>("SELECT * FROM pam_requests ORDER BY created_at DESC")
+                .fetch_all(pool).await.map_err(AppError::Database)
+        }
     }
     pub async fn list_pending(pool: &sqlx::PgPool) -> Result<Vec<PrivilegedAccessRequest>> {
         sqlx::query_as::<_, PrivilegedAccessRequest>("SELECT * FROM pam_requests WHERE status = 'pending' ORDER BY created_at ASC")
@@ -54,8 +60,14 @@ impl PamService {
             .execute(pool).await.map_err(AppError::Database)?;
         Ok(())
     }
-    pub async fn list_grants(pool: &sqlx::PgPool) -> Result<Vec<PrivilegedAccessGrant>> {
-        sqlx::query_as::<_, PrivilegedAccessGrant>("SELECT * FROM pam_grants ORDER BY created_at DESC")
-            .fetch_all(pool).await.map_err(AppError::Database)
+    pub async fn list_grants(pool: &sqlx::PgPool, user_id: Option<&str>) -> Result<Vec<PrivilegedAccessGrant>> {
+        if let Some(uid) = user_id {
+            sqlx::query_as::<_, PrivilegedAccessGrant>("SELECT g.* FROM pam_grants g JOIN pam_requests r ON g.request_id = r.id WHERE r.user_id = $1 ORDER BY g.created_at DESC")
+                .bind(uid)
+                .fetch_all(pool).await.map_err(AppError::Database)
+        } else {
+            sqlx::query_as::<_, PrivilegedAccessGrant>("SELECT * FROM pam_grants ORDER BY created_at DESC")
+                .fetch_all(pool).await.map_err(AppError::Database)
+        }
     }
 }

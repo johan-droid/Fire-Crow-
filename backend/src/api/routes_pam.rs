@@ -14,9 +14,9 @@ pub fn router() -> Router<Arc<crate::AppState>> {
 
 pub async fn list_requests(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    user: crate::middleware::auth::AuthenticatedUser,
 ) -> Result<Json<Vec<PrivilegedAccessRequest>>> {
-    PamService::list_requests(state.pool(), None).await.map(Json)
+    PamService::list_requests(state.pool(), Some(&user.user_id)).await.map(Json)
 }
 
 pub async fn create_request(
@@ -43,9 +43,9 @@ pub async fn approve_request(
 
 pub async fn list_grants(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    user: crate::middleware::auth::AuthenticatedUser,
 ) -> Result<Json<Vec<PrivilegedAccessGrant>>> {
-    PamService::list_grants(state.pool()).await.map(Json)
+    PamService::list_grants(state.pool(), Some(&user.user_id)).await.map(Json)
 }
 
 pub async fn revoke_grant(
