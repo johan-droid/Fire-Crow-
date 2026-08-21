@@ -41,14 +41,15 @@ pub async fn exchange_token(
     let (access_token_str, _) = crate::services::auth::create_access_token(&user_id, &username, &state.settings().secret_key, &tenant_id, state.settings().jwt_access_token_expire_minutes)?;
     let (refresh_token_str, _) = crate::services::auth::create_refresh_token(&user_id, &username, &state.settings().secret_key, &tenant_id, &token_family)?;
 
-    let access_cookie = Cookie::build(("access_token", access_token_str.clone()))
+    let cookie_name = state.settings().auth_cookie_name.clone();
+    let access_cookie = Cookie::build((cookie_name.clone(), access_token_str.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
     .same_site(axum_extra::extract::cookie::SameSite::Strict)
         .build();
 
-    let refresh_cookie = Cookie::build(("refresh_token", refresh_token_str.clone()))
+    let refresh_cookie = Cookie::build((format!("{}_refresh", cookie_name), refresh_token_str.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
@@ -96,14 +97,15 @@ pub async fn refresh_token(
     let (access_token_str, _) = crate::services::auth::create_access_token(&claims.claims.sub, &claims.claims.username, &state.settings().secret_key, &tenant_id, state.settings().jwt_access_token_expire_minutes)?;
     let (refresh_token_str, _) = crate::services::auth::create_refresh_token(&claims.claims.sub, &claims.claims.username, &state.settings().secret_key, &tenant_id, &new_family)?;
 
-    let access_cookie = Cookie::build(("access_token", access_token_str.clone()))
+    let cookie_name = state.settings().auth_cookie_name.clone();
+    let access_cookie = Cookie::build((cookie_name.clone(), access_token_str.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
     .same_site(axum_extra::extract::cookie::SameSite::Strict)
         .build();
 
-    let refresh_cookie = Cookie::build(("refresh_token", refresh_token_str.clone()))
+    let refresh_cookie = Cookie::build((format!("{}_refresh", cookie_name), refresh_token_str.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
@@ -151,6 +153,10 @@ pub async fn login(
     let user: Option<crate::models::User> = sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE LOWER(username)=$1 OR LOWER(email)=$1")
         .bind(&normalized).fetch_optional(state.pool()).await.map_err(AppError::Database)?;
     let user = match user { Some(u) => u, None => { crate::services::auth::record_login_failure(state.pool(), &lockout_key).await?; return Err(AppError::InvalidCredentials); } };
+    if !user.is_active {
+        crate::services::auth::record_login_failure(state.pool(), &lockout_key).await?;
+        return Err(AppError::Forbidden("Account is deactivated".into()));
+    }
     let password_hash = user.password_hash.as_deref().unwrap_or("");
     if !crate::services::auth::verify_password(password, password_hash)? {
         crate::services::auth::record_login_failure(state.pool(), &lockout_key).await?;
@@ -163,14 +169,15 @@ pub async fn login(
     let (refresh_token_str, _) = crate::services::auth::create_refresh_token(&user.id, &user.username, &state.settings().secret_key, &tenant_id, &token_family)?;
     sqlx::query("UPDATE users SET last_login_at=$1 WHERE id=$2").bind(chrono::Utc::now().naive_utc()).bind(&user.id).execute(state.pool()).await.ok();
 
-    let access_cookie = Cookie::build(("access_token", access_token_str.clone()))
+    let cookie_name = state.settings().auth_cookie_name.clone();
+    let access_cookie = Cookie::build((cookie_name.clone(), access_token_str.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
     .same_site(axum_extra::extract::cookie::SameSite::Strict)
         .build();
 
-    let refresh_cookie = Cookie::build(("refresh_token", refresh_token_str.clone()))
+    let refresh_cookie = Cookie::build((format!("{}_refresh", cookie_name), refresh_token_str.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
@@ -202,10 +209,11 @@ pub async fn logout(
         let _ = crate::services::auth::revoke_token_in_db(state.pool(), &user.jti, &user.token_family, ttl).await;
     }
 
-    let mut access_cookie = Cookie::build(("access_token", "")).path("/").http_only(true).build();
+    let cookie_name = state.settings().auth_cookie_name.clone();
+    let mut access_cookie = Cookie::build((cookie_name.clone(), "")).path("/").http_only(true).build();
     access_cookie.make_removal();
 
-    let mut refresh_cookie = Cookie::build(("refresh_token", "")).path("/").http_only(true).build();
+    let mut refresh_cookie = Cookie::build((format!("{}_refresh", cookie_name), "")).path("/").http_only(true).build();
     refresh_cookie.make_removal();
 
     let jar = jar.add(access_cookie).add(refresh_cookie);
@@ -419,14 +427,15 @@ pub async fn github_callback(
         Err(e) => return (jar, error_redirect(&format!("Refresh token creation failed: {e}"))),
     };
 
-    let access_cookie = Cookie::build(("access_token", access_token_str.clone()))
+    let cookie_name = state.settings().auth_cookie_name.clone();
+    let access_cookie = Cookie::build((cookie_name.clone(), access_token_str.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
     .same_site(axum_extra::extract::cookie::SameSite::Strict)
         .build();
 
-    let refresh_cookie = Cookie::build(("refresh_token", refresh_token_str))
+    let refresh_cookie = Cookie::build((format!("{}_refresh", cookie_name), refresh_token_str))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)

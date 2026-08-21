@@ -60,7 +60,7 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://firecrow:firecrow@localhost:5432/firecrow".to_string());
+        .map_err(|_| anyhow::anyhow!("DATABASE_URL environment variable is required"))?;
 
     let clean_database_url = database_url
         .replace("&channel_binding=require", "")
@@ -180,6 +180,7 @@ async fn main() -> anyhow::Result<()> {
         .layer(from_fn(crate::middleware::http_logger::http_audit_logger))
         .layer(from_fn(request_id_middleware))
         .layer(from_fn(body_size_limit_middleware))
+        .layer(from_fn_with_state(state.clone(), crate::middleware::error_sanitizer::error_sanitizer))
         .with_state(state.clone());
 
     // Global rate limiting keyed by CF extracted IP instead of Peer IP

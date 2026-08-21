@@ -14,7 +14,7 @@ pub async fn list_providers(
     State(state): State<Arc<crate::AppState>>,
     _user: crate::middleware::auth::AuthenticatedUser,
 ) -> Result<Json<Vec<SsoProvider>>> {
-    SsoService::list_providers(state.pool()).await.map(Json)
+    SsoService::list_providers(state.pool(), state.crypto()).await.map(Json)
 }
 
 pub async fn create_provider(
@@ -25,7 +25,7 @@ pub async fn create_provider(
     if provider.id.is_empty() {
         provider.id = uuid::Uuid::new_v4().to_string();
     }
-    SsoService::create_provider(state.pool(), provider).await.map(Json)
+    SsoService::create_provider(state.pool(), state.crypto(), provider).await.map(Json)
 }
 
 pub async fn get_provider(
@@ -33,7 +33,7 @@ pub async fn get_provider(
     _user: crate::middleware::auth::AuthenticatedUser,
     Path(id): Path<String>,
 ) -> Result<Json<SsoProvider>> {
-    SsoService::get_provider(state.pool(), &id)
+    SsoService::get_provider(state.pool(), state.crypto(), &id)
         .await?
         .map(Json)
         .ok_or_else(|| AppError::NotFound("SSO Provider not found".into()))
@@ -62,7 +62,7 @@ pub async fn update_provider(
         default_role_id: payload.get("default_role_id").and_then(|v| v.as_str()).map(String::from),
     };
 
-    SsoService::update_provider(state.pool(), &id, &updates)
+    SsoService::update_provider(state.pool(), state.crypto(), &id, &updates)
         .await?
         .map(Json)
         .ok_or_else(|| AppError::NotFound("SSO Provider not found".into()))

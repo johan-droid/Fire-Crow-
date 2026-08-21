@@ -88,10 +88,26 @@ pub async fn download_report(State(state): State<Arc<crate::AppState>>, Path(job
     Ok(axum::response::Response::builder().status(200).header("Content-Type", "text/markdown").body(axum::body::Body::from(markdown)).unwrap())
 }
 
-pub async fn email_report(_state: State<Arc<crate::AppState>>, _job_id: Path<String>) -> Result<Json<serde_json::Value>> {
+pub async fn email_report(
+    State(state): State<Arc<crate::AppState>>,
+    user: crate::middleware::auth::AuthenticatedUser,
+    Path(job_id): Path<String>,
+) -> Result<Json<serde_json::Value>> {
+    let _job: crate::models::AuditJob = sqlx::query_as::<_, crate::models::AuditJob>("SELECT * FROM audit_jobs WHERE id=$1 AND user_id=$2")
+        .bind(&job_id)
+        .bind(&user.user_id)
+        .fetch_optional(state.pool()).await.map_err(AppError::Database)?.ok_or_else(|| AppError::NotFound("Job not found".into()))?;
     Ok(Json(serde_json::json!({"status": "email_queued"})))
 }
-pub async fn get_job_insight(_state: State<Arc<crate::AppState>>, _job_id: Path<String>) -> Result<Json<serde_json::Value>> {
+pub async fn get_job_insight(
+    State(state): State<Arc<crate::AppState>>,
+    user: crate::middleware::auth::AuthenticatedUser,
+    Path(job_id): Path<String>,
+) -> Result<Json<serde_json::Value>> {
+    let _job: crate::models::AuditJob = sqlx::query_as::<_, crate::models::AuditJob>("SELECT * FROM audit_jobs WHERE id=$1 AND user_id=$2")
+        .bind(&job_id)
+        .bind(&user.user_id)
+        .fetch_optional(state.pool()).await.map_err(AppError::Database)?.ok_or_else(|| AppError::NotFound("Job not found".into()))?;
     Ok(Json(serde_json::json!({"insights": []})))
 }
 pub async fn get_attack_graph(State(state): State<Arc<crate::AppState>>, Path(job_id): Path<String>, user: crate::middleware::auth::AuthenticatedUser) -> Result<Json<serde_json::Value>> {

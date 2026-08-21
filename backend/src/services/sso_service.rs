@@ -1,16 +1,33 @@
 use crate::error::{AppError, Result};
 use crate::models::SsoProvider;
+use crate::services::crypto::CryptoManager;
 use chrono::Utc;
+use std::sync::Arc;
 
 pub struct SsoService;
 
 impl SsoService {
-    pub async fn list_providers(pool: &sqlx::PgPool) -> Result<Vec<SsoProvider>> {
-        sqlx::query_as::<_, SsoProvider>("SELECT * FROM sso_providers ORDER BY name")
-            .fetch_all(pool).await.map_err(AppError::Database)
+    pub async fn list_providers(pool: &sqlx::PgPool, crypto: &Arc<CryptoManager>) -> Result<Vec<SsoProvider>> {
+        let providers = sqlx::query_as::<_, SsoProvider>("SELECT * FROM sso_providers ORDER BY name")
+            .fetch_all(pool).await.map_err(AppError::Database)?;
+        let mut result = Vec::with_capacity(providers.len());
+        for mut p in providers {
+            if let Some(secret) = &p.client_secret {
+                if let Ok(decrypted) = crypto.decrypt_secret(secret) {
+                    p.client_secret = Some(decrypted);
+                }
+            }
+            result.push(p);
+        }
+        Ok(result)
     }
 
-    pub async fn create_provider(pool: &sqlx::PgPool, provider: SsoProvider) -> Result<SsoProvider> {
+    pub async fn create_provider(pool: &sqlx::PgPool, crypto: &Arc<CryptoManager>, mut provider: SsoProvider) -> Result<SsoProvider> {
+        if let Some(secret) = &provider.client_secret {
+            if !secret.is_empty() && !secret.starts_with("ENC[") {
+                provider.client_secret = Some(crypto.encrypt_secret(secret)?);
+            }
+        }
         sqlx::query_as::<_, SsoProvider>(
             r#"INSERT INTO sso_providers (id, name, provider_type, issuer_url, client_id, client_secret, authorization_url, token_url, userinfo_url, jwks_url, certificate, attribute_mapping, domains, enforce_mfa, auto_provision, default_role_id, created_at)
                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *"#
@@ -21,13 +38,27 @@ impl SsoService {
         .fetch_one(pool).await.map_err(AppError::Database)
     }
 
-    pub async fn get_provider(pool: &sqlx::PgPool, provider_id: &str) -> Result<Option<SsoProvider>> {
-        sqlx::query_as::<_, SsoProvider>("SELECT * FROM sso_providers WHERE id = $1")
+    pub async fn get_provider(pool: &sqlx::PgPool, crypto: &Arc<CryptoManager>, provider_id: &str) -> Result<Option<SsoProvider>> {
+        let mut provider = sqlx::query_as::<_, SsoProvider>("SELECT * FROM sso_providers WHERE id = $1")
             .bind(provider_id)
-            .fetch_optional(pool).await.map_err(AppError::Database)
+            .fetch_optional(pool).await.map_err(AppError::Database)?;
+        if let Some(p) = &mut provider {
+            if let Some(secret) = &p.client_secret {
+                if let Ok(decrypted) = crypto.decrypt_secret(secret) {
+                    p.client_secret = Some(decrypted);
+                }
+            }
+        }
+        Ok(provider)
     }
 
-    pub async fn update_provider(pool: &sqlx::PgPool, provider_id: &str, updates: &SsoProviderUpdate) -> Result<Option<SsoProvider>> {
+    pub async fn update_provider(pool: &sqlx::PgPool, crypto: &Arc<CryptoManager>, provider_id: &str, updates: &SsoProviderUpdate) -> Result<Option<SsoProvider>> {
+        let mut secret_to_store = updates.client_secret.clone();
+        if let Some(secret) = &secret_to_store {
+            if !secret.is_empty() && !secret.starts_with("ENC[") {
+                secret_to_store = Some(crypto.encrypt_secret(secret)?);
+            }
+        }
         sqlx::query(
             r#"UPDATE sso_providers SET name=COALESCE($1,name), issuer_url=COALESCE($2,issuer_url), client_id=COALESCE($3,client_id),
                client_secret=COALESCE($4,client_secret), authorization_url=COALESCE($5,authorization_url), token_url=COALESCE($6,token_url),
@@ -36,12 +67,12 @@ impl SsoService {
                enforce_mfa=COALESCE($12,enforce_mfa), auto_provision=COALESCE($13,auto_provision), default_role_id=COALESCE($14,default_role_id)
                WHERE id=$15"#
         )
-        .bind(updates.name.as_ref()).bind(updates.issuer_url.as_ref()).bind(updates.client_id.as_ref()).bind(updates.client_secret.as_ref())
+        .bind(updates.name.as_ref()).bind(updates.issuer_url.as_ref()).bind(updates.client_id.as_ref()).bind(secret_to_store.as_ref())
         .bind(updates.authorization_url.as_ref()).bind(updates.token_url.as_ref()).bind(updates.userinfo_url.as_ref()).bind(updates.jwks_url.as_ref())
         .bind(updates.certificate.as_ref()).bind(updates.attribute_mapping.as_ref()).bind(updates.domains.as_ref())
         .bind(updates.enforce_mfa).bind(updates.auto_provision).bind(updates.default_role_id.as_ref()).bind(provider_id)
         .execute(pool).await.map_err(AppError::Database)?;
-        Self::get_provider(pool, provider_id).await
+        Self::get_provider(pool, crypto, provider_id).await
     }
 
     pub async fn delete_provider(pool: &sqlx::PgPool, provider_id: &str) -> Result<bool> {

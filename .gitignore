@@ -32,6 +32,8 @@ dist-ssr/
 frontend/dist/
 build/
 .output/
+.wrangler/
+wrangler-debug.log*
 
 # Package Manager Logs
 logs/
@@ -55,6 +57,7 @@ downloads/
 !.vscode/settings.json
 !.vscode/tasks.json
 .idea/
+.claude/
 *.swp
 *.swo
 *.suo

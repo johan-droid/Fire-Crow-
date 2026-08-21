@@ -52,8 +52,13 @@ pub async fn execute_audit_job(
         log_phase_started(pool, job_id, "scanning").await?;
         if is_cancelled(pool, job_id).await? { job_cancelled = true; }
         if !job_cancelled {
-            let _ = run_sast(&mut state).await;
-            log_phase_completed(pool, job_id, "scanning", "completed", started, None).await?;
+            if let Err(e) = run_sast(&mut state).await {
+                log_phase_completed(pool, job_id, "scanning", "failed", started, Some(e.to_string())).await?;
+                record_error(&mut state, "scanning", &e.to_string());
+                job_cancelled = true;
+            } else {
+                log_phase_completed(pool, job_id, "scanning", "completed", started, None).await?;
+            }
         }
     }
 
@@ -64,38 +69,45 @@ pub async fn execute_audit_job(
         if is_cancelled(pool, job_id).await? { job_cancelled = true; }
         if !job_cancelled {
             state.scored_findings = [state.static_findings.clone(), state.dynamic_findings.clone()].concat();
-            let _ = run_ai_analyzer(&mut state).await;
-            let _ = cross_validate_findings(&mut state).await;
-
-            for f in &state.validated_findings {
-                let _ = sqlx::query(
-                    "INSERT INTO findings (id, job_id, agent_source, title, description, severity, cvss_vector, cvss_score, evidence, remediation, cwe_id, owasp_category, confidence, scanner_name, scanner_mode, file_path, line_number, route, metadata_json, created_at)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)"
-                )
-                .bind(&f.id)
-                .bind(job_id)
-                .bind(&f.agent_source)
-                .bind(&f.title)
-                .bind(&f.description)
-                .bind(f.severity)
-                .bind(&f.cvss_vector)
-                .bind(f.cvss_score)
-                .bind(&f.evidence)
-                .bind(&f.remediation)
-                .bind(&f.cwe_id)
-                .bind(&f.owasp_category)
-                .bind(&f.confidence)
-                .bind(&f.scanner_name)
-                .bind(&f.scanner_mode)
-                .bind(&f.file_path)
-                .bind(f.line_number)
-                .bind(&f.route)
-                .bind(&f.metadata_json)
-                .bind(Utc::now().naive_utc())
-                .execute(pool)
-                .await;
+            if let Err(e) = run_ai_analyzer(&mut state).await {
+                log_phase_completed(pool, job_id, "ai_analysis", "failed", started, Some(e.to_string())).await?;
+                record_error(&mut state, "ai_analysis", &e.to_string());
+                job_cancelled = true;
+            } else if let Err(e) = cross_validate_findings(&mut state).await {
+                log_phase_completed(pool, job_id, "ai_analysis", "failed", started, Some(e.to_string())).await?;
+                record_error(&mut state, "cross_validation", &e.to_string());
+                job_cancelled = true;
+            } else {
+                for f in &state.validated_findings {
+                    let _ = sqlx::query(
+                        "INSERT INTO findings (id, job_id, agent_source, title, description, severity, cvss_vector, cvss_score, evidence, remediation, cwe_id, owasp_category, confidence, scanner_name, scanner_mode, file_path, line_number, route, metadata_json, created_at)
+                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)"
+                    )
+                    .bind(&f.id)
+                    .bind(job_id)
+                    .bind(&f.agent_source)
+                    .bind(&f.title)
+                    .bind(&f.description)
+                    .bind(f.severity)
+                    .bind(&f.cvss_vector)
+                    .bind(f.cvss_score)
+                    .bind(&f.evidence)
+                    .bind(&f.remediation)
+                    .bind(&f.cwe_id)
+                    .bind(&f.owasp_category)
+                    .bind(&f.confidence)
+                    .bind(&f.scanner_name)
+                    .bind(&f.scanner_mode)
+                    .bind(&f.file_path)
+                    .bind(f.line_number)
+                    .bind(&f.route)
+                    .bind(&f.metadata_json)
+                    .bind(Utc::now().naive_utc())
+                    .execute(pool)
+                    .await;
+                }
+                log_phase_completed(pool, job_id, "ai_analysis", "completed", started, None).await?;
             }
-            log_phase_completed(pool, job_id, "ai_analysis", "completed", started, None).await?;
         }
     }
 
@@ -118,10 +130,16 @@ pub async fn execute_audit_job(
         if !job_cancelled {
             let attack_graph_val = crate::services::attack_graph::attack_graph_body(&state.validated_findings);
             if let (Some(nodes), Some(edges)) = (attack_graph_val.get("nodes").and_then(|v| v.as_array()), attack_graph_val.get("edges").and_then(|v| v.as_array())) {
-                let _ = crate::graph::GraphStore::store_attack_graph(pool, job_id, nodes, edges).await;
+                if let Err(e) = crate::graph::GraphStore::store_attack_graph(pool, job_id, nodes, edges).await {
+                    log_phase_completed(pool, job_id, "attack_graph", "failed", started, Some(e.to_string())).await?;
+                    record_error(&mut state, "attack_graph", &e.to_string());
+                    job_cancelled = true;
+                }
             }
-            state.attack_graph = attack_graph_val;
-            log_phase_completed(pool, job_id, "attack_graph", "completed", started, None).await?;
+            if !job_cancelled {
+                state.attack_graph = attack_graph_val;
+                log_phase_completed(pool, job_id, "attack_graph", "completed", started, None).await?;
+            }
         }
     }
 
@@ -143,12 +161,29 @@ pub async fn execute_audit_job(
         state.current_phase = "reporting".into();
         if is_cancelled(pool, job_id).await? { job_cancelled = true; }
         if !job_cancelled {
-            let markdown = ReportGenerator::generate_markdown(&get_job(pool, job_id).await?, &state.validated_findings, &state)?;
-            let report_id = generate_uuid();
-            sqlx::query("INSERT INTO audit_reports (id, job_id, markdown_content, created_at) VALUES ($1,$2,$3,$4)")
-                .bind(&report_id).bind(job_id).bind(&markdown).bind(Utc::now().naive_utc()).execute(pool).await.map_err(AppError::Database)?;
-            sqlx::query("UPDATE audit_jobs SET report_id=$1 WHERE id=$2").bind(&report_id).bind(job_id).execute(pool).await.map_err(AppError::Database)?;
-            log_phase_completed(pool, job_id, "reporting", "completed", started, None).await?;
+            match ReportGenerator::generate_markdown(&get_job(pool, job_id).await?, &state.validated_findings, &state) {
+                Ok(markdown) => {
+                    let report_id = generate_uuid();
+                    if let Err(e) = sqlx::query("INSERT INTO audit_reports (id, job_id, markdown_content, created_at) VALUES ($1,$2,$3,$4)")
+                        .bind(&report_id).bind(job_id).bind(&markdown).bind(Utc::now().naive_utc()).execute(pool).await
+                    {
+                        log_phase_completed(pool, job_id, "reporting", "failed", started, Some(e.to_string())).await?;
+                        record_error(&mut state, "reporting", &e.to_string());
+                        job_cancelled = true;
+                    } else if let Err(e) = sqlx::query("UPDATE audit_jobs SET report_id=$1 WHERE id=$2").bind(&report_id).bind(job_id).execute(pool).await {
+                        log_phase_completed(pool, job_id, "reporting", "failed", started, Some(e.to_string())).await?;
+                        record_error(&mut state, "reporting", &e.to_string());
+                        job_cancelled = true;
+                    } else {
+                        log_phase_completed(pool, job_id, "reporting", "completed", started, None).await?;
+                    }
+                }
+                Err(e) => {
+                    log_phase_completed(pool, job_id, "reporting", "failed", started, Some(e.to_string())).await?;
+                    record_error(&mut state, "reporting", &e.to_string());
+                    job_cancelled = true;
+                }
+            }
         }
     }
 

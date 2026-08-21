@@ -1,3 +1,4 @@
+use prometheus_client::encoding::text::encode;
 use prometheus_client::metrics::family::Family;
 use prometheus_client::metrics::gauge::Gauge;
 use prometheus_client::metrics::histogram::{Histogram, exponential_buckets};
@@ -20,4 +21,11 @@ lazy_static::lazy_static! {
 
 pub fn init_registry() {
     let _ = &*REGISTRY;
+}
+
+pub fn get_metrics() -> String {
+    let mut buf = String::new();
+    let registry = REGISTRY.read().unwrap();
+    encode(&mut buf, &registry).unwrap();
+    buf
 }

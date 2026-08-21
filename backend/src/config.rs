@@ -236,7 +236,7 @@ impl Settings {
         let _ = dotenvy::from_filename(".env.local");
         let _ = dotenvy::from_filename("../.env.local");
         let _ = dotenvy::dotenv();
-        let run_mode = std::env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
+        let run_mode = std::env::var("RUN_MODE").unwrap_or_else(|_| "production".into());
 
         let config = Config::builder()
             .set_default("port", default_port())?

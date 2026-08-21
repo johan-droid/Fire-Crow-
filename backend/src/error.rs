@@ -108,6 +108,40 @@ impl AppError {
                 | AppError::MigrationError(_)
         )
     }
+
+    pub fn safe_message(&self, debug: bool) -> String {
+        if debug {
+            return self.to_string();
+        }
+        match self {
+            AppError::BadRequest(msg) => msg.clone(),
+            AppError::Unauthorized(msg) => msg.clone(),
+            AppError::Forbidden(msg) => msg.clone(),
+            AppError::NotFound(msg) => msg.clone(),
+            AppError::Conflict(msg) => msg.clone(),
+            AppError::PayloadTooLarge => "Payload too large".into(),
+            AppError::RateLimited => "Rate limit exceeded".into(),
+            AppError::InvalidCredentials => "Invalid credentials".into(),
+            AppError::TokenExpired => "Token expired".into(),
+            AppError::InvalidToken => "Invalid token".into(),
+            AppError::TokenRevoked => "Token revoked".into(),
+            AppError::AccountLocked => "Account locked due to too many failed attempts".into(),
+            AppError::MfaRequired => "MFA required".into(),
+            AppError::MfaVerificationFailed => "MFA verification failed".into(),
+            AppError::Database(_) => "Internal database error".into(),
+            AppError::MigrationError(_) => "Internal migration error".into(),
+            AppError::GraphDatabase(_) => "Internal graph database error".into(),
+            AppError::StorageError(_) => "Internal storage error".into(),
+            AppError::RedisError(_) => "Internal cache error".into(),
+            AppError::EmailError(_) => "Internal email error".into(),
+            AppError::LlmError(_) => "Internal LLM error".into(),
+            AppError::HttpClientError(_) => "Internal HTTP client error".into(),
+            AppError::ValidationError(msg) => msg.clone(),
+            AppError::Internal(_) => "Internal server error".into(),
+            AppError::Unavailable(msg) => msg.clone(),
+            AppError::NotImplemented(_) => "Not implemented".into(),
+        }
+    }
 }
 
 impl IntoResponse for AppError {

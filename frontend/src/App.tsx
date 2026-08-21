@@ -84,7 +84,6 @@ interface IamPolicy {
 interface DomainVerification {
   id: string;
   domain: string;
-  verification_token: string;
   verified: boolean;
   dns_txt_name?: string;
   dns_txt_value?: string;
@@ -1473,7 +1472,7 @@ function App() {
                       <div key={d.id} className="list-item" style={{ cursor: 'default' }}>
                         <div className="list-item-info">
                           <div className="list-item-title">{d.domain}</div>
-                          <div className="list-item-sub">Token: {d.verification_token}</div>
+                          <div className="list-item-sub">{d.verified ? 'Domain verified' : 'Pending DNS verification'}</div>
                         </div>
                         <span className={`badge ${d.verified ? 'badge-success' : 'badge-medium'}`}>
                           {d.verified ? 'VERIFIED' : 'PENDING DNS'}

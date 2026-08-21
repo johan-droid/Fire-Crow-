@@ -1,9 +1,6 @@
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::schemas::audit_state::AuditState;
 
-pub async fn run_ai_analyzer(state: &mut AuditState) -> Result<()> {
-    state.deduplicated_findings = state.scored_findings.clone();
-    state.false_positives = vec![];
-    state.attack_chains = vec![];
-    Ok(())
+pub async fn run_ai_analyzer(_state: &mut AuditState) -> Result<()> {
+    Err(AppError::NotImplemented("AI analysis phase not implemented. Configure a real LLM analyzer or disable this phase.".into()))
 }

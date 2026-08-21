@@ -29,7 +29,7 @@ pub async fn initiate_domain(
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<DomainVerification>> {
     let domain = payload.get("domain").and_then(|v| v.as_str()).ok_or_else(|| AppError::BadRequest("Missing domain".into()))?;
-    DomainVerifyService::initiate(state.pool(), &user.user_id, domain).await.map(Json)
+    DomainVerifyService::initiate(state.pool(), state.crypto(), &user.user_id, domain).await.map(Json)
 }
 
 pub async fn check_domain(
@@ -39,7 +39,7 @@ pub async fn check_domain(
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<DomainVerification>> {
     let method = payload.get("method").and_then(|v| v.as_str()).unwrap_or("dns");
-    DomainVerifyService::check(state.pool(), &id, method).await.map(Json)
+    DomainVerifyService::check(state.pool(), state.crypto(), &id, &user.user_id, method).await.map(Json)
 }
 
 pub async fn delete_domain(
