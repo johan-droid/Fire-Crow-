@@ -331,7 +331,14 @@ function App() {
     };
 
     fetchPhases();
-    const interval = setInterval(fetchPhases, 3000);
+    const activeJob = jobs.find(j => j.id === targetJobId);
+    const isJobActive = !activeJob || activeJob.status === 'running' || activeJob.status === 'queued';
+    const interval = setInterval(() => {
+      fetchPhases();
+      if (isJobActive) {
+        fetchDashboardData();
+      }
+    }, isJobActive ? 1500 : 4000);
     return () => clearInterval(interval);
   }, [view, activeMonitorJobId, jobs]);
 
@@ -490,9 +497,14 @@ function App() {
       });
 
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
         setIsScanModalOpen(false);
         setNewRepoUrl('');
-        setDashTab('scans');
+        if (data && data.job_id) {
+          setActiveMonitorJobId(data.job_id);
+        }
+        setDashTab('overview');
+        setView('dashboard');
         fetchDashboardData();
       } else {
         const errData = await res.json().catch(() => ({}));
@@ -1826,43 +1838,75 @@ function App() {
                   </div>
 
                   <div className="panel-body" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    {/* Progress Bar String */}
-                    <div style={{
-                      backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                      border: '1px solid rgba(255, 255, 255, 0.05)',
-                      borderRadius: '4px',
-                      padding: '0.65rem 0.75rem',
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: '0.78rem',
-                      color: '#00ff00',
-                      whiteSpace: 'pre-wrap',
-                      letterSpacing: '0.05em'
-                    }}>
-                      {(() => {
-                        const selectedJob = jobs.find(j => j.id === (activeMonitorJobId || (jobs.length > 0 ? jobs[0].id : ''))) || (jobs.length > 0 ? jobs[0] : null);
-                        let progressString = 'Status: Idle | [                    ] 0%';
-                        if (selectedJob) {
-                          if (selectedJob.status === 'completed') {
-                            progressString = `Status: Completed | [====================] 100%`;
-                          } else if (selectedJob.status === 'cancelled') {
-                            progressString = `Status: Cancelled | [xxxxxxxxxxxxxxxxxxxx] 0%`;
-                          } else if (selectedJob.status === 'failed') {
-                            progressString = `Status: Failed | [xxxxxxxxxxxxxxxxxxxx] 0%`;
-                          } else if (selectedJob.status === 'queued') {
-                            progressString = `Status: Queued | [                    ] 0%`;
-                          } else {
-                            const phaseOrder = ['intake', 'recon', 'scanning', 'ai_analysis', 'remediation', 'attack_graph', 'scoring', 'reporting'];
-                            const completedPhasesCount = monitorPhases.filter(p => p.status === 'completed').length;
-                            const percentage = Math.round((completedPhasesCount / phaseOrder.length) * 100);
-                            const barLength = 20;
-                            const filledLength = Math.round((completedPhasesCount / phaseOrder.length) * barLength);
-                            const bar = '='.repeat(filledLength) + ' '.repeat(barLength - filledLength);
-                            progressString = `Status: Running (${selectedJob.status}) | [${bar}] ${percentage}%`;
-                          }
-                        }
-                        return progressString;
-                      })()}
-                    </div>
+                    {/* Live Progress Bar & Stage Pipeline Checklist */}
+                    {(() => {
+                      const selectedJob = jobs.find(j => j.id === (activeMonitorJobId || (jobs.length > 0 ? jobs[0].id : ''))) || (jobs.length > 0 ? jobs[0] : null);
+                      if (!selectedJob) return null;
+
+                      const phaseOrder = [
+                        { key: 'intake', label: '1. Intake' },
+                        { key: 'recon', label: '2. Recon' },
+                        { key: 'scanning', label: '3. AST Scan' },
+                        { key: 'ai_analysis', label: '4. AI Analysis' },
+                        { key: 'remediation', label: '5. Remediation' },
+                        { key: 'attack_graph', label: '6. Attack Graph' },
+                        { key: 'reporting', label: '7. Report' },
+                      ];
+
+                      let percentage = 0;
+                      if (selectedJob.status === 'completed') percentage = 100;
+                      else if (selectedJob.status === 'queued') percentage = 8;
+                      else if (selectedJob.status === 'failed' || selectedJob.status === 'cancelled') percentage = 100;
+                      else {
+                        const completedCount = monitorPhases.filter(p => p.status === 'completed').length;
+                        const hasStarted = monitorPhases.some(p => p.status === 'started' || p.status === 'running');
+                        percentage = Math.min(95, Math.max(12, Math.round((completedCount / phaseOrder.length) * 100) + (hasStarted ? 8 : 0)));
+                      }
+
+                      const isRunning = selectedJob.status === 'running' || selectedJob.status === 'queued';
+
+                      return (
+                        <div className="progress-card">
+                          <div className="progress-header">
+                            <div className="progress-title">
+                              {isRunning && <span className="pulse-spinner"></span>}
+                              <span>{selectedJob.repo_url}</span>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-muted)' }}>
+                                ({selectedJob.repo_branch})
+                              </span>
+                            </div>
+                            <div className="progress-percent">{percentage}%</div>
+                          </div>
+
+                          <div className="progress-track">
+                            <div 
+                              className={`progress-fill ${isRunning ? 'animated' : ''}`}
+                              style={{ 
+                                width: `${percentage}%`,
+                                background: selectedJob.status === 'failed' ? '#ff3b30' : selectedJob.status === 'completed' ? '#30d158' : undefined 
+                              }}
+                            ></div>
+                          </div>
+
+                          <div className="progress-steps-list">
+                            {phaseOrder.map(phase => {
+                              const loggedPhase = monitorPhases.find(p => p.phase_name.toLowerCase() === phase.key.toLowerCase());
+                              const isDone = selectedJob.status === 'completed' || (loggedPhase && loggedPhase.status === 'completed');
+                              const isActive = isRunning && loggedPhase && loggedPhase.status === 'started';
+                              return (
+                                <div 
+                                  key={phase.key} 
+                                  className={`progress-step-item ${isDone ? 'completed' : isActive ? 'active' : ''}`}
+                                >
+                                  <span>{isDone ? '✓' : isActive ? '⏳' : '◦'}</span>
+                                  <span>{phase.label}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Console Output Log */}
                     <div style={{
