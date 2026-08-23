@@ -73,7 +73,10 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = PgPoolOptions::new()
         .max_connections(settings.database_pool_size)
+        .min_connections(1)
         .acquire_timeout(std::time::Duration::from_secs(30))
+        .idle_timeout(std::time::Duration::from_secs(600))
+        .max_lifetime(std::time::Duration::from_secs(1800))
         .connect_lazy_with(connect_options);
 
     let pool_migrator = pool.clone();
@@ -193,6 +196,7 @@ async fn main() -> anyhow::Result<()> {
             std::time::Duration::from_secs(30)
         ))
         .layer(tower_http::catch_panic::CatchPanicLayer::new())
+        .layer(from_fn(crate::middleware::security_headers::security_headers_middleware))
         .layer(from_fn(crate::middleware::http_logger::http_audit_logger))
         .layer(from_fn(request_id_middleware))
         .layer(from_fn(body_size_limit_middleware))
