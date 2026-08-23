@@ -604,350 +604,735 @@ function App() {
   // Render Landing View
   if (view === 'landing') {
     return (
-      <div className="saas-page-bg" style={{ color: 'var(--text-primary)', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-        {/* Minimal Floating Navigation Bar */}
-        <header className="saas-nav">
-          <div className="landing-nav-container" style={{ maxWidth: '1200px', margin: '0 auto', padding: '0.85rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <img src="/fire-crow-logo.png" alt="Fire Crow Logo" className="logo-img" style={{ width: '28px', height: '28px' }} />
-              <span style={{ fontSize: '1.05rem', fontWeight: 700, letterSpacing: '-0.02em', color: '#ffffff' }}>Fire Crow</span>
-              <span style={{ fontSize: '0.7rem', color: '#71717a', fontFamily: 'var(--font-mono)', border: '1px solid rgba(255,255,255,0.1)', padding: '0.1rem 0.45rem', borderRadius: '4px' }}>v2.4</span>
+      <div className="apple-landing-page">
+        {/* Ambient Apple Atmospheric Glows */}
+        <div className="apple-ambient-glow-top"></div>
+        <div className="apple-ambient-glow-mid"></div>
+
+        {/* Apple Frosted Glass Navigation Bar */}
+        <header className="apple-nav">
+          <div className="apple-nav-container">
+            <div className="apple-logo-wrap" onClick={() => setView('landing')}>
+              <img src="/fire-crow-logo.png" alt="Fire Crow Logo" className="logo-img" />
+              <span className="apple-logo-text">Fire Crow</span>
+              <span className="apple-version-badge">v2.4 Pro</span>
             </div>
 
-            <nav className="landing-nav-links" style={{ display: 'flex', gap: '2rem', fontSize: '0.875rem' }}>
-              <a href="#playground" style={{ color: '#a1a1aa', textDecoration: 'none', transition: 'color 0.2s' }}>Playground</a>
-              <a href="#features" style={{ color: '#a1a1aa', textDecoration: 'none', transition: 'color 0.2s' }}>Platform</a>
-              <a href="#architecture" style={{ color: '#a1a1aa', textDecoration: 'none', transition: 'color 0.2s' }}>Architecture</a>
-              <a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer" style={{ color: '#a1a1aa', textDecoration: 'none' }}>GitHub</a>
+            <nav className="apple-nav-links">
+              <a href="#playground" className="apple-nav-link">Playground</a>
+              <a href="#capabilities" className="apple-nav-link">Capabilities</a>
+              <a href="#architecture" className="apple-nav-link">Architecture</a>
+              <a href="#metrics" className="apple-nav-link">Performance</a>
+              <a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer" className="apple-nav-link">GitHub</a>
             </nav>
 
-            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-              <button onClick={() => setView('login')} className="btn-saas-outline" style={{ padding: '0.45rem 1rem', fontSize: '0.82rem' }}>
+            <div className="apple-nav-actions">
+              <button onClick={() => setView('login')} className="btn-apple-secondary" style={{ padding: '0.45rem 1.1rem', fontSize: '0.82rem' }}>
                 Sign In
               </button>
-              <button onClick={() => setView('login')} className="btn-saas-solid" style={{ padding: '0.45rem 1.1rem', fontSize: '0.82rem' }}>
+              <button onClick={() => setView('login')} className="btn-apple-primary" style={{ padding: '0.45rem 1.25rem', fontSize: '0.82rem' }}>
                 Launch Console →
               </button>
             </div>
           </div>
         </header>
 
-        {/* Ultra-Minimal Hero Section */}
-        <section style={{ padding: '7rem 1.5rem 4rem', textAlign: 'center', maxWidth: '1100px', margin: '0 auto', width: '100%' }}>
-          <div className="saas-badge">
-            <div className="saas-status-dot"></div>
-            <span>AUTONOMOUS RED TEAM ENGINE</span>
+        {/* Apple Hero Section */}
+        <section className="apple-hero-section">
+          <div className="apple-pill-badge">
+            <div className="apple-status-beacon"></div>
+            <span>Autonomous Agentic Security Intelligence</span>
           </div>
 
-          <h1 className="saas-h1">
-            Autonomous Security Reasoning<br />
-            <span className="saas-h1-accent">for Enterprise Stacks</span>
+          <h1 className="apple-hero-headline">
+            <span className="apple-headline-gradient">Security reasoning at the</span><br />
+            <span className="apple-headline-accent">speed of thought.</span>
           </h1>
 
-          <p className="saas-sub">
-            Fire Crow coordinates sandboxed security LLM agents to map application repositories, execute safe exploit simulations, enforce access controls, and generate compliance fixes.
+          <p className="apple-hero-subtext">
+            Fire Crow orchestrates sandboxed LLM security agents to ingest repository ASTs, synthesize multi-node attack topologies, simulate exploit vectors, and compile verified code patches.
           </p>
 
-          <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button onClick={() => setView('login')} className="btn-saas-solid">
+          <div className="apple-hero-cta-group">
+            <button onClick={() => setView('login')} className="btn-apple-primary" style={{ padding: '0.8rem 2rem', fontSize: '0.95rem' }}>
               Launch Control Console →
             </button>
-            <a href="#playground" className="btn-saas-outline">
-              ⚡ Try Interactive Scan
+            <a href="#playground" className="btn-apple-secondary" style={{ padding: '0.8rem 1.8rem', fontSize: '0.95rem' }}>
+              ⚡ Interactive Scan Playground
             </a>
           </div>
 
-          {/* Minimalist SaaS Terminal & Topology Visualizer Widget */}
-          <div className="saas-terminal-box" style={{ maxWidth: '980px', margin: '4rem auto 0' }}>
-            <div className="saas-tab-header">
-              <div style={{ display: 'flex', gap: '0.25rem' }}>
+          {/* Social Proof Logo Cloud */}
+          <div className="apple-logo-cloud">
+            <div className="logo-cloud-title">Securing Infrastructure for High-Growth Teams</div>
+            <div className="logo-item">
+              <svg className="logo-icon-svg" viewBox="0 0 24 24"><path d="M12 2L2 22h20L12 2zm0 3.8L18.4 18H5.6L12 5.8z"/></svg>
+              <span>Vertex Security</span>
+            </div>
+            <div className="logo-item">
+              <svg className="logo-icon-svg" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+              <span>Aether Sec</span>
+            </div>
+            <div className="logo-item">
+              <svg className="logo-icon-svg" viewBox="0 0 24 24"><path d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm-1-15h2v6h-2V7zm0 8h2v2h-2v-2z"/></svg>
+              <span>Krypton Shield</span>
+            </div>
+            <div className="logo-item">
+              <svg className="logo-icon-svg" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 3.5l7.5 13H4.5L12 5.5z"/></svg>
+              <span>OmniCorp</span>
+            </div>
+            <div className="logo-item">
+              <svg className="logo-icon-svg" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5-10-5-10 5z"/></svg>
+              <span>Acme Cloud</span>
+            </div>
+          </div>
+
+          {/* Apple macOS / iPadOS Window Preview Widget */}
+          <div className="apple-preview-window">
+            <div className="apple-window-header">
+              <div className="apple-traffic-lights">
+                <div className="apple-light apple-light-red"></div>
+                <div className="apple-light apple-light-yellow"></div>
+                <div className="apple-light apple-light-green"></div>
+              </div>
+
+              <div className="apple-segmented-tabs">
                 <button 
-                  className={`saas-tab-item ${landingTab === 'terminal' ? 'active' : ''}`}
+                  className={`apple-tab-button ${landingTab === 'terminal' ? 'active' : ''}`}
                   onClick={() => setLandingTab('terminal')}
                 >
-                  <span>📺</span> Tokio Agent Log
+                  <span>📺</span> Tokio Stream
                 </button>
                 <button 
-                  className={`saas-tab-item ${landingTab === 'graph' ? 'active' : ''}`}
+                  className={`apple-tab-button ${landingTab === 'graph' ? 'active' : ''}`}
                   onClick={() => setLandingTab('graph')}
                 >
                   <span>🕸️</span> Attack Topology
                 </button>
                 <button 
-                  className={`saas-tab-item ${landingTab === 'diff' ? 'active' : ''}`}
+                  className={`apple-tab-button ${landingTab === 'diff' ? 'active' : ''}`}
                   onClick={() => setLandingTab('diff')}
                 >
-                  <span>📝</span> Remediation Patch
+                  <span>📝</span> Verified Patch
                 </button>
               </div>
 
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: '#a1a1aa' }}>
-                SANDBOX: DOCKER_NODE_RUST
-              </span>
+              <div className="apple-window-badge">
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#30d158', display: 'inline-block' }}></span>
+                <span>SANDBOX: DOCKER_NODE_RUST</span>
+              </div>
             </div>
 
             {/* Tab 1: Terminal Log */}
             {landingTab === 'terminal' && (
-              <div style={{ padding: '1.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', lineHeight: '1.7', color: '#e4e4e7', minHeight: '250px' }}>
-                <div><span style={{ color: '#38bdf8' }}>[10:45:02]</span> Initializing Rust Axum Agentic Engine v2.4 (Tokio Async Worker)...</div>
-                <div><span style={{ color: '#38bdf8' }}>[10:45:03]</span> Mounting Sandboxed Docker Scanner Container (Node 20 / Python 3.12)...</div>
-                <div><span style={{ color: '#fbbf24' }}>[10:45:04]</span> Ingesting Git repository AST & constructing dependency graph...</div>
-                <div><span style={{ color: '#f43f5e' }}>[10:45:06]</span> CVE-2026-798 Detected: Hardcoded JWT signing secret fallback in <code style={{ color: '#a5b4fc' }}>backend/src/config.rs:42</code></div>
-                <div><span style={{ color: '#4ade80' }}>[10:45:08]</span> Gemini Security LLM generated automated remediation patch snippet.</div>
-                <div><span style={{ color: '#71717a' }}>[10:45:09]</span> Persisted multi-node attack graph to Neon PostgreSQL schema <code style={{ color: '#c084fc' }}>attack_graph_nodes</code></div>
+              <div className="apple-tab-content" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', lineHeight: '1.75', color: '#e5e5ea', background: '#020203' }}>
+                <div><span style={{ color: '#2997ff' }}>[10:45:02]</span> Initializing Rust Axum Agentic Engine v2.4 (Tokio Async Worker pool)...</div>
+                <div><span style={{ color: '#2997ff' }}>[10:45:03]</span> Spawning isolated Docker Container Sandbox (Node 20 / Python 3.12 / Rust)...</div>
+                <div><span style={{ color: '#ffd60a' }}>[10:45:04]</span> Ingesting Git repository AST structure & constructing full dependency graph...</div>
+                <div><span style={{ color: '#ff453a' }}>[10:45:06]</span> <strong style={{ color: '#ff453a' }}>CVE-2026-798 Identified:</strong> Hardcoded JWT secret fallback in <code style={{ color: '#bf5af2', background: 'rgba(191,90,242,0.12)', padding: '0.1rem 0.35rem', borderRadius: '4px' }}>backend/src/config.rs:42</code></div>
+                <div><span style={{ color: '#30d158' }}>[10:45:08]</span> Gemini Security Agent synthesized non-breaking AST patch with verified signature.</div>
+                <div><span style={{ color: '#86868b' }}>[10:45:09]</span> Persisted multi-node attack topology to PostgreSQL schema <code style={{ color: '#bf5af2' }}>attack_graph_nodes</code></div>
+                <div style={{ marginTop: '0.5rem', color: '#30d158', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span>✓</span> Sandbox compilation verified (0 warnings, 0 errors, 100% test pass)
+                </div>
               </div>
             )}
 
-            {/* Tab 2: Attack Topology Map */}
+            {/* Tab 2: Attack Topology Visualizer */}
             {landingTab === 'graph' && (
-              <div style={{ padding: '2.5rem 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '250px', background: '#040405' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', width: '100%', maxWidth: '640px', justifyContent: 'space-between' }}>
-                  <div style={{ background: '#09090b', border: '1px solid rgba(255,255,255,0.1)', padding: '1rem 1.25rem', borderRadius: '10px', textAlign: 'center', flex: 1 }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#38bdf8' }}>ENTRYPOINT</div>
-                    <div style={{ fontSize: '0.85rem', color: '#ffffff', fontWeight: 600, marginTop: '0.2rem' }}>Web API Route</div>
-                  </div>
-                  <div style={{ width: '40px', height: '1px', background: 'rgba(255,255,255,0.2)' }}></div>
-                  <div style={{ background: 'rgba(244, 63, 94, 0.1)', border: '1px solid rgba(244, 63, 94, 0.3)', padding: '1rem 1.25rem', borderRadius: '10px', textAlign: 'center', flex: 1 }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#f43f5e' }}>VULNERABILITY</div>
-                    <div style={{ fontSize: '0.85rem', color: '#fca5a5', fontWeight: 600, marginTop: '0.2rem' }}>CVE-2026-798</div>
-                  </div>
-                  <div style={{ width: '40px', height: '1px', background: 'rgba(255,255,255,0.2)' }}></div>
-                  <div style={{ background: '#09090b', border: '1px solid rgba(255,255,255,0.1)', padding: '1rem 1.25rem', borderRadius: '10px', textAlign: 'center', flex: 1 }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#c084fc' }}>DATABASE</div>
-                    <div style={{ fontSize: '0.85rem', color: '#ffffff', fontWeight: 600, marginTop: '0.2rem' }}>PostgreSQL Cluster</div>
-                  </div>
+              <div className="apple-tab-content" style={{ background: '#020203', minHeight: '320px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <div className="topology-svg-container">
+                  <svg width="100%" height="240" viewBox="0 0 800 240" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    {/* Animated connection lines */}
+                    <path d="M140 120 L275 60" stroke="url(#blue-to-red)" strokeWidth="2" strokeDasharray="6" className="svg-link-dash" />
+                    <path d="M140 120 L275 180" stroke="#2997ff" strokeWidth="1.5" opacity="0.3" />
+                    <path d="M295 60 L455 120" stroke="url(#red-to-purple)" strokeWidth="2" strokeDasharray="6" className="svg-link-dash" />
+                    <path d="M295 180 L455 120" stroke="#86868b" strokeWidth="1.5" opacity="0.3" />
+                    <path d="M475 120 L635 120" stroke="url(#purple-to-green)" strokeWidth="2" strokeDasharray="6" className="svg-link-dash" />
+
+                    {/* Gradients */}
+                    <defs>
+                      <linearGradient id="blue-to-red" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#2997ff" />
+                        <stop offset="100%" stopColor="#ff453a" />
+                      </linearGradient>
+                      <linearGradient id="red-to-purple" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#ff453a" />
+                        <stop offset="100%" stopColor="#bf5af2" />
+                      </linearGradient>
+                      <linearGradient id="purple-to-green" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#bf5af2" />
+                        <stop offset="100%" stopColor="#30d158" />
+                      </linearGradient>
+                    </defs>
+
+                    {/* Node 1: Entry API Route */}
+                    <g className="svg-node" style={{ color: '#2997ff' }}>
+                      <circle cx="120" cy="120" r="28" fill="rgba(41, 151, 255, 0.08)" stroke="#2997ff" strokeWidth="1.5" />
+                      <circle cx="120" cy="120" r="6" fill="#2997ff" className="svg-node-pulse" />
+                      <text x="120" y="165" fill="#ffffff" fontSize="11" fontWeight="600" textAnchor="middle">Web Ingress</text>
+                      <text x="120" y="180" fill="#86868b" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle">POST /api/v1/auth</text>
+                    </g>
+
+                    {/* Node 2: Exploit Node (JWT) */}
+                    <g className="svg-node" style={{ color: '#ff453a' }}>
+                      <circle cx="285" cy="60" r="28" fill="rgba(255, 69, 58, 0.1)" stroke="#ff453a" strokeWidth="1.8" />
+                      <circle cx="285" cy="60" r="6" fill="#ff453a" />
+                      <text x="285" y="105" fill="#ff8a80" fontSize="11" fontWeight="700" textAnchor="middle">CVE-2026-798</text>
+                      <text x="285" y="120" fill="#a1a1a6" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle">JWT Secret Bypass</text>
+                    </g>
+
+                    {/* Node 3: Safe Route Node */}
+                    <g className="svg-node" style={{ color: '#86868b' }} opacity="0.6">
+                      <circle cx="285" cy="180" r="24" fill="rgba(255, 255, 255, 0.02)" stroke="#86868b" strokeWidth="1" />
+                      <circle cx="285" cy="180" r="4" fill="#86868b" />
+                      <text x="285" y="218" fill="#86868b" fontSize="10" textAnchor="middle">Public Assets</text>
+                    </g>
+
+                    {/* Node 4: Sandbox Exploit Orchestrator */}
+                    <g className="svg-node" style={{ color: '#bf5af2' }}>
+                      <rect x="440" y="92" width="56" height="56" rx="10" fill="rgba(191, 90, 242, 0.08)" stroke="#bf5af2" strokeWidth="1.5" />
+                      <circle cx="468" cy="120" r="6" fill="#bf5af2" className="svg-node-pulse" />
+                      <text x="468" y="165" fill="#ffffff" fontSize="11" fontWeight="600" textAnchor="middle">Docker Sandbox</text>
+                      <text x="468" y="180" fill="#86868b" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle">Exploit Simulator</text>
+                    </g>
+
+                    {/* Node 5: Target Postgres Asset */}
+                    <g className="svg-node" style={{ color: '#30d158' }}>
+                      <circle cx="650" cy="120" r="28" fill="rgba(48, 209, 88, 0.08)" stroke="#30d158" strokeWidth="1.5" />
+                      <polygon points="650,112 658,124 642,124" fill="#30d158" />
+                      <text x="650" y="165" fill="#ffffff" fontSize="11" fontWeight="600" textAnchor="middle">PostgreSQL DB</text>
+                      <text x="650" y="180" fill="#86868b" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle">Neon Target</text>
+                    </g>
+                  </svg>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: '#86868b', fontFamily: 'var(--font-mono)', marginTop: '1.25rem' }}>
+                  Topology mapped dynamically via Neon PostgreSQL schema <code style={{ color: '#bf5af2' }}>attack_graph_edges</code>
                 </div>
               </div>
             )}
 
             {/* Tab 3: Code Remediation Diff */}
             {landingTab === 'diff' && (
-              <div style={{ padding: '1.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', lineHeight: '1.6', background: '#040405', minHeight: '250px' }}>
-                <div style={{ color: '#71717a', marginBottom: '0.75rem' }}>// Automated Patch Generated by Gemini Agent for backend/src/config.rs</div>
-                <div style={{ background: 'rgba(244, 63, 94, 0.12)', color: '#fca5a5', padding: '0.2rem 0.6rem', borderRadius: '4px', marginBottom: '0.25rem' }}>
+              <div className="apple-tab-content" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', lineHeight: '1.7', background: '#020203', minHeight: '300px' }}>
+                <div style={{ color: '#86868b', marginBottom: '0.85rem' }}>// Automated Patch Synthesized by Gemini Security Agent for backend/src/config.rs</div>
+                <div style={{ background: 'rgba(255, 69, 58, 0.12)', color: '#ff8a80', padding: '0.35rem 0.75rem', borderRadius: '6px', marginBottom: '0.35rem', borderLeft: '3px solid #ff453a' }}>
                   - let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "default_insecure_secret".to_string());
                 </div>
-                <div style={{ background: 'rgba(74, 222, 128, 0.12)', color: '#86efac', padding: '0.2rem 0.6rem', borderRadius: '4px' }}>
-                  + let jwt_secret = env::var("JWT_SECRET").map_err(|_| ConfigError::MissingSecret("JWT_SECRET must be set"))?;
+                <div style={{ background: 'rgba(48, 209, 88, 0.12)', color: '#86efac', padding: '0.35rem 0.75rem', borderRadius: '6px', borderLeft: '3px solid #30d158' }}>
+                  + let jwt_secret = env::var("JWT_SECRET").map_err(|_| ConfigError::MissingSecret("JWT_SECRET environment variable is mandatory in production"))?;
                 </div>
-                <div style={{ color: '#4ade80', marginTop: '1rem', fontSize: '0.78rem', fontWeight: 500 }}>
-                  ✓ Verified against Rust compiler and sandboxed unit test suite.
+                <div style={{ marginTop: '1.25rem', padding: '0.75rem 1rem', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ color: '#30d158', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span>✓</span> Compiler & Unit Test Verification: 100% Passed
+                  </div>
+                  <span style={{ color: '#86868b', fontSize: '0.74rem' }}>Target: Rust 1.84 / Axum 0.7</span>
                 </div>
               </div>
             )}
           </div>
         </section>
 
-        {/* Minimal Interactive Scan Playground Widget */}
-        <section id="playground" style={{ padding: '3rem 1.5rem 5rem' }}>
-          <div className="saas-playground-box">
-            <div style={{ fontSize: '0.75rem', fontWeight: 600, fontFamily: 'var(--font-mono)', color: '#f97316', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '0.5rem' }}>
-              ✦ Interactive Security Playground
-            </div>
-            <h2 style={{ fontSize: '1.75rem', fontWeight: 700, color: '#ffffff', letterSpacing: '-0.02em', marginBottom: '0.5rem' }}>
+        {/* Apple Interactive Scan Playground Section */}
+        <section id="playground" className="apple-playground-section">
+          <div className="apple-playground-card">
+            <div className="apple-section-eyebrow">✦ Interactive Security Playground</div>
+            <h2 style={{ fontSize: '2rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.03em', marginBottom: '0.6rem' }}>
               Test Fire Crow Agent Instantly
             </h2>
-            <p style={{ color: '#a1a1aa', fontSize: '0.92rem', marginBottom: '1.75rem' }}>
-              Select a repository preset or enter your Git URL to trigger an instant agentic vulnerability scan simulation.
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', marginBottom: '1.75rem', lineHeight: '1.6' }}>
+              Select a repository preset or enter your repository Git URL to trigger an instant agentic vulnerability scan simulation.
             </p>
 
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '1.25rem' }}>
-              <span className="quick-chip" onClick={() => handleRunSimulatedScan('https://github.com/expressjs/express.git')}>
+            <div className="apple-quick-chips">
+              <span 
+                className={`apple-chip ${simRepo === 'https://github.com/expressjs/express.git' ? 'active' : ''}`}
+                onClick={() => handleRunSimulatedScan('https://github.com/expressjs/express.git')}
+              >
                 expressjs/express
               </span>
-              <span className="quick-chip" onClick={() => handleRunSimulatedScan('https://github.com/tokio-rs/axum.git')}>
+              <span 
+                className={`apple-chip ${simRepo === 'https://github.com/tokio-rs/axum.git' ? 'active' : ''}`}
+                onClick={() => handleRunSimulatedScan('https://github.com/tokio-rs/axum.git')}
+              >
                 tokio-rs/axum
               </span>
-              <span className="quick-chip" onClick={() => handleRunSimulatedScan('https://github.com/tiangolo/fastapi.git')}>
+              <span 
+                className={`apple-chip ${simRepo === 'https://github.com/tiangolo/fastapi.git' ? 'active' : ''}`}
+                onClick={() => handleRunSimulatedScan('https://github.com/tiangolo/fastapi.git')}
+              >
                 tiangolo/fastapi
+              </span>
+              <span 
+                className={`apple-chip ${simRepo === 'https://github.com/kubernetes/kubernetes.git' ? 'active' : ''}`}
+                onClick={() => handleRunSimulatedScan('https://github.com/kubernetes/kubernetes.git')}
+              >
+                kubernetes/kubernetes
               </span>
             </div>
 
-            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div className="apple-input-group">
               <input
                 type="text"
                 value={simRepo}
                 onChange={(e) => setSimRepo(e.target.value)}
                 placeholder="https://github.com/your-org/your-repo.git"
-                className="input"
-                style={{ flex: 1, minWidth: '280px', background: '#000000', borderColor: 'rgba(255, 255, 255, 0.15)', color: '#ffffff' }}
+                className="apple-input"
               />
               <button 
                 onClick={() => handleRunSimulatedScan()} 
                 disabled={isSimulating}
-                className="btn-saas-solid"
-                style={{ padding: '0.75rem 1.5rem', whiteSpace: 'nowrap' }}
+                className="btn-apple-primary"
+                style={{ padding: '0.85rem 1.75rem', whiteSpace: 'nowrap' }}
               >
-                {isSimulating ? 'Scanning...' : 'Run Scan 🚀'}
+                {isSimulating ? 'Simulating Scan...' : 'Run Agentic Scan 🚀'}
               </button>
             </div>
 
             {isSimulating && (
-              <div style={{ marginTop: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#a1a1aa', fontFamily: 'var(--font-mono)' }}>
+              <div style={{ marginTop: '1.75rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#e5e5ea', fontFamily: 'var(--font-mono)' }}>
                   <span>{simStage}</span>
-                  <span>{simProgress}%</span>
+                  <span style={{ fontWeight: 700 }}>{simProgress}%</span>
                 </div>
-                <div className="progress-bar-wrap">
-                  <div className="progress-bar-fill" style={{ width: `${simProgress}%`, background: '#ffffff', boxShadow: 'none' }}></div>
+                <div className="apple-progress-track">
+                  <div className="apple-progress-fill" style={{ width: `${simProgress}%` }}></div>
                 </div>
               </div>
             )}
 
             {simComplete && (
-              <div style={{ marginTop: '1.5rem', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.12)', borderRadius: '10px', padding: '1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-                <div>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#ffffff' }}>
-                    🎉 Agent Scan Simulation Complete
+              <div className="posture-card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '1rem', marginBottom: '1.25rem' }}>
+                  <div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span>🛡️</span> Security Posture Audit: Discovered Exploit Metrics
+                    </div>
+                    <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>Target: {simRepo}</p>
                   </div>
-                  <div style={{ fontSize: '0.8rem', color: '#a1a1aa', marginTop: '0.25rem' }}>
-                    {simStage}
+                  <span className="badge badge-critical" style={{ padding: '0.3rem 0.75rem', fontSize: '0.74rem' }}>SCORE: 9.2 CRITICAL</span>
+                </div>
+                <div className="posture-grid">
+                  <div className="posture-item">
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.25rem' }}>Vulnerabilities</div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#ff453a' }}>2 Discovered</div>
+                  </div>
+                  <div className="posture-item">
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.25rem' }}>Exploit Testing</div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#30d158' }}>100% Sandbox Verified</div>
+                  </div>
+                  <div className="posture-item">
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.25rem' }}>AST Code Patch</div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#bf5af2' }}>Auto-Generated</div>
                   </div>
                 </div>
-                <button onClick={() => setView('login')} className="btn-saas-solid" style={{ padding: '0.45rem 1rem', fontSize: '0.8rem' }}>
-                  View Full Console Report →
-                </button>
+                <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
+                  <button onClick={() => setView('login')} className="btn-apple-primary" style={{ padding: '0.55rem 1.35rem', fontSize: '0.84rem' }}>
+                    View Full Console Report →
+                  </button>
+                </div>
               </div>
             )}
           </div>
         </section>
 
-        {/* Minimal Platform Capabilities Grid */}
-        <section id="features" style={{ maxWidth: '1150px', margin: '0 auto 6rem', padding: '0 1.5rem', width: '100%' }}>
-          <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
-            <h2 style={{ fontSize: '2.25rem', fontWeight: 700, letterSpacing: '-0.03em', color: '#ffffff', marginBottom: '0.5rem' }}>
-              Enterprise Platform Capabilities
-            </h2>
-            <p style={{ color: '#a1a1aa', fontSize: '1rem', maxWidth: '580px', margin: '0 auto' }}>
-              Engineered for modern software teams requiring zero false positives and high-throughput security.
+        {/* Apple Bento Grid Section (Platform Capabilities) */}
+        <section id="capabilities" className="apple-bento-section">
+          <div className="apple-section-header">
+            <div className="apple-section-eyebrow">✦ Platform Capabilities</div>
+            <h2 className="apple-section-title">Engineered for Zero False Positives.</h2>
+            <p className="apple-section-sub">
+              Every security finding is synthesized, verified in an isolated Docker sandbox, and mapped to an interactive multi-node attack graph.
             </p>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '1.25rem' }}>
-            <div className="saas-card-minimal">
-              <div className="saas-icon-badge">🤖</div>
-              <h3>Gemini Agentic Reasoning</h3>
-              <p>Autonomous LLM loops plan, discover, and synthesize code patches for complex security vulnerabilities.</p>
+          <div className="apple-bento-grid">
+            {/* Bento Card 1: Col-8 (Gemini Agentic Reasoning) */}
+            <div className="apple-bento-card apple-bento-col-8">
+              <div>
+                <div className="apple-bento-icon">🤖</div>
+                <h3 className="apple-bento-title">Gemini Agentic Vulnerability Reasoning</h3>
+                <p className="apple-bento-desc">
+                  Autonomous LLM agents formulate hypotheses, construct proof-of-concept exploits, and synthesize non-breaking code patches with zero hallucinated vulnerabilities.
+                </p>
+              </div>
+
+              <div style={{ marginTop: '1.75rem', background: 'rgba(0, 0, 0, 0.4)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1rem 1.25rem', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>
+                <div style={{ color: '#bf5af2', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
+                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#bf5af2', display: 'inline-block' }}></span>
+                  Gemini 1.5 Pro Reasoning Loop
+                </div>
+                <div style={{ color: '#86868b' }}>Formulating exploit path → Verifying against Rust AST → Generating compiler-tested patch</div>
+              </div>
             </div>
 
-            <div className="saas-card-minimal">
-              <div className="saas-icon-badge">🕸️</div>
-              <h3>Attack Topology Mapping</h3>
-              <p>PostgreSQL attack vector graph engine modeling entrypoints, exploit nodes, and lateral movement paths.</p>
+            {/* Bento Card 2: Col-4 (Docker Sandbox Isolation) */}
+            <div className="apple-bento-card apple-bento-col-4">
+              <div>
+                <div className="apple-bento-icon">🐳</div>
+                <h3 className="apple-bento-title">Docker Sandbox Isolation</h3>
+                <p className="apple-bento-desc">
+                  Ephemeral, non-root container isolation guarantees absolute host boundary protection during exploit verification.
+                </p>
+              </div>
+
+              <div style={{ marginTop: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(48, 209, 88, 0.08)', border: '1px solid rgba(48, 209, 88, 0.25)', borderRadius: '10px', padding: '0.65rem 0.9rem' }}>
+                <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#30d158' }}></div>
+                <span style={{ fontSize: '0.76rem', color: '#30d158', fontWeight: 600 }}>100% Isolated Runtime</span>
+              </div>
             </div>
 
-            <div className="saas-card-minimal">
-              <div className="saas-icon-badge">🐳</div>
-              <h3>Docker Sandbox Isolation</h3>
-              <p>Executes code analyzers inside isolated Docker containers to guarantee zero host environment escape.</p>
+            {/* Bento Card 3: Col-4 (High-Throughput Rust Engine) */}
+            <div className="apple-bento-card apple-bento-col-4">
+              <div>
+                <div className="apple-bento-icon">⚡</div>
+                <h3 className="apple-bento-title">High-Throughput Rust Engine</h3>
+                <p className="apple-bento-desc">
+                  Built on Axum 0.7, Tokio async workers, and SQLx for lightning-fast concurrent repository scans.
+                </p>
+              </div>
+
+              <div style={{ marginTop: '1.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: '#ff8533' }}>
+                ⚡ &lt; 2.4s AST Parse Latency
+              </div>
             </div>
 
-            <div className="saas-card-minimal">
-              <div className="saas-icon-badge">🔑</div>
-              <h3>Just-In-Time PAM & IAM</h3>
-              <p>Just-in-time privilege elevation, ticket tracking, service accounts, and GitHub/Google OAuth2 security.</p>
+            {/* Bento Card 4: Col-4 (Just-In-Time PAM & IAM) */}
+            <div className="apple-bento-card apple-bento-col-4">
+              <div>
+                <div className="apple-bento-icon">🔑</div>
+                <h3 className="apple-bento-title">Just-In-Time PAM & IAM</h3>
+                <p className="apple-bento-desc">
+                  Zero-standing access controls with temporary elevation, audit trails, and OIDC / SAML SSO integration.
+                </p>
+              </div>
+
+              <div style={{ marginTop: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span className="badge badge-success">Active Elevation</span>
+                <span className="badge badge-low">Audit Logged</span>
+              </div>
             </div>
 
-            <div className="saas-card-minimal">
-              <div className="saas-icon-badge">⚡</div>
-              <h3>High-Throughput Rust Engine</h3>
-              <p>Built natively in Rust using Axum 0.7, Tokio async workers, and SQLx for high-throughput scanning.</p>
+            {/* Bento Card 5: Col-4 (Compliance PDF Generation) */}
+            <div className="apple-bento-card apple-bento-col-4">
+              <div>
+                <div className="apple-bento-icon">📄</div>
+                <h3 className="apple-bento-title">Automated Compliance PDFs</h3>
+                <p className="apple-bento-desc">
+                  Instantly compiles discovered CVEs, code fixes, and CWE risk matrices into SOC2 / ISO-27001 audit reports.
+                </p>
+              </div>
+
+              <div style={{ marginTop: '1.5rem', fontSize: '0.78rem', color: '#2997ff', fontWeight: 600 }}>
+                ✓ Export Ready (PDF / JSON)
+              </div>
             </div>
 
-            <div className="saas-card-minimal">
-              <div className="saas-icon-badge">📄</div>
-              <h3>Compliance PDF Generation</h3>
-              <p>Automatically compiles audit findings, CVE mappings, and code fix instructions into structured PDF artifacts.</p>
+            {/* Bento Card 6: Col-12 (PostgreSQL Attack Topology Graph) */}
+            <div className="apple-bento-card apple-bento-col-12">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1.5rem' }}>
+                <div style={{ maxWidth: '600px' }}>
+                  <div className="apple-bento-icon">🕸️</div>
+                  <h3 className="apple-bento-title">Multi-Node PostgreSQL Attack Topology Graph</h3>
+                  <p className="apple-bento-desc">
+                    Models complex lateral movement paths, entrypoints, database exposures, and privilege escalation vulnerabilities stored directly in relational schemas.
+                  </p>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <span className="badge badge-critical">CWE-798 Hardcoded Secrets</span>
+                  <span className="badge badge-high">OWASP A01 Access Control</span>
+                  <span className="badge badge-low">SQLx ORM Validated</span>
+                </div>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* 4-Step Architecture Workflow & Minimal Footer */}
-        <section id="architecture" style={{ background: 'rgba(255, 255, 255, 0.01)', borderTop: '1px solid rgba(255, 255, 255, 0.07)', borderBottom: '1px solid rgba(255, 255, 255, 0.07)', padding: '5.5rem 1.5rem' }}>
-          <div style={{ maxWidth: '1150px', margin: '0 auto' }}>
-            <div style={{ textAlign: 'center', marginBottom: '4rem' }}>
-              <h2 style={{ fontSize: '2.25rem', fontWeight: 700, letterSpacing: '-0.03em', color: '#ffffff', marginBottom: '0.5rem' }}>
-                End-to-End Autonomous Pipeline
-              </h2>
-              <p style={{ color: '#a1a1aa', fontSize: '1rem' }}>
-                From source code ingestion to automated patch verification.
+        {/* 4-Stage Architecture Pipeline Section */}
+        <section id="architecture" className="apple-pipeline-section">
+          <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+            <div className="apple-section-header">
+              <div className="apple-section-eyebrow">✦ Autonomous Lifecycle</div>
+              <h2 className="apple-section-title">End-to-End Autonomous Pipeline</h2>
+              <p className="apple-section-sub">
+                From source code ingestion to compiler-verified patch generation and compliance delivery.
               </p>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
-              <div className="saas-card-minimal">
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', fontWeight: 600, color: '#38bdf8', marginBottom: '0.5rem' }}>STEP 01</div>
-                <h3>Repository Ingestion</h3>
-                <p>Parses AST structure, dependencies, and configuration files via secure Git clones.</p>
+            <div className="apple-pipeline-grid">
+              <div className="apple-pipeline-card">
+                <div className="apple-step-tag" style={{ color: '#2997ff' }}>STEP 01</div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.5rem' }}>Repository Ingestion</h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                  Parses Abstract Syntax Trees (AST), dependencies, and configuration matrices via secure Git cloning.
+                </p>
               </div>
 
-              <div className="saas-card-minimal">
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', fontWeight: 600, color: '#c084fc', marginBottom: '0.5rem' }}>STEP 02</div>
-                <h3>Agentic Reasoning</h3>
-                <p>Security LLM reasoning loops discover architectural vulnerabilities and map attack graphs.</p>
+              <div className="apple-pipeline-card">
+                <div className="apple-step-tag" style={{ color: '#bf5af2' }}>STEP 02</div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.5rem' }}>Agentic Reasoning</h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                  Security LLM reasoning loops discover architectural vulnerabilities and construct attack graphs.
+                </p>
               </div>
 
-              <div className="saas-card-minimal">
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', fontWeight: 600, color: '#fbbf24', marginBottom: '0.5rem' }}>STEP 03</div>
-                <h3>Sandboxed Testing</h3>
-                <p>Simulates exploit paths inside isolated Docker containers to confirm zero false positives.</p>
+              <div className="apple-pipeline-card">
+                <div className="apple-step-tag" style={{ color: '#ffd60a' }}>STEP 03</div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.5rem' }}>Sandboxed Testing</h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                  Simulates exploit paths inside isolated Docker containers to confirm zero false positives.
+                </p>
               </div>
 
-              <div className="saas-card-minimal">
-                <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', fontWeight: 600, color: '#4ade80', marginBottom: '0.5rem' }}>STEP 04</div>
-                <h3>Patch & Delivery</h3>
-                <p>Generates ready-to-merge remediation pull requests and compliance-ready PDF artifacts.</p>
+              <div className="apple-pipeline-card">
+                <div className="apple-step-tag" style={{ color: '#30d158' }}>STEP 04</div>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.5rem' }}>Patch & Delivery</h3>
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
+                  Generates ready-to-merge remediation pull requests and compliance-ready PDF artifacts.
+                </p>
               </div>
             </div>
           </div>
         </section>
 
-        {/* Minimal Site Footer */}
-        <footer style={{ background: '#040405', borderTop: '1px solid rgba(255, 255, 255, 0.07)', padding: '4rem 1.5rem 2rem' }}>
-          <div style={{ maxWidth: '1150px', margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '2.5rem' }}>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                <img src="/fire-crow-logo.png" alt="Fire Crow Logo" style={{ width: '24px', height: '24px' }} />
-                <span style={{ fontWeight: 700, color: '#ffffff' }}>Fire Crow</span>
+        {/* Key Performance Metrics Showcase */}
+        <section id="metrics" className="apple-metrics-section">
+          <div className="apple-metric-box">
+            <div className="apple-metric-num">0%</div>
+            <div className="apple-metric-title">False Positive Guarantee</div>
+            <div className="apple-metric-sub">Sandboxed container exploit verification</div>
+          </div>
+
+          <div className="apple-metric-box">
+            <div className="apple-metric-num">&lt; 2.4s</div>
+            <div className="apple-metric-title">AST Ingestion Latency</div>
+            <div className="apple-metric-sub">High-throughput Rust Tokio async worker</div>
+          </div>
+
+          <div className="apple-metric-box">
+            <div className="apple-metric-num">100%</div>
+            <div className="apple-metric-title">Docker Sandbox Isolation</div>
+            <div className="apple-metric-sub">Zero host escape runtime protection</div>
+          </div>
+
+          <div className="apple-metric-box">
+            <div className="apple-metric-num">SOC2</div>
+            <div className="apple-metric-title">Compliance Artifacts</div>
+            <div className="apple-metric-sub">Automated audit reports & ISO 27001</div>
+          </div>
+        </section>
+
+        {/* SaaS Pricing Grid */}
+        <section className="apple-pricing-section">
+          <div className="apple-section-header">
+            <div className="apple-section-eyebrow">✦ Transparent SaaS Pricing</div>
+            <h2 className="apple-section-title">A plan for every security posture.</h2>
+            <p className="apple-section-sub">
+              Initiate automated container verification scans, elevation auditing, and SOC2 compliance mapping.
+            </p>
+          </div>
+
+          <div className="pricing-grid">
+            {/* Tier 1: Starter */}
+            <div className="pricing-card">
+              <div>
+                <div className="pricing-tier-name">Starter</div>
+                <div className="pricing-price-wrap">
+                  <span className="pricing-price">$19</span>
+                  <span className="pricing-period">/ month</span>
+                </div>
+                <p className="pricing-desc">Essential automated code security reasoning for solo developers and side projects.</p>
+                <ul className="pricing-features">
+                  <li className="pricing-feature-item">
+                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>5 Repository scans per month</span>
+                  </li>
+                  <li className="pricing-feature-item">
+                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>Ephemeral Docker sandbox validation</span>
+                  </li>
+                  <li className="pricing-feature-item">
+                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>Standard email alerts</span>
+                  </li>
+                  <li className="pricing-feature-item">
+                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>Basic PDF report exports</span>
+                  </li>
+                </ul>
               </div>
-              <p style={{ fontSize: '0.82rem', color: '#71717a', lineHeight: 1.6 }}>
-                Autonomous agentic security intelligence and vulnerability hardening platform built natively in Rust.
+              <button 
+                onClick={() => user ? handleInitiateDodoCheckout(19, 'starter') : setView('login')} 
+                className="btn-apple-secondary" 
+                style={{ width: '100%', padding: '0.75rem 0' }}
+              >
+                {user ? 'Upgrade to Starter' : 'Get Started'}
+              </button>
+            </div>
+
+            {/* Tier 2: Pro (Premium) */}
+            <div className="pricing-card premium">
+              <span className="pricing-badge">Most Popular</span>
+              <div>
+                <div className="pricing-tier-name" style={{ color: '#ff8533' }}>Pro Console</div>
+                <div className="pricing-price-wrap">
+                  <span className="pricing-price">$99</span>
+                  <span className="pricing-period">/ month</span>
+                </div>
+                <p className="pricing-desc">Advanced agentic reasoning, code patches, and multi-node attack topology mapping.</p>
+                <ul className="pricing-features">
+                  <li className="pricing-feature-item">
+                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span style={{ color: '#ffffff', fontWeight: 600 }}>Unlimited repository scans</span>
+                  </li>
+                  <li className="pricing-feature-item">
+                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>Advanced Gemini reasoning engine</span>
+                  </li>
+                  <li className="pricing-feature-item">
+                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>PoC exploit path verification</span>
+                  </li>
+                  <li className="pricing-feature-item">
+                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>Auto-generated pull request patches</span>
+                  </li>
+                  <li className="pricing-feature-item">
+                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>Full interactive attack topology graphs</span>
+                  </li>
+                  <li className="pricing-feature-item">
+                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>SOC2 & ISO-27001 compliance PDFs</span>
+                  </li>
+                </ul>
+              </div>
+              <button 
+                onClick={() => user ? handleInitiateDodoCheckout(99, 'pro') : setView('login')} 
+                className="btn-apple-primary" 
+                style={{ width: '100%', padding: '0.75rem 0' }}
+              >
+                {user ? 'Upgrade to Pro' : 'Start Pro Free Trial'}
+              </button>
+            </div>
+
+            {/* Tier 3: Enterprise */}
+            <div className="pricing-card">
+              <div>
+                <div className="pricing-tier-name">Enterprise</div>
+                <div className="pricing-price-wrap">
+                  <span className="pricing-price">$499</span>
+                  <span className="pricing-period">/ month</span>
+                </div>
+                <p className="pricing-desc">SLA-backed execution, private sandboxes, and zero-standing elevation permissions.</p>
+                <ul className="pricing-features">
+                  <li className="pricing-feature-item">
+                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>All Pro features included</span>
+                  </li>
+                  <li className="pricing-feature-item">
+                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>Private cloud sandbox deployments</span>
+                  </li>
+                  <li className="pricing-feature-item">
+                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>Multi-tenant OIDC SSO & SAML support</span>
+                  </li>
+                  <li className="pricing-feature-item">
+                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>Custom JIT permission boundary rules</span>
+                  </li>
+                  <li className="pricing-feature-item">
+                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                    <span>24/7 dedicated support & SLA metrics</span>
+                  </li>
+                </ul>
+              </div>
+              <button 
+                onClick={() => user ? handleInitiateDodoCheckout(499, 'enterprise') : setView('login')} 
+                className="btn-apple-secondary" 
+                style={{ width: '100%', padding: '0.75rem 0' }}
+              >
+                Contact Sales / Upgrade
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Cupertino Call to Action Spotlight Banner */}
+        <section className="apple-cta-section">
+          <div className="apple-cta-card">
+            <h2 style={{ fontSize: 'clamp(2rem, 4vw, 3.2rem)', fontWeight: 800, letterSpacing: '-0.04em', color: '#ffffff', marginBottom: '1rem' }}>
+              Ready to harden your enterprise stack?
+            </h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem', maxWidth: '620px', margin: '0 auto 2.5rem', lineHeight: '1.6' }}>
+              Deploy Fire Crow in your CI/CD pipeline or launch the interactive cloud console in seconds.
+            </p>
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button onClick={() => setView('login')} className="btn-apple-primary" style={{ padding: '0.85rem 2.25rem', fontSize: '0.95rem' }}>
+                Launch Control Console →
+              </button>
+              <a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer" className="btn-apple-secondary" style={{ padding: '0.85rem 2rem', fontSize: '0.95rem' }}>
+                Explore on GitHub ↗
+              </a>
+            </div>
+          </div>
+        </section>
+
+        {/* Multi-Column Apple-Style Footer */}
+        <footer className="apple-footer">
+          <div className="apple-footer-grid">
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginBottom: '1.1rem' }}>
+                <img src="/fire-crow-logo.png" alt="Fire Crow Logo" style={{ width: '28px', height: '28px', borderRadius: '6px' }} />
+                <span style={{ fontWeight: 700, fontSize: '1.05rem', color: '#ffffff' }}>Fire Crow</span>
+              </div>
+              <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: '1.65', maxWidth: '340px' }}>
+                Autonomous agentic security intelligence and vulnerability hardening platform built natively in Rust with Tokio async workers and Gemini LLM reasoning.
               </p>
             </div>
 
             <div>
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#ffffff', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Platform</div>
-              <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.6rem', fontSize: '0.82rem' }}>
-                <li><a href="#playground" style={{ color: '#71717a', textDecoration: 'none' }}>Live Playground</a></li>
-                <li><a href="#features" style={{ color: '#71717a', textDecoration: 'none' }}>Capabilities</a></li>
-                <li><a href="#architecture" style={{ color: '#71717a', textDecoration: 'none' }}>Architecture</a></li>
+              <div className="apple-footer-col-title">Platform</div>
+              <ul className="apple-footer-links">
+                <li><a href="#playground">Interactive Playground</a></li>
+                <li><a href="#capabilities">Agent Capabilities</a></li>
+                <li><a href="#architecture">Autonomous Pipeline</a></li>
+                <li><a href="#metrics">Engine Performance</a></li>
               </ul>
             </div>
 
             <div>
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#ffffff', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Developers</div>
-              <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.6rem', fontSize: '0.82rem' }}>
-                <li><a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer" style={{ color: '#71717a', textDecoration: 'none' }}>GitHub Repository</a></li>
-                <li><a href="#architecture" style={{ color: '#71717a', textDecoration: 'none' }}>Rust Engine Specs</a></li>
+              <div className="apple-footer-col-title">Developers</div>
+              <ul className="apple-footer-links">
+                <li><a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer">GitHub Repository</a></li>
+                <li><a href="#architecture">Axum Engine Specs</a></li>
+                <li><a href="/documentation/API_DOCUMENTATION.md">API Documentation</a></li>
+                <li><a href="/apple_design.md">Apple Design System</a></li>
               </ul>
             </div>
 
             <div>
-              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#ffffff', marginBottom: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Security</div>
-              <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.6rem', fontSize: '0.82rem', color: '#71717a' }}>
-                <li>SOC2 Type II Ready</li>
-                <li>ISO 27001 Mapping</li>
-                <li>Docker Isolated</li>
+              <div className="apple-footer-col-title">Security & Trust</div>
+              <ul className="apple-footer-links">
+                <li><span style={{ color: 'var(--text-muted)' }}>SOC2 Type II Ready</span></li>
+                <li><span style={{ color: 'var(--text-muted)' }}>ISO 27001 Mapping</span></li>
+                <li><span style={{ color: 'var(--text-muted)' }}>Docker Sandbox Isolation</span></li>
+                <li><span style={{ color: 'var(--text-muted)' }}>Zero-Standing PAM</span></li>
               </ul>
             </div>
           </div>
 
-          <div style={{ maxWidth: '1150px', margin: '3rem auto 0', paddingTop: '1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem', color: '#71717a', flexWrap: 'wrap', gap: '1rem' }}>
-            <div>© {new Date().getFullYear()} Fire Crow Intelligence Inc. All rights reserved.</div>
-            <div style={{ display: 'flex', gap: '1.5rem' }}>
-              <span>Privacy</span>
-              <span>Terms</span>
-              <span>Status: <strong style={{ color: '#4ade80' }}>Operational</strong></span>
+          <div className="apple-footer-bottom">
+            <div>© {new Date().getFullYear()} Fire Crow Security Intelligence Inc. All rights reserved.</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1.75rem' }}>
+              <span style={{ color: 'var(--text-muted)' }}>Privacy Policy</span>
+              <span style={{ color: 'var(--text-muted)' }}>Terms of Service</span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#30d158', fontWeight: 600 }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#30d158', display: 'inline-block' }}></span>
+                System Operational
+              </span>
             </div>
           </div>
         </footer>
