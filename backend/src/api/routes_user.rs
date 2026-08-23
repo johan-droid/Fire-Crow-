@@ -29,18 +29,23 @@ pub async fn list_github_repos(
         .await
         .map_err(AppError::Database)?;
 
-    let encrypted_token = match db_user.github_access_token {
-        Some(t) if !t.is_empty() => t,
-        _ => return Ok(Json(serde_json::json!({
+    let token = if let Some(ref encrypted_token) = db_user.github_access_token {
+        if !encrypted_token.is_empty() {
+            state.crypto().decrypt_secret(encrypted_token).unwrap_or_else(|_| state.settings().github_token.clone())
+        } else {
+            state.settings().github_token.clone()
+        }
+    } else {
+        state.settings().github_token.clone()
+    };
+
+    if token.is_empty() {
+        return Ok(Json(serde_json::json!({
             "status": "not_connected",
             "message": "GitHub account not connected or access token unavailable. Please sign in with GitHub.",
             "repositories": []
-        }))),
-    };
-
-    let token = state.crypto().decrypt_secret(&encrypted_token).map_err(|e| {
-        AppError::Internal(format!("Failed to decrypt GitHub access token: {}", e))
-    })?;
+        })));
+    }
 
     let client = reqwest::Client::new();
     let res = client.get("https://api.github.com/user/repos?sort=updated&per_page=100&affiliation=owner,collaborator,organization_member")

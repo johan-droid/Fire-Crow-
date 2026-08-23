@@ -342,6 +342,13 @@ function App() {
     return () => clearInterval(interval);
   }, [view, activeMonitorJobId, jobs]);
 
+  // Auto-sync repositories from GitHub whenever dashboard opens or scan modal opens
+  useEffect(() => {
+    if (user && (view === 'dashboard' || isScanModalOpen)) {
+      fetchUserRepos();
+    }
+  }, [user, view, isScanModalOpen]);
+
   const oauthHandledRef = useRef(false);
   const sessionCheckedRef = useRef(false);
 
@@ -482,7 +489,7 @@ function App() {
   // Submit real audit job
   const handleStartScan = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newRepoUrl) return;
+    if (!newRepoUrl || !newRepoUrl.trim()) return;
 
     setModalError('');
     setIsSubmitting(true);
@@ -491,8 +498,8 @@ function App() {
       const res = await apiFetch('/audit/submit', {
         method: 'POST',
         body: JSON.stringify({
-          repo_url: newRepoUrl,
-          repo_branch: newRepoBranch || 'main',
+          repo_url: newRepoUrl.trim(),
+          repo_branch: newRepoBranch.trim() || 'main',
         }),
       });
 
@@ -508,7 +515,7 @@ function App() {
         fetchDashboardData();
       } else {
         const errData = await res.json().catch(() => ({}));
-        setModalError(errData.message || errData.error || 'Failed to submit audit job.');
+        setModalError(errData.message || errData.error || errData.detail || 'Failed to submit audit job.');
       }
     } catch (err: any) {
       setModalError(err.message || 'Network error submitting scan job.');
@@ -2204,7 +2211,7 @@ function App() {
                 <div className="form-group">
                   <label className="form-label">Repository Git URL</label>
                   <input 
-                    type="url" 
+                    type="text" 
                     className="form-input" 
                     placeholder="https://github.com/org/repo"
                     value={newRepoUrl}
@@ -2226,7 +2233,7 @@ function App() {
 
               <div className="modal-footer">
                 <button type="button" onClick={() => setIsScanModalOpen(false)} className="btn btn-secondary">Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                <button type="submit" className="btn btn-primary" disabled={isSubmitting || !newRepoUrl.trim()}>
                   {isSubmitting ? 'Submitting...' : 'Submit Job'}
                 </button>
               </div>
