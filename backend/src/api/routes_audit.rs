@@ -33,15 +33,6 @@ pub async fn submit_audit(
         .bind(false)
         .bind(chrono::Utc::now().naive_utc())
         .execute(state.pool()).await.map_err(AppError::Database)?;
-    let pool = state.pool().clone();
-    let repo_url = req.repo_url.clone();
-    let repo_branch = req.repo_branch.clone().unwrap_or_else(|| "main".into());
-    let custom_email = req.custom_email.clone();
-    let j_id = job_id.clone();
-    let uid = user.user_id.clone();
-    tokio::spawn(async move {
-        let _ = crate::orchestrator::execute_audit_job(&pool, &j_id, &uid, &repo_url, &repo_branch, custom_email.as_deref(), None).await;
-    });
     let job: crate::models::AuditJob = sqlx::query_as::<_, crate::models::AuditJob>("SELECT * FROM audit_jobs WHERE id=$1")
         .bind(&job_id).fetch_one(state.pool()).await.map_err(AppError::Database)?;
     Ok(Json(JobResponse::from(job)))
