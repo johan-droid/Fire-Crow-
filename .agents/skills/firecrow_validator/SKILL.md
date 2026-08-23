@@ -12,13 +12,13 @@ Use this skill whenever code updates, refactorings, database migrations, or feat
 Run the custom MCP validator script from the workspace root:
 
 ```bash
-python3 scripts/mcp_firecrow_validator.py --validate
+python3 backend/scripts/mcp_firecrow_validator.py --validate
 ```
 
 Or for raw JSON output:
 
 ```bash
-python3 scripts/mcp_firecrow_validator.py --json
+python3 backend/scripts/mcp_firecrow_validator.py --json
 ```
 
 ## Validation Checklist Performed by Custom MCP

@@ -11,7 +11,7 @@ import subprocess
 import time
 import argparse
 
-WORKSPACE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+WORKSPACE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BACKEND_DIR = os.path.join(WORKSPACE_DIR, "backend")
 FRONTEND_DIR = os.path.join(WORKSPACE_DIR, "frontend")
 

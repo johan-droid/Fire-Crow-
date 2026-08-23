@@ -130,7 +130,9 @@ Access the frontend dashboard at `http://localhost:5173`.
 ```text
 Fire-Crow-/
 ├── backend/                  # Rust Axum Web Server & Agent Orchestrator
+│   ├── cloudflare/           # Cloudflare Tunnel & Docker Compose setup
 │   ├── migrations/           # SQLx database schema migrations
+│   ├── scripts/              # Validation scripts & developer utility scripts
 │   ├── src/
 │   │   ├── agents/           # LLM agent definitions & scanner runners
 │   │   ├── api/              # Axum REST route handlers (auth, sso, pam, iam, audit...)
@@ -141,22 +143,26 @@ Fire-Crow-/
 │   │   ├── services/         # Core domain logic (auth, crypto, storage, mfa...)
 │   │   └── main.rs           # Application entry point
 │   └── Cargo.toml
-├── frontend/                 # React 18 + Vite Control Panel
-│   ├── src/
-│   │   ├── App.tsx           # Security Console Dashboard & Auth UI
-│   │   ├── index.css         # Glassmorphism design tokens & animations
-│   │   └── main.tsx
-│   └── package.json
-├── API_DOCUMENTATION.md      # Comprehensive REST & API Key Manual
-└── GITHUB_AUTH.md            # GitHub OAuth Setup & Integration Guide
+├── documentation/            # Comprehensive guides and references
+│   ├── API_DOCUMENTATION.md  # REST API manual
+│   ├── CLOUDFLARE_DEPLOYMENT.md # Cloudflare pages/tunnel/R2 deployment guide
+│   └── GITHUB_AUTH.md        # GitHub OAuth integration guide
+└── frontend/                 # React 18 + Vite Control Panel
+    ├── functions/            # Edge Pages functions middleware
+    ├── src/
+    │   ├── App.tsx           # Security Console Dashboard & Auth UI
+    │   ├── index.css         # Glassmorphism design tokens & animations
+    │   └── main.tsx
+    └── package.json
 ```
 
 ---
 
 ## 📖 Documentation
 
-- 📘 [API Reference Manual](API_DOCUMENTATION.md) — Endpoint specs, input schemas, headers, and Service Account API keys.
-- 🔑 [GitHub OAuth Integration Guide](GITHUB_AUTH.md) — Step-by-step setup for GitHub developer applications.
+- 📘 [API Reference Manual](documentation/API_DOCUMENTATION.md) — Endpoint specs, input schemas, headers, and Service Account API keys.
+- 🔑 [GitHub OAuth Integration Guide](documentation/GITHUB_AUTH.md) — Step-by-step setup for GitHub developer applications.
+- ☁️ [Cloudflare Deployment & Integration Manual](documentation/CLOUDFLARE_DEPLOYMENT.md) — Setup guide for Cloudflare Pages, R2, and Tunnels.
 
 ---
 

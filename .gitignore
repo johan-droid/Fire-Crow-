@@ -12,8 +12,7 @@
 *.key
 *.crt
 .dev.vars
-scripts/cf_secrets.json
-scripts/upload_cf_secrets.sh
+backend/scripts/cf_secrets.json
 
 # Rust / Cargo Build Output
 target/

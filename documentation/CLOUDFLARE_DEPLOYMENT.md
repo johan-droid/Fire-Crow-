@@ -89,7 +89,7 @@ Cloudflare Tunnels expose the Rust Axum backend securely to the internet without
 export TUNNEL_TOKEN="eyJh..."
 
 # Launch the full stack behind Cloudflare Tunnel
-docker-compose -f cloudflare/docker-compose.cloudflare.yml up -d
+docker-compose -f backend/cloudflare/docker-compose.cloudflare.yml up -d
 ```
 
 ### Option B: Manual cloudflared setup
@@ -103,7 +103,7 @@ docker-compose -f cloudflare/docker-compose.cloudflare.yml up -d
    cloudflared tunnel login
    cloudflared tunnel create firecrow-tunnel
    ```
-3. Copy `cloudflare/tunnel-config.yml` to `/etc/cloudflared/config.yml` and replace `FIRE_CROW_TUNNEL_ID`.
+3. Copy `backend/cloudflare/tunnel-config.yml` to `/etc/cloudflared/config.yml` and replace `FIRE_CROW_TUNNEL_ID`.
 4. Run the tunnel:
    ```bash
    cloudflared tunnel run firecrow-tunnel

@@ -30,7 +30,7 @@ services:
 
   backend:
     build:
-      context: ..
+      context: ../..
       dockerfile: backend/Dockerfile
     container_name: firecrow-backend
     restart: unless-stopped
