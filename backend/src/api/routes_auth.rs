@@ -252,14 +252,52 @@ struct GitHubUser {
     email: Option<String>,
 }
 
-pub async fn github_login(State(state): State<Arc<crate::AppState>>, jar: CookieJar) -> Result<(CookieJar, Redirect)> {
+pub async fn github_login(
+    State(state): State<Arc<crate::AppState>>,
+    headers: axum::http::HeaderMap,
+    jar: CookieJar,
+) -> Result<(CookieJar, Redirect)> {
     let oauth_state = crate::services::auth::create_oauth_state();
     let cookie = Cookie::build(("oauth_state", oauth_state.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
-    .same_site(axum_extra::extract::cookie::SameSite::Lax)
+        .same_site(axum_extra::extract::cookie::SameSite::Lax)
         .build();
+        
+    let mut jar = jar.add(cookie);
+
+    let referer = headers
+        .get(axum::http::header::REFERER)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if !referer.is_empty() {
+        if let Ok(url) = url::Url::parse(referer) {
+            let origin = format!("{}://{}", url.scheme(), url.host_str().unwrap_or(""));
+            let origin = if let Some(port) = url.port() {
+                format!("{}:{}", origin, port)
+            } else {
+                origin
+            };
+            
+            let allowed = origin == "http://localhost:3000" 
+                || origin == "http://127.0.0.1:3000"
+                || origin == "http://localhost:8000"
+                || origin == "http://127.0.0.1:8000"
+                || origin == state.settings().frontend_url.trim_end_matches('/');
+                
+            if allowed {
+                let redirect_cookie = Cookie::build(("oauth_redirect_origin", origin))
+                    .path("/")
+                    .http_only(true)
+                    .secure(!state.settings().debug)
+                    .same_site(axum_extra::extract::cookie::SameSite::Lax)
+                    .build();
+                jar = jar.add(redirect_cookie);
+            }
+        }
+    }
         
     let base_url = state.settings().backend_base_url.trim_end_matches('/');
     let auth_url = format!(
@@ -268,7 +306,7 @@ pub async fn github_login(State(state): State<Arc<crate::AppState>>, jar: Cookie
         base_url,
         oauth_state
     );
-    Ok((jar.add(cookie), Redirect::temporary(&auth_url)))
+    Ok((jar, Redirect::temporary(&auth_url)))
 }
 
 pub async fn github_callback(
@@ -276,7 +314,12 @@ pub async fn github_callback(
     jar: CookieJar,
     Query(query): Query<OAuthCallbackQuery>
 ) -> (CookieJar, Redirect) {
-    let frontend_base = state.settings().frontend_url.trim_end_matches('/').to_string();
+    let redirect_origin = jar.get("oauth_redirect_origin").map(|c| c.value().to_string());
+    let jar = jar.remove(Cookie::from("oauth_redirect_origin"));
+
+    let frontend_base = redirect_origin.unwrap_or_else(|| {
+        state.settings().frontend_url.trim_end_matches('/').to_string()
+    });
     let error_redirect = |msg: &str| {
         error!("GitHub OAuth error: {}", msg);
         let url = format!("{}/?oauth_error={}", frontend_base, urlencoding(msg));
@@ -467,14 +510,52 @@ struct GoogleUser {
     email: Option<String>,
 }
 
-pub async fn google_login(State(state): State<Arc<crate::AppState>>, jar: CookieJar) -> Result<(CookieJar, Redirect)> {
+pub async fn google_login(
+    State(state): State<Arc<crate::AppState>>,
+    headers: axum::http::HeaderMap,
+    jar: CookieJar,
+) -> Result<(CookieJar, Redirect)> {
     let oauth_state = crate::services::auth::create_oauth_state();
     let cookie = Cookie::build(("google_oauth_state", oauth_state.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
-    .same_site(axum_extra::extract::cookie::SameSite::Lax)
+        .same_site(axum_extra::extract::cookie::SameSite::Lax)
         .build();
+        
+    let mut jar = jar.add(cookie);
+
+    let referer = headers
+        .get(axum::http::header::REFERER)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    if !referer.is_empty() {
+        if let Ok(url) = url::Url::parse(referer) {
+            let origin = format!("{}://{}", url.scheme(), url.host_str().unwrap_or(""));
+            let origin = if let Some(port) = url.port() {
+                format!("{}:{}", origin, port)
+            } else {
+                origin
+            };
+            
+            let allowed = origin == "http://localhost:3000" 
+                || origin == "http://127.0.0.1:3000"
+                || origin == "http://localhost:8000"
+                || origin == "http://127.0.0.1:8000"
+                || origin == state.settings().frontend_url.trim_end_matches('/');
+                
+            if allowed {
+                let redirect_cookie = Cookie::build(("oauth_redirect_origin", origin))
+                    .path("/")
+                    .http_only(true)
+                    .secure(!state.settings().debug)
+                    .same_site(axum_extra::extract::cookie::SameSite::Lax)
+                    .build();
+                jar = jar.add(redirect_cookie);
+            }
+        }
+    }
         
     let base_url = state.settings().backend_base_url.trim_end_matches('/');
     let client_id = &state.settings().google_client_id;
@@ -488,7 +569,7 @@ pub async fn google_login(State(state): State<Arc<crate::AppState>>, jar: Cookie
         urlencoding(&redirect_uri),
         oauth_state
     );
-    Ok((jar.add(cookie), Redirect::temporary(&auth_url)))
+    Ok((jar, Redirect::temporary(&auth_url)))
 }
 
 pub async fn google_callback(
@@ -496,7 +577,12 @@ pub async fn google_callback(
     jar: CookieJar,
     Query(query): Query<OAuthCallbackQuery>
 ) -> (CookieJar, Redirect) {
-    let frontend_base = state.settings().frontend_url.trim_end_matches('/').to_string();
+    let redirect_origin = jar.get("oauth_redirect_origin").map(|c| c.value().to_string());
+    let jar = jar.remove(Cookie::from("oauth_redirect_origin"));
+
+    let frontend_base = redirect_origin.unwrap_or_else(|| {
+        state.settings().frontend_url.trim_end_matches('/').to_string()
+    });
     let error_redirect = |msg: &str| {
         error!("Google OAuth error: {}", msg);
         let url = format!("{}/?oauth_error={}", frontend_base, urlencoding(msg));
