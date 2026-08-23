@@ -20,7 +20,14 @@ pub async fn execute_audit_job(
         status: crate::models::JobStatus::Running, current_phase: "intake".into(), ..Default::default()
     };
 
-    tracing::info!("[orchestrator] Starting job {} for repo {}", job_id, repo_url);
+    // Ensure job is marked as running in database (idempotent safety)
+    let _ = sqlx::query("UPDATE audit_jobs SET status=$1 WHERE id=$2 AND status != 'completed' AND status != 'failed'")
+        .bind(crate::models::JobStatus::Running)
+        .bind(job_id)
+        .execute(pool)
+        .await;
+
+    tracing::info!("[orchestrator] Starting job {} for repo {} at {}", job_id, repo_url, Utc::now().to_rfc3339());
 
     let mut job_cancelled = false;
 

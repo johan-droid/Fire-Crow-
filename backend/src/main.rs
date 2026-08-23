@@ -229,7 +229,7 @@ async fn main() -> anyhow::Result<()> {
     let listener = TcpListener::bind(addr).await?;
 
     let worker_pool = WorkerPool::new(state.pool().clone(), settings.clone());
-    worker_pool.start(4).await;
+    worker_pool.start(2).await;
 
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(async move {

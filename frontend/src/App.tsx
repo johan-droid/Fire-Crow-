@@ -330,15 +330,24 @@ function App() {
       }
     };
 
-    fetchPhases();
+    // Determine if job is still active using current jobs state
     const activeJob = jobs.find(j => j.id === targetJobId);
     const isJobActive = !activeJob || activeJob.status === 'running' || activeJob.status === 'queued';
+
+    // Initial fetch
+    fetchPhases();
+    if (isJobActive) {
+      fetchDashboardData();
+    }
+
+    // If job is finished, do a single fetch but don't start polling
+    if (!isJobActive) return;
+
+    // Poll at 2s intervals while job is active
     const interval = setInterval(() => {
       fetchPhases();
-      if (isJobActive) {
-        fetchDashboardData();
-      }
-    }, isJobActive ? 1500 : 4000);
+      fetchDashboardData();
+    }, 2000);
     return () => clearInterval(interval);
   }, [view, activeMonitorJobId, jobs]);
 
@@ -1947,14 +1956,19 @@ function App() {
                               }
                             } else {
                               monitorPhases.forEach(p => {
-                                const time = p.started_at ? p.started_at.substring(11, 19) : '00:00:00';
-                                terminalContent += `[${time}] [AGENT:${p.phase_name.toUpperCase()}] Spawning agent...\n`;
+                                // Backend stores NaiveDateTime in UTC — convert to local time
+                                const utcStr = p.started_at ? p.started_at.replace(' ', 'T') + 'Z' : null;
+                                const localTime = utcStr ? new Date(utcStr).toLocaleTimeString('en-GB', { hour12: false }) : '00:00:00';
+                                const endUtcStr = p.ended_at ? p.ended_at.replace(' ', 'T') + 'Z' : null;
+                                const endLocalTime = endUtcStr ? new Date(endUtcStr).toLocaleTimeString('en-GB', { hour12: false }) : null;
+                                terminalContent += `[${localTime}] [AGENT:${p.phase_name.toUpperCase()}] Spawning agent...\n`;
                                 if (p.status === 'completed') {
-                                  terminalContent += `[${time}] [AGENT:${p.phase_name.toUpperCase()}] Phase completed successfully in ${p.duration_sec || 0}s.\n`;
+                                  const dur = p.duration_sec ? p.duration_sec.toFixed(2) : '0.00';
+                                  terminalContent += `[${endLocalTime || localTime}] [AGENT:${p.phase_name.toUpperCase()}] ✓ Phase completed in ${dur}s.\n`;
                                 } else if (p.status === 'failed') {
-                                  terminalContent += `[${time}] [AGENT:${p.phase_name.toUpperCase()}] ERROR: ${p.error_message || 'Phase execution failed'}\n`;
+                                  terminalContent += `[${endLocalTime || localTime}] [AGENT:${p.phase_name.toUpperCase()}] ✗ ERROR: ${p.error_message || 'Phase execution failed'}\n`;
                                 } else {
-                                  terminalContent += `[${time}] [AGENT:${p.phase_name.toUpperCase()}] Agent is working...\n`;
+                                  terminalContent += `[${localTime}] [AGENT:${p.phase_name.toUpperCase()}] ⏳ Agent is working...\n`;
                                 }
                               });
                             }
