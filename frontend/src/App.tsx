@@ -179,6 +179,12 @@ function App() {
   const [dodoPackage, setDodoPackage] = useState<'starter' | 'pro' | 'enterprise'>('pro');
   const [dodoCheckoutUrl, setDodoCheckoutUrl] = useState('');
 
+  // Interactive Dynamic Landing Page States
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
+  const [selectedGraphNode, setSelectedGraphNode] = useState<'ingress' | 'exploit' | 'sandbox' | 'target'>('exploit');
+  const [selectedDiffPatch, setSelectedDiffPatch] = useState<'jwt' | 'sqli' | 'csrf'>('jwt');
+  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
+
   const handleInitiateDodoCheckout = async (amount: number, packageName: string) => {
     setIsSubmitting(true);
     setModalError('');
@@ -740,7 +746,7 @@ function App() {
 
             {/* Tab 2: Attack Topology Visualizer */}
             {landingTab === 'graph' && (
-              <div className="apple-tab-content" style={{ background: '#020203', minHeight: '320px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <div className="apple-tab-content" style={{ background: '#020203', minHeight: '340px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                 <div className="topology-svg-container">
                   <svg width="100%" height="240" viewBox="0 0 800 240" fill="none" xmlns="http://www.w3.org/2000/svg">
                     {/* Animated connection lines */}
@@ -767,47 +773,95 @@ function App() {
                     </defs>
 
                     {/* Node 1: Entry API Route */}
-                    <g className="svg-node" style={{ color: '#2997ff' }}>
-                      <circle cx="120" cy="120" r="28" fill="rgba(41, 151, 255, 0.08)" stroke="#2997ff" strokeWidth="1.5" />
+                    <g className="svg-node" style={{ color: '#2997ff' }} onClick={() => setSelectedGraphNode('ingress')}>
+                      <circle cx="120" cy="120" r="28" fill="rgba(41, 151, 255, 0.08)" stroke={selectedGraphNode === 'ingress' ? '#ffffff' : '#2997ff'} strokeWidth={selectedGraphNode === 'ingress' ? '3' : '1.5'} />
                       <circle cx="120" cy="120" r="6" fill="#2997ff" className="svg-node-pulse" />
                       <text x="120" y="165" fill="#ffffff" fontSize="11" fontWeight="600" textAnchor="middle">Web Ingress</text>
                       <text x="120" y="180" fill="#86868b" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle">POST /api/v1/auth</text>
                     </g>
 
                     {/* Node 2: Exploit Node (JWT) */}
-                    <g className="svg-node" style={{ color: '#ff453a' }}>
-                      <circle cx="285" cy="60" r="28" fill="rgba(255, 69, 58, 0.1)" stroke="#ff453a" strokeWidth="1.8" />
+                    <g className="svg-node" style={{ color: '#ff453a' }} onClick={() => setSelectedGraphNode('exploit')}>
+                      <circle cx="285" cy="60" r="28" fill="rgba(255, 69, 58, 0.1)" stroke={selectedGraphNode === 'exploit' ? '#ffffff' : '#ff453a'} strokeWidth={selectedGraphNode === 'exploit' ? '3' : '1.8'} />
                       <circle cx="285" cy="60" r="6" fill="#ff453a" />
                       <text x="285" y="105" fill="#ff8a80" fontSize="11" fontWeight="700" textAnchor="middle">CVE-2026-798</text>
                       <text x="285" y="120" fill="#a1a1a6" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle">JWT Secret Bypass</text>
                     </g>
 
                     {/* Node 3: Safe Route Node */}
-                    <g className="svg-node" style={{ color: '#86868b' }} opacity="0.6">
+                    <g className="svg-node" style={{ color: '#86868b' }} opacity="0.6" onClick={() => setSelectedGraphNode('ingress')}>
                       <circle cx="285" cy="180" r="24" fill="rgba(255, 255, 255, 0.02)" stroke="#86868b" strokeWidth="1" />
                       <circle cx="285" cy="180" r="4" fill="#86868b" />
                       <text x="285" y="218" fill="#86868b" fontSize="10" textAnchor="middle">Public Assets</text>
                     </g>
 
                     {/* Node 4: Sandbox Exploit Orchestrator */}
-                    <g className="svg-node" style={{ color: '#bf5af2' }}>
-                      <rect x="440" y="92" width="56" height="56" rx="10" fill="rgba(191, 90, 242, 0.08)" stroke="#bf5af2" strokeWidth="1.5" />
+                    <g className="svg-node" style={{ color: '#bf5af2' }} onClick={() => setSelectedGraphNode('sandbox')}>
+                      <rect x="440" y="92" width="56" height="56" rx="10" fill="rgba(191, 90, 242, 0.08)" stroke={selectedGraphNode === 'sandbox' ? '#ffffff' : '#bf5af2'} strokeWidth={selectedGraphNode === 'sandbox' ? '3' : '1.5'} />
                       <circle cx="468" cy="120" r="6" fill="#bf5af2" className="svg-node-pulse" />
                       <text x="468" y="165" fill="#ffffff" fontSize="11" fontWeight="600" textAnchor="middle">Docker Sandbox</text>
                       <text x="468" y="180" fill="#86868b" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle">Exploit Simulator</text>
                     </g>
 
                     {/* Node 5: Target Postgres Asset */}
-                    <g className="svg-node" style={{ color: '#30d158' }}>
-                      <circle cx="650" cy="120" r="28" fill="rgba(48, 209, 88, 0.08)" stroke="#30d158" strokeWidth="1.5" />
+                    <g className="svg-node" style={{ color: '#30d158' }} onClick={() => setSelectedGraphNode('target')}>
+                      <circle cx="650" cy="120" r="28" fill="rgba(48, 209, 88, 0.08)" stroke={selectedGraphNode === 'target' ? '#ffffff' : '#30d158'} strokeWidth={selectedGraphNode === 'target' ? '3' : '1.5'} />
                       <polygon points="650,112 658,124 642,124" fill="#30d158" />
                       <text x="650" y="165" fill="#ffffff" fontSize="11" fontWeight="600" textAnchor="middle">PostgreSQL DB</text>
                       <text x="650" y="180" fill="#86868b" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle">Neon Target</text>
                     </g>
                   </svg>
                 </div>
-                <div style={{ fontSize: '0.78rem', color: '#86868b', fontFamily: 'var(--font-mono)', marginTop: '1.25rem' }}>
-                  Topology mapped dynamically via Neon PostgreSQL schema <code style={{ color: '#bf5af2' }}>attack_graph_edges</code>
+
+                {/* Live Node Inspector Panel */}
+                <div className="inspector-card">
+                  <div className="inspector-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#ffffff' }}>NODE INSPECTOR:</span>
+                      <span className="badge badge-high" style={{ textTransform: 'uppercase' }}>
+                        {selectedGraphNode === 'ingress' && 'Ingress Gateway'}
+                        {selectedGraphNode === 'exploit' && 'Vulnerability Target'}
+                        {selectedGraphNode === 'sandbox' && 'Docker Container Engine'}
+                        {selectedGraphNode === 'target' && 'PostgreSQL Cluster'}
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>Click graph nodes to inspect metadata</span>
+                  </div>
+
+                  <div className="inspector-grid">
+                    {selectedGraphNode === 'ingress' && (
+                      <>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Route:</div><div style={{ color: '#2997ff', fontWeight: 600 }}>POST /api/v1/auth</div></div>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Traffic:</div><div style={{ color: '#ffffff' }}>Encrypted TLS 1.3</div></div>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Rate Limit:</div><div style={{ color: '#30d158' }}>Active (100 req/s)</div></div>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Risk Score:</div><div style={{ color: '#ffd60a' }}>2.1 Low</div></div>
+                      </>
+                    )}
+                    {selectedGraphNode === 'exploit' && (
+                      <>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>CVE ID:</div><div style={{ color: '#ff453a', fontWeight: 700 }}>CVE-2026-798</div></div>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Type:</div><div style={{ color: '#ffffff' }}>Hardcoded Secret Fallback</div></div>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>File Location:</div><div style={{ color: '#bf5af2' }}>backend/src/config.rs:42</div></div>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>CVSS Severity:</div><div style={{ color: '#ff453a', fontWeight: 700 }}>9.8 CRITICAL</div></div>
+                      </>
+                    )}
+                    {selectedGraphNode === 'sandbox' && (
+                      <>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Runtime:</div><div style={{ color: '#bf5af2', fontWeight: 600 }}>Docker Linux Container</div></div>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Privileges:</div><div style={{ color: '#30d158' }}>Non-Root (ephemeral)</div></div>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Network Mode:</div><div style={{ color: '#30d158' }}>Isolated Subnet</div></div>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Verification:</div><div style={{ color: '#30d158' }}>100% Confirmed</div></div>
+                      </>
+                    )}
+                    {selectedGraphNode === 'target' && (
+                      <>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Asset:</div><div style={{ color: '#30d158', fontWeight: 600 }}>Neon PostgreSQL DB</div></div>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Tables:</div><div style={{ color: '#ffffff' }}>attack_graph_edges</div></div>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>SSL Binding:</div><div style={{ color: '#30d158' }}>Enforced</div></div>
+                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Data Loss:</div><div style={{ color: '#30d158' }}>Prevented</div></div>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -815,13 +869,63 @@ function App() {
             {/* Tab 3: Code Remediation Diff */}
             {landingTab === 'diff' && (
               <div className="apple-tab-content" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', lineHeight: '1.7', background: '#020203', minHeight: '300px' }}>
-                <div style={{ color: '#86868b', marginBottom: '0.85rem' }}>// Automated Patch Synthesized by Gemini Security Agent for backend/src/config.rs</div>
-                <div style={{ background: 'rgba(255, 69, 58, 0.12)', color: '#ff8a80', padding: '0.35rem 0.75rem', borderRadius: '6px', marginBottom: '0.35rem', borderLeft: '3px solid #ff453a' }}>
-                  - let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "default_insecure_secret".to_string());
+                <div className="patch-selector-bar">
+                  <button 
+                    className={`patch-tab-btn ${selectedDiffPatch === 'jwt' ? 'active' : ''}`}
+                    onClick={() => setSelectedDiffPatch('jwt')}
+                  >
+                    backend/src/config.rs (JWT Secret)
+                  </button>
+                  <button 
+                    className={`patch-tab-btn ${selectedDiffPatch === 'sqli' ? 'active' : ''}`}
+                    onClick={() => setSelectedDiffPatch('sqli')}
+                  >
+                    backend/src/api/routes_auth.rs (SQL Sanitizer)
+                  </button>
+                  <button 
+                    className={`patch-tab-btn ${selectedDiffPatch === 'csrf' ? 'active' : ''}`}
+                    onClick={() => setSelectedDiffPatch('csrf')}
+                  >
+                    backend/src/main.rs (CSRF Cookie)
+                  </button>
                 </div>
-                <div style={{ background: 'rgba(48, 209, 88, 0.12)', color: '#86efac', padding: '0.35rem 0.75rem', borderRadius: '6px', borderLeft: '3px solid #30d158' }}>
-                  + let jwt_secret = env::var("JWT_SECRET").map_err(|_| ConfigError::MissingSecret("JWT_SECRET environment variable is mandatory in production"))?;
-                </div>
+
+                {selectedDiffPatch === 'jwt' && (
+                  <>
+                    <div style={{ color: '#86868b', marginBottom: '0.85rem' }}>// Patch 1: Enforce Environment Guard for JWT Key</div>
+                    <div style={{ background: 'rgba(255, 69, 58, 0.12)', color: '#ff8a80', padding: '0.35rem 0.75rem', borderRadius: '6px', marginBottom: '0.35rem', borderLeft: '3px solid #ff453a' }}>
+                      - let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "default_insecure_secret".to_string());
+                    </div>
+                    <div style={{ background: 'rgba(48, 209, 88, 0.12)', color: '#86efac', padding: '0.35rem 0.75rem', borderRadius: '6px', borderLeft: '3px solid #30d158' }}>
+                      + let jwt_secret = env::var("JWT_SECRET").map_err(|_| ConfigError::MissingSecret("JWT_SECRET environment variable is mandatory in production"))?;
+                    </div>
+                  </>
+                )}
+
+                {selectedDiffPatch === 'sqli' && (
+                  <>
+                    <div style={{ color: '#86868b', marginBottom: '0.85rem' }}>// Patch 2: Parameterize Dynamic Query in Auth Model</div>
+                    <div style={{ background: 'rgba(255, 69, 58, 0.12)', color: '#ff8a80', padding: '0.35rem 0.75rem', borderRadius: '6px', marginBottom: '0.35rem', borderLeft: '3px solid #ff453a' }}>
+                      - let query = format!("SELECT * FROM users WHERE email = '{}'", user_email);
+                    </div>
+                    <div style={{ background: 'rgba(48, 209, 88, 0.12)', color: '#86efac', padding: '0.35rem 0.75rem', borderRadius: '6px', borderLeft: '3px solid #30d158' }}>
+                      + let user = sqlx::query_as::&lt;_, User&gt;("SELECT * FROM users WHERE email = $1").bind(&user_email).fetch_one(&pool).await?;
+                    </div>
+                  </>
+                )}
+
+                {selectedDiffPatch === 'csrf' && (
+                  <>
+                    <div style={{ color: '#86868b', marginBottom: '0.85rem' }}>// Patch 3: SameSite Lax Cookie Flag for OAuth Callbacks</div>
+                    <div style={{ background: 'rgba(255, 69, 58, 0.12)', color: '#ff8a80', padding: '0.35rem 0.75rem', borderRadius: '6px', marginBottom: '0.35rem', borderLeft: '3px solid #ff453a' }}>
+                      - Cookie::build("oauth_redirect_origin", origin).path("/").finish()
+                    </div>
+                    <div style={{ background: 'rgba(48, 209, 88, 0.12)', color: '#86efac', padding: '0.35rem 0.75rem', borderRadius: '6px', borderLeft: '3px solid #30d158' }}>
+                      + Cookie::build("oauth_redirect_origin", origin).path("/").same_site(SameSite::Lax).secure(true).finish()
+                    </div>
+                  </>
+                )}
+
                 <div style={{ marginTop: '1.25rem', padding: '0.75rem 1rem', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ color: '#30d158', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <span>✓</span> Compiler & Unit Test Verification: 100% Passed
@@ -1131,6 +1235,26 @@ function App() {
             <p className="apple-section-sub">
               Initiate automated container verification scans, elevation auditing, and SOC2 compliance mapping.
             </p>
+
+            {/* Billing Cycle Switch */}
+            <div className="billing-toggle-wrapper">
+              <span style={{ fontSize: '0.86rem', color: billingCycle === 'monthly' ? '#ffffff' : 'var(--text-muted)', fontWeight: billingCycle === 'monthly' ? 600 : 400 }}>Monthly</span>
+              <div className="billing-toggle">
+                <button 
+                  className={`billing-toggle-btn ${billingCycle === 'monthly' ? 'active' : ''}`}
+                  onClick={() => setBillingCycle('monthly')}
+                >
+                  Monthly
+                </button>
+                <button 
+                  className={`billing-toggle-btn ${billingCycle === 'annual' ? 'active' : ''}`}
+                  onClick={() => setBillingCycle('annual')}
+                >
+                  Annual <span className="billing-discount-badge">Save 20%</span>
+                </button>
+              </div>
+              <span style={{ fontSize: '0.86rem', color: billingCycle === 'annual' ? '#ffffff' : 'var(--text-muted)', fontWeight: billingCycle === 'annual' ? 600 : 400 }}>Annual</span>
+            </div>
           </div>
 
           <div className="pricing-grid">
@@ -1139,7 +1263,7 @@ function App() {
               <div>
                 <div className="pricing-tier-name">Starter</div>
                 <div className="pricing-price-wrap">
-                  <span className="pricing-price">$19</span>
+                  <span className="pricing-price">{billingCycle === 'annual' ? '$15' : '$19'}</span>
                   <span className="pricing-period">/ month</span>
                 </div>
                 <p className="pricing-desc">Essential automated code security reasoning for solo developers and side projects.</p>
@@ -1163,7 +1287,7 @@ function App() {
                 </ul>
               </div>
               <button 
-                onClick={() => user ? handleInitiateDodoCheckout(19, 'starter') : setView('login')} 
+                onClick={() => user ? handleInitiateDodoCheckout(billingCycle === 'annual' ? 15 : 19, 'starter') : setView('login')} 
                 className="btn-apple-secondary" 
                 style={{ width: '100%', padding: '0.75rem 0' }}
               >
@@ -1177,7 +1301,7 @@ function App() {
               <div>
                 <div className="pricing-tier-name" style={{ color: '#ff8533' }}>Pro Console</div>
                 <div className="pricing-price-wrap">
-                  <span className="pricing-price">$99</span>
+                  <span className="pricing-price">{billingCycle === 'annual' ? '$79' : '$99'}</span>
                   <span className="pricing-period">/ month</span>
                 </div>
                 <p className="pricing-desc">Advanced agentic reasoning, code patches, and multi-node attack topology mapping.</p>
@@ -1209,7 +1333,7 @@ function App() {
                 </ul>
               </div>
               <button 
-                onClick={() => user ? handleInitiateDodoCheckout(99, 'pro') : setView('login')} 
+                onClick={() => user ? handleInitiateDodoCheckout(billingCycle === 'annual' ? 79 : 99, 'pro') : setView('login')} 
                 className="btn-apple-primary" 
                 style={{ width: '100%', padding: '0.75rem 0' }}
               >
@@ -1222,7 +1346,7 @@ function App() {
               <div>
                 <div className="pricing-tier-name">Enterprise</div>
                 <div className="pricing-price-wrap">
-                  <span className="pricing-price">$499</span>
+                  <span className="pricing-price">{billingCycle === 'annual' ? '$399' : '$499'}</span>
                   <span className="pricing-period">/ month</span>
                 </div>
                 <p className="pricing-desc">SLA-backed execution, private sandboxes, and zero-standing elevation permissions.</p>
@@ -1250,13 +1374,61 @@ function App() {
                 </ul>
               </div>
               <button 
-                onClick={() => user ? handleInitiateDodoCheckout(499, 'enterprise') : setView('login')} 
+                onClick={() => user ? handleInitiateDodoCheckout(billingCycle === 'annual' ? 399 : 499, 'enterprise') : setView('login')} 
                 className="btn-apple-secondary" 
                 style={{ width: '100%', padding: '0.75rem 0' }}
               >
                 Contact Sales / Upgrade
               </button>
             </div>
+          </div>
+        </section>
+
+        {/* Interactive FAQ Section */}
+        <section className="apple-faq-section">
+          <div className="apple-section-header">
+            <div className="apple-section-eyebrow">✦ Frequently Asked Questions</div>
+            <h2 className="apple-section-title">Everything you need to know.</h2>
+            <p className="apple-section-sub">
+              Got questions about autonomous code execution, container safety, or custom deployments?
+            </p>
+          </div>
+
+          <div className="faq-list">
+            {[
+              {
+                q: "How does Fire Crow eliminate zero-day false positives?",
+                a: "Fire Crow doesn't rely solely on static pattern matching. It spawns an isolated, non-root Docker container sandbox for each candidate vulnerability to dynamically compile, execute, and verify exploit vectors before reporting them."
+              },
+              {
+                q: "Is my proprietary repository source code shared with third-party LLMs?",
+                a: "No. Source code ASTs and repository contents are parsed locally by the high-throughput Rust engine. Only anonymized code snippets required for vulnerability reasoning are transmitted via encrypted TLS endpoints."
+              },
+              {
+                q: "Can Fire Crow be deployed on-premise or in private clouds?",
+                a: "Yes. Enterprise plans support private Kubernetes cluster deployments, custom Docker registry integration, and air-gapped security orchestrators."
+              },
+              {
+                q: "How does Just-In-Time (JIT) PAM elevation work with our IAM?",
+                a: "Fire Crow integrates natively with OIDC and SAML 2.0 identity providers. Security architects can request temporary privilege elevation that automatically expires after a predefined TTL, complete with immutable PostgreSQL audit trails."
+              }
+            ].map((faq, idx) => (
+              <div 
+                key={idx}
+                className={`faq-item ${openFaqIndex === idx ? 'open' : ''}`}
+                onClick={() => setOpenFaqIndex(openFaqIndex === idx ? null : idx)}
+              >
+                <div className="faq-question">
+                  <span>{faq.q}</span>
+                  <div className="faq-toggle-icon">+</div>
+                </div>
+                {openFaqIndex === idx && (
+                  <div className="faq-answer">
+                    {faq.a}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </section>
 
