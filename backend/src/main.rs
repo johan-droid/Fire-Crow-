@@ -166,9 +166,25 @@ async fn main() -> anyhow::Result<()> {
         .nest("/payments/dodo", crate::api::routes_dodo::router().layer(crate::middleware::rate_limit::rate_limiter("30/minute")))
         .nest("/sse", crate::api::routes_sse::router());
 
+    let frontend_dir = std::env::var("FRONTEND_DIST_DIR")
+        .unwrap_or_else(|_| "../frontend/dist".to_string());
+
     let app = axum::Router::new()
         .nest("/api/v1", api_v1)
-        .merge(crate::api::routes_health::router())
+        .merge(crate::api::routes_health::router());
+
+    let app = if std::path::Path::new(&frontend_dir).exists() {
+        info!("Serving static files from {}", frontend_dir);
+        app.fallback_service(
+            tower_http::services::ServeDir::new(&frontend_dir)
+                .fallback(tower_http::services::ServeFile::new(format!("{}/index.html", frontend_dir)))
+        )
+    } else {
+        tracing::warn!("Static files directory {} not found, static file serving is disabled", frontend_dir);
+        app
+    };
+
+    let app = app
         .layer(cors_layer(&settings))
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             settings.max_request_body_bytes as usize
