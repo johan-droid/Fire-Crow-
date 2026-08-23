@@ -159,6 +159,25 @@ function App() {
   const [isScanModalOpen, setIsScanModalOpen] = useState(false);
   const [newRepoUrl, setNewRepoUrl] = useState('');
   const [newRepoBranch, setNewRepoBranch] = useState('main');
+  const [userRepos, setUserRepos] = useState<any[]>([]);
+  const [isLoadingRepos, setIsLoadingRepos] = useState(false);
+
+  const fetchUserRepos = async () => {
+    setIsLoadingRepos(true);
+    try {
+      const res = await apiFetch('/user/repos');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.repositories) {
+          setUserRepos(data.repositories);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch user repos', err);
+    } finally {
+      setIsLoadingRepos(false);
+    }
+  };
 
   const [isPamModalOpen, setIsPamModalOpen] = useState(false);
   const [pamRole, setPamRole] = useState('production_admin');
@@ -2101,7 +2120,43 @@ function App() {
 
             <form onSubmit={handleStartScan}>
               <div className="modal-body">
-                {modalError && <div className="error-box" style={{ marginBottom: '1rem' }}>{modalError}</div>}
+                <div className="form-group" style={{ marginBottom: '1.25rem', background: 'rgba(255, 255, 255, 0.02)', padding: '0.85rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                    <label className="form-label" style={{ margin: 0 }}>Sync'd GitHub Repositories</label>
+                    <button 
+                      type="button" 
+                      onClick={fetchUserRepos} 
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '0.15rem 0.5rem', fontSize: '0.72rem', color: 'var(--apple-blue-light)' }}
+                    >
+                      {isLoadingRepos ? 'Syncing...' : '🔄 Sync Account Repos'}
+                    </button>
+                  </div>
+                  <select 
+                    className="form-input"
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const repo = userRepos.find(r => (r.clone_url || r.html_url) === e.target.value);
+                        if (repo) {
+                          setNewRepoUrl(repo.clone_url || repo.html_url);
+                          setNewRepoBranch(repo.default_branch || 'main');
+                        }
+                      }
+                    }}
+                    defaultValue=""
+                  >
+                    <option value="" disabled>-- Select a GitHub Repository to Audit --</option>
+                    {userRepos.map((r: any) => (
+                      <option key={r.id} value={r.clone_url || r.html_url}>
+                        {r.private ? '🔒 Private' : '🌐 Public'}: {r.full_name} ({r.default_branch || 'main'})
+                      </option>
+                    ))}
+                  </select>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                    {userRepos.length > 0 ? `${userRepos.length} repositories synchronized from your GitHub account.` : 'Click "Sync Account Repos" to load your public & private GitHub repositories.'}
+                  </div>
+                </div>
+
                 <div className="form-group">
                   <label className="form-label">Repository Git URL</label>
                   <input 

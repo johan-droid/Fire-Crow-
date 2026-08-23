@@ -301,7 +301,7 @@ pub async fn github_login(
         
     let base_url = state.settings().backend_base_url.trim_end_matches('/');
     let auth_url = format!(
-        "https://github.com/login/oauth/authorize?client_id={}&redirect_uri={}/api/v1/auth/github/callback&state={}&scope=user:email",
+        "https://github.com/login/oauth/authorize?client_id={}&redirect_uri={}/api/v1/auth/github/callback&state={}&scope=repo,read:org,user:email",
         state.settings().github_client_id,
         base_url,
         oauth_state
