@@ -1,4 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { HeroScene, AuroraBackdrop, useScrollReveal } from './scene';
+import {
+  PanelState, ScoreRing, SeverityBars, HealthWidget, jobStatusInfo, severityClass,
+  fmtUtc, timeAgo, type LoadState, type DeepHealth,
+} from './dash';
 
 const getApiBase = (): string => {
   const viteApiUrl = import.meta.env.VITE_API_URL;
@@ -31,15 +36,23 @@ interface Finding {
   line_number?: number | null;
   description: string;
   remediation?: string | null;
+  cvss_score?: number | null;
+  cvss_vector?: string | null;
+  agent_source?: string | null;
+  route?: string | null;
 }
 
+/* Matches backend JobResponse (API_DOCUMENTATION.md §8) */
 interface AuditJob {
   id: string;
   repo_url: string;
   repo_branch: string;
   status: string;
-  score?: number | null;
   created_at: string;
+  security_score?: number | null;
+  error_message?: string | null;
+  report_pdf_url?: string | null;
+  cancel_requested?: boolean;
 }
 
 interface SsoProvider {
@@ -135,11 +148,20 @@ function App() {
 
   // Dashboard Tab state
   const [dashTab, setDashTab] = useState<'overview' | 'scans' | 'identity' | 'security'>('overview');
-  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [themeAccent, setThemeAccent] = useState<'ember' | 'azure' | 'violet' | 'mint'>(() => {
+    const stored = localStorage.getItem('fc-accent');
+    return stored === 'azure' || stored === 'violet' || stored === 'mint' || stored === 'ember' ? stored : 'ember';
+  });
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
+  useEffect(() => {
+    document.documentElement.dataset.accent = themeAccent;
+    localStorage.setItem('fc-accent', themeAccent);
+  }, [themeAccent]);
 
   // Live Backend Data States
   const [jobs, setJobs] = useState<AuditJob[]>([]);
   const [selectedJobDetail, setSelectedJobDetail] = useState<{ job: AuditJob; findings: Finding[] } | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [_selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [ssoProviders, setSsoProviders] = useState<SsoProvider[]>([]);
   const [pamRequests, setPamRequests] = useState<PamRequest[]>([]);
@@ -150,6 +172,14 @@ function App() {
   const [mfaStatus, setMfaStatus] = useState<MfaStatus>({ enabled: false, backup_codes_remaining: 0 });
   const [activeMonitorJobId, setActiveMonitorJobId] = useState<string | null>(null);
   const [monitorPhases, setMonitorPhases] = useState<any[]>([]);
+
+  // Dashboard state machine: loading → ready | error, with sync + health telemetry
+  const [dashLoad, setDashLoad] = useState<LoadState>('loading');
+  const [dashError, setDashError] = useState<string | null>(null);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+  const [deepHealth, setDeepHealth] = useState<DeepHealth | null>(null);
+  const [cancellingIds, setCancellingIds] = useState<string[]>([]);
+  const [mfaEnrollment, setMfaEnrollment] = useState<{ secret: string; uri: string; recovery_codes: string[] } | null>(null);
 
   // Modals error & submission state
   const [modalError, setModalError] = useState('');
@@ -200,8 +230,6 @@ function App() {
 
   // Interactive Dynamic Landing Page States
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
-  const [selectedGraphNode, setSelectedGraphNode] = useState<'ingress' | 'exploit' | 'sandbox' | 'target'>('exploit');
-  const [selectedDiffPatch, setSelectedDiffPatch] = useState<'jwt' | 'sqli' | 'csrf'>('jwt');
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
 
   const handleInitiateDodoCheckout = async (amount: number, packageName: string) => {
@@ -236,40 +264,10 @@ function App() {
 
   // Landing Page Interactive State
   const [landingTab, setLandingTab] = useState<'terminal' | 'graph' | 'diff'>('terminal');
-  const [simRepo, setSimRepo] = useState('https://github.com/johan-droid/express-api-demo.git');
-  const [isSimulating, setIsSimulating] = useState(false);
-  const [simProgress, setSimProgress] = useState(0);
-  const [simStage, setSimStage] = useState('');
-  const [simComplete, setSimComplete] = useState(false);
 
-  const handleRunSimulatedScan = (repoUrl?: string) => {
-    const targetUrl = repoUrl || simRepo;
-    if (repoUrl) setSimRepo(repoUrl);
-    setIsSimulating(true);
-    setSimProgress(20);
-    setSimStage(`Cloning ${targetUrl.split('/').pop() || 'repo'} AST structure...`);
-    setSimComplete(false);
-
-    setTimeout(() => {
-      setSimProgress(50);
-      setSimStage('Running Gemini 1.5 Pro Agentic Vulnerability Reasoning...');
-    }, 1000);
-
-    setTimeout(() => {
-      setSimProgress(80);
-      setSimStage('Simulating Docker sandbox execution & attack path verification...');
-    }, 2200);
-
-    setTimeout(() => {
-      setSimProgress(100);
-      setSimStage('Scan Complete! Discovered 2 high-severity exploits with automated patches.');
-      setIsSimulating(false);
-      setSimComplete(true);
-    }, 3400);
-  };
-
-  // Fetch all real backend data in parallel using Promise.allSettled
-  const fetchDashboardData = useCallback(async () => {
+  // Fetch all real backend data in parallel with explicit load-state tracking
+  const fetchDashboardData = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setDashLoad('loading');
     try {
       const results = await Promise.allSettled([
         apiFetch('/audit/jobs'),
@@ -284,34 +282,112 @@ function App() {
 
       const [jobsRes, ssoRes, pamReqRes, pamGrantRes, iamRes, domainRes, actRes, mfaRes] = results;
 
+      // Jobs are the primary dataset — a failure here surfaces as a dashboard error.
+      let jobsOk = false;
       if (jobsRes.status === 'fulfilled' && jobsRes.value.ok) {
         setJobs(await jobsRes.value.json());
+        jobsOk = true;
+      } else if (jobsRes.status === 'rejected') {
+        throw jobsRes.reason;
+      } else if (jobsRes.value.status === 401) {
+        throw new Error('Session expired — please sign in again.');
+      } else {
+        throw new Error(`Audit API returned HTTP ${jobsRes.value.status}`);
       }
-      if (ssoRes.status === 'fulfilled' && ssoRes.value.ok) {
-        setSsoProviders(await ssoRes.value.json());
-      }
-      if (pamReqRes.status === 'fulfilled' && pamReqRes.value.ok) {
-        setPamRequests(await pamReqRes.value.json());
-      }
-      if (pamGrantRes.status === 'fulfilled' && pamGrantRes.value.ok) {
-        setPamGrants(await pamGrantRes.value.json());
-      }
-      if (iamRes.status === 'fulfilled' && iamRes.value.ok) {
-        setIamPolicies(await iamRes.value.json());
-      }
-      if (domainRes.status === 'fulfilled' && domainRes.value.ok) {
-        setDomains(await domainRes.value.json());
-      }
-      if (actRes.status === 'fulfilled' && actRes.value.ok) {
-        setActivities(await actRes.value.json());
-      }
-      if (mfaRes.status === 'fulfilled' && mfaRes.value.ok) {
-        setMfaStatus(await mfaRes.value.json());
-      }
-    } catch (err) {
+
+      if (ssoRes.status === 'fulfilled' && ssoRes.value.ok) setSsoProviders(await ssoRes.value.json());
+      if (pamReqRes.status === 'fulfilled' && pamReqRes.value.ok) setPamRequests(await pamReqRes.value.json());
+      if (pamGrantRes.status === 'fulfilled' && pamGrantRes.value.ok) setPamGrants(await pamGrantRes.value.json());
+      if (iamRes.status === 'fulfilled' && iamRes.value.ok) setIamPolicies(await iamRes.value.json());
+      if (domainRes.status === 'fulfilled' && domainRes.value.ok) setDomains(await domainRes.value.json());
+      if (actRes.status === 'fulfilled' && actRes.value.ok) setActivities(await actRes.value.json());
+      if (mfaRes.status === 'fulfilled' && mfaRes.value.ok) setMfaStatus(await mfaRes.value.json());
+
+      setDashError(null);
+      setDashLoad('ready');
+      if (jobsOk) setLastSync(new Date());
+    } catch (err: any) {
       console.warn('Dashboard live data fetch error:', err);
+      setDashError(err?.message || 'Network error — backend unreachable.');
+      setDashLoad('error');
     }
   }, []);
+
+  // Deep health telemetry (public endpoint, per API docs §14)
+  useEffect(() => {
+    if (view !== 'dashboard') return;
+    let alive = true;
+    const probe = async () => {
+      try {
+        const base = API_BASE.replace(/\/api\/v1$/, '');
+        const res = await fetch(`${base}/health/deep`);
+        if (!alive) return;
+        setDeepHealth(res.ok ? await res.json() : { status: 'unhealthy', database: 'unavailable' });
+      } catch {
+        if (alive) setDeepHealth({ status: 'network_failure', database: 'unreachable' });
+      }
+    };
+    probe();
+    const t = setInterval(probe, 30000);
+    return () => { alive = false; clearInterval(t); };
+  }, [view]);
+
+  // Cancel an active job via DELETE /audit/job/{id}
+  const handleCancelJob = async (jobId: string) => {
+    setCancellingIds((ids) => [...ids, jobId]);
+    try {
+      const res = await apiFetch(`/audit/job/${jobId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setModalError(body.detail || `Cancel failed (HTTP ${res.status})`);
+      }
+    } catch {
+      setModalError('Network error while cancelling job.');
+    } finally {
+      setCancellingIds((ids) => ids.filter((id) => id !== jobId));
+      fetchDashboardData();
+    }
+  };
+
+  // Download the compiled markdown report for a completed job
+  const handleDownloadReport = async (jobId: string) => {
+    try {
+      const res = await apiFetch(`/audit/job/${jobId}/report`);
+      if (!res.ok) { setModalError(`Report unavailable (HTTP ${res.status})`); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `firecrow-report-${jobId.substring(0, 8)}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setModalError('Network error while downloading report.');
+    }
+  };
+
+  // MFA lifecycle (POST /mfa/enroll · POST /mfa/disable)
+  const handleMfaEnroll = async () => {
+    try {
+      const res = await apiFetch('/mfa/enroll', { method: 'POST' });
+      if (!res.ok) { setModalError(`MFA enrollment failed (HTTP ${res.status})`); return; }
+      setMfaEnrollment(await res.json());
+      fetchDashboardData();
+    } catch {
+      setModalError('Network error during MFA enrollment.');
+    }
+  };
+
+  const handleMfaDisable = async () => {
+    try {
+      const res = await apiFetch('/mfa/disable', { method: 'POST' });
+      if (!res.ok) { setModalError(`MFA disable failed (HTTP ${res.status})`); return; }
+      setMfaEnrollment(null);
+      fetchDashboardData();
+    } catch {
+      setModalError('Network error while disabling MFA.');
+    }
+  };
 
   useEffect(() => {
     if (view !== 'dashboard') return;
@@ -351,6 +427,9 @@ function App() {
     return () => clearInterval(interval);
   }, [view, activeMonitorJobId, jobs]);
 
+  // Scroll-reveal choreography for landing page sections
+  useScrollReveal(view === 'landing', '.apple-landing-page section');
+
   // Auto-sync repositories from GitHub whenever dashboard opens or scan modal opens
   useEffect(() => {
     if (user && (view === 'dashboard' || isScanModalOpen)) {
@@ -375,7 +454,7 @@ function App() {
             credit_balance: data.credit_balance,
           });
           setView('dashboard');
-          fetchDashboardData();
+          fetchDashboardData(true);
         } else {
           localStorage.removeItem('access_token');
           document.cookie = 'access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
@@ -629,6 +708,8 @@ function App() {
 
   // Fetch specific job details
   const handleViewJobDetail = async (jobId: string) => {
+    setSelectedJobDetail({ job: { id: jobId } as AuditJob, findings: [] });
+    setDetailLoading(true);
     try {
       const res = await apiFetch(`/audit/job/${jobId}`);
       if (res.ok) {
@@ -637,9 +718,16 @@ function App() {
         if (detail.findings && detail.findings.length > 0) {
           setSelectedFinding(detail.findings[0]);
         }
+      } else {
+        setModalError(`Failed to load job details (HTTP ${res.status}).`);
+        setSelectedJobDetail(null);
       }
     } catch (err) {
       console.error('Fetch job detail error:', err);
+      setModalError('Network error while loading job details.');
+      setSelectedJobDetail(null);
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -668,14 +756,13 @@ function App() {
             <div className="apple-logo-wrap" onClick={() => setView('landing')}>
               <img src="/fire-crow-logo.png" alt="Fire Crow Logo" className="logo-img" />
               <span className="apple-logo-text">Fire Crow</span>
-              <span className="apple-version-badge">v2.4 Pro</span>
             </div>
 
             <nav className="apple-nav-links">
-              <a href="#playground" className="apple-nav-link">Playground</a>
-              <a href="#capabilities" className="apple-nav-link">Capabilities</a>
-              <a href="#architecture" className="apple-nav-link">Architecture</a>
+              <a href="#capabilities" className="apple-nav-link">Product</a>
+              <a href="#architecture" className="apple-nav-link">How it works</a>
               <a href="#metrics" className="apple-nav-link">Performance</a>
+              <a href="#pricing" className="apple-nav-link">Pricing</a>
               <a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer" className="apple-nav-link">GitHub</a>
             </nav>
 
@@ -692,52 +779,37 @@ function App() {
 
         {/* Apple Hero Section */}
         <section className="apple-hero-section">
+          <HeroScene />
           <div className="apple-pill-badge">
             <div className="apple-status-beacon"></div>
-            <span>Autonomous Agentic Security Intelligence</span>
+            <span>Agentic Application Security Platform</span>
           </div>
 
           <h1 className="apple-hero-headline">
-            <span className="apple-headline-gradient">Security reasoning at the</span><br />
-            <span className="apple-headline-accent">speed of thought.</span>
+            <span className="apple-headline-gradient">Ship code,</span><br />
+            <span className="apple-headline-accent">not vulnerabilities.</span>
           </h1>
 
           <p className="apple-hero-subtext">
-            Fire Crow orchestrates sandboxed LLM security agents to ingest repository ASTs, synthesize multi-node attack topologies, simulate exploit vectors, and compile verified code patches.
+            Fire Crow audits your repositories with autonomous LLM security agents, verifies every finding in an isolated sandbox, and delivers compiler-tested patches. Zero false positives, SOC2-ready reports.
           </p>
 
           <div className="apple-hero-cta-group">
             <button onClick={() => setView('login')} className="btn-apple-primary" style={{ padding: '0.8rem 2rem', fontSize: '0.95rem' }}>
-              Launch Control Console →
+              Start scanning free →
             </button>
-            <a href="#playground" className="btn-apple-secondary" style={{ padding: '0.8rem 1.8rem', fontSize: '0.95rem' }}>
-              ⚡ Interactive Scan Playground
+            <a href="#capabilities" className="btn-apple-secondary" style={{ padding: '0.8rem 1.8rem', fontSize: '0.95rem' }}>
+              See how it works
             </a>
           </div>
 
-          {/* Social Proof Logo Cloud */}
-          <div className="apple-logo-cloud">
-            <div className="logo-cloud-title">Securing Infrastructure for High-Growth Teams</div>
-            <div className="logo-item">
-              <svg className="logo-icon-svg" viewBox="0 0 24 24"><path d="M12 2L2 22h20L12 2zm0 3.8L18.4 18H5.6L12 5.8z"/></svg>
-              <span>Vertex Security</span>
-            </div>
-            <div className="logo-item">
-              <svg className="logo-icon-svg" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
-              <span>Aether Sec</span>
-            </div>
-            <div className="logo-item">
-              <svg className="logo-icon-svg" viewBox="0 0 24 24"><path d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm-1-15h2v6h-2V7zm0 8h2v2h-2v-2z"/></svg>
-              <span>Krypton Shield</span>
-            </div>
-            <div className="logo-item">
-              <svg className="logo-icon-svg" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 3.5l7.5 13H4.5L12 5.5z"/></svg>
-              <span>OmniCorp</span>
-            </div>
-            <div className="logo-item">
-              <svg className="logo-icon-svg" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5-10-5-10 5z"/></svg>
-              <span>Acme Cloud</span>
-            </div>
+          <div className="hero-trust-row">
+            {['Zero false positives', 'Compiler-verified patches', 'SOC2 / ISO-27001 reporting', 'JIT PAM & SSO'].map(claim => (
+              <span key={claim} className="hero-check-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="#30d158" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                {claim}
+              </span>
+            ))}
           </div>
 
           {/* Apple macOS / iPadOS Window Preview Widget */}
@@ -750,23 +822,23 @@ function App() {
               </div>
 
               <div className="apple-segmented-tabs">
-                <button 
+                <button
                   className={`apple-tab-button ${landingTab === 'terminal' ? 'active' : ''}`}
                   onClick={() => setLandingTab('terminal')}
                 >
-                  <span>📺</span> Tokio Stream
+                  Live Agent Stream
                 </button>
-                <button 
+                <button
                   className={`apple-tab-button ${landingTab === 'graph' ? 'active' : ''}`}
                   onClick={() => setLandingTab('graph')}
                 >
-                  <span>🕸️</span> Attack Topology
+                  Attack Topology
                 </button>
-                <button 
+                <button
                   className={`apple-tab-button ${landingTab === 'diff' ? 'active' : ''}`}
                   onClick={() => setLandingTab('diff')}
                 >
-                  <span>📝</span> Verified Patch
+                  Verified Patch
                 </button>
               </div>
 
@@ -776,310 +848,93 @@ function App() {
               </div>
             </div>
 
-            {/* Tab 1: Terminal Log */}
+            {/* Tab 1: Agent Stream */}
             {landingTab === 'terminal' && (
-              <div className="apple-tab-content" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', lineHeight: '1.75', color: '#e5e5ea', background: '#020203' }}>
-                <div><span style={{ color: '#2997ff' }}>[10:45:02]</span> Initializing Rust Axum Agentic Engine v2.4 (Tokio Async Worker pool)...</div>
-                <div><span style={{ color: '#2997ff' }}>[10:45:03]</span> Spawning isolated Docker Container Sandbox (Node 20 / Python 3.12 / Rust)...</div>
-                <div><span style={{ color: '#ffd60a' }}>[10:45:04]</span> Ingesting Git repository AST structure & constructing full dependency graph...</div>
-                <div><span style={{ color: '#ff453a' }}>[10:45:06]</span> <strong style={{ color: '#ff453a' }}>CVE-2026-798 Identified:</strong> Hardcoded JWT secret fallback in <code style={{ color: '#bf5af2', background: 'rgba(191,90,242,0.12)', padding: '0.1rem 0.35rem', borderRadius: '4px' }}>backend/src/config.rs:42</code></div>
-                <div><span style={{ color: '#30d158' }}>[10:45:08]</span> Gemini Security Agent synthesized non-breaking AST patch with verified signature.</div>
-                <div><span style={{ color: '#86868b' }}>[10:45:09]</span> Persisted multi-node attack topology to PostgreSQL schema <code style={{ color: '#bf5af2' }}>attack_graph_nodes</code></div>
+              <div className="apple-tab-content" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', lineHeight: '1.75', color: '#e5e5ea', background: '#020203' }}>
+                <div><span style={{ color: '#86868b' }}>$</span> firecrow scan --repo https://github.com/org/app</div>
+                <div><span style={{ color: '#2997ff' }}>[intake]</span> Cloning repository and resolving dependency graph...</div>
+                <div><span style={{ color: '#2997ff' }}>[recon]</span> Ingesting AST structure across 84 source files.</div>
+                <div><span style={{ color: '#ffd60a' }}>[scanning]</span> Running SAST rules and secret detection heuristics.</div>
+                <div><span style={{ color: '#bf5af2' }}>[ai_analysis]</span> Gemini reasoning loop analyzing 12 candidate findings...</div>
+                <div><span style={{ color: '#bf5af2' }}>[ai_analysis]</span> Filtering false positives via Docker sandbox verification.</div>
+                <div><span style={{ color: '#ffd60a' }}>[remediation]</span> Synthesizing non-breaking AST patches.</div>
+                <div><span style={{ color: '#ffd60a' }}>[attack_graph]</span> Mapping multi-node lateral movement paths.</div>
+                <div><span style={{ color: '#2997ff' }}>[report]</span> Compiling SOC2 compliance PDF artifact.</div>
                 <div style={{ marginTop: '0.5rem', color: '#30d158', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <span>✓</span> Sandbox compilation verified (0 warnings, 0 errors, 100% test pass)
+                  <span>✓</span> Scan complete — 4 findings confirmed, 2 patches ready.
+                </div>
+                <div style={{ marginTop: '0.25rem', color: '#86868b' }}>
+                  Sign in to run a real scan against your own repository.
                 </div>
               </div>
             )}
 
-            {/* Tab 2: Attack Topology Visualizer */}
+            {/* Tab 2: Architecture Overview */}
             {landingTab === 'graph' && (
               <div className="apple-tab-content" style={{ background: '#020203', minHeight: '340px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
                 <div className="topology-svg-container">
-                  <svg width="100%" height="240" viewBox="0 0 800 240" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    {/* Animated connection lines */}
-                    <path d="M140 120 L275 60" stroke="url(#blue-to-red)" strokeWidth="2" strokeDasharray="6" className="svg-link-dash" />
-                    <path d="M140 120 L275 180" stroke="#2997ff" strokeWidth="1.5" opacity="0.3" />
-                    <path d="M295 60 L455 120" stroke="url(#red-to-purple)" strokeWidth="2" strokeDasharray="6" className="svg-link-dash" />
-                    <path d="M295 180 L455 120" stroke="#86868b" strokeWidth="1.5" opacity="0.3" />
-                    <path d="M475 120 L635 120" stroke="url(#purple-to-green)" strokeWidth="2" strokeDasharray="6" className="svg-link-dash" />
-
-                    {/* Gradients */}
+                  <svg width="100%" height="220" viewBox="0 0 800 220" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <defs>
-                      <linearGradient id="blue-to-red" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#2997ff" />
-                        <stop offset="100%" stopColor="#ff453a" />
-                      </linearGradient>
-                      <linearGradient id="red-to-purple" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#ff453a" />
-                        <stop offset="100%" stopColor="#bf5af2" />
-                      </linearGradient>
-                      <linearGradient id="purple-to-green" x1="0%" y1="0%" x2="100%" y2="0%">
-                        <stop offset="0%" stopColor="#bf5af2" />
-                        <stop offset="100%" stopColor="#30d158" />
-                      </linearGradient>
+                      <linearGradient id="grad-blue" x1="0%" y1="0%" x2="100%"><stop offset="0%" stopColor="#2997ff"/><stop offset="100%" stopColor="#2997ff"/></linearGradient>
+                      <linearGradient id="grad-purple" x1="0%" y1="0%" x2="100%"><stop offset="0%" stopColor="#bf5af2"/><stop offset="100%" stopColor="#bf5af2"/></linearGradient>
+                      <linearGradient id="grad-green" x1="0%" y1="0%" x2="100%"><stop offset="0%" stopColor="#30d158"/><stop offset="100%" stopColor="#30d158"/></linearGradient>
                     </defs>
-
-                    {/* Node 1: Entry API Route */}
-                    <g className="svg-node" style={{ color: '#2997ff' }} onClick={() => setSelectedGraphNode('ingress')}>
-                      <circle cx="120" cy="120" r="28" fill="rgba(41, 151, 255, 0.08)" stroke={selectedGraphNode === 'ingress' ? '#ffffff' : '#2997ff'} strokeWidth={selectedGraphNode === 'ingress' ? '3' : '1.5'} />
-                      <circle cx="120" cy="120" r="6" fill="#2997ff" className="svg-node-pulse" />
-                      <text x="120" y="165" fill="#ffffff" fontSize="11" fontWeight="600" textAnchor="middle">Web Ingress</text>
-                      <text x="120" y="180" fill="#86868b" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle">POST /api/v1/auth</text>
+                    <path d="M140 110 L320 110" stroke="#2997ff" strokeWidth="2" strokeDasharray="6" opacity="0.5"/>
+                    <path d="M480 110 L640 110" stroke="#bf5af2" strokeWidth="2" strokeDasharray="6" opacity="0.5"/>
+                    <g>
+                      <circle cx="120" cy="110" r="32" fill="rgba(41,151,255,0.06)" stroke="#2997ff" strokeWidth="1.5"/>
+                      <text x="120" y="106" fill="#ffffff" fontSize="10" fontWeight="600" textAnchor="middle">Git Repo</text>
+                      <text x="120" y="120" fill="#86868b" fontSize="8" fontFamily="var(--font-mono)" textAnchor="middle">AST + deps</text>
                     </g>
-
-                    {/* Node 2: Exploit Node (JWT) */}
-                    <g className="svg-node" style={{ color: '#ff453a' }} onClick={() => setSelectedGraphNode('exploit')}>
-                      <circle cx="285" cy="60" r="28" fill="rgba(255, 69, 58, 0.1)" stroke={selectedGraphNode === 'exploit' ? '#ffffff' : '#ff453a'} strokeWidth={selectedGraphNode === 'exploit' ? '3' : '1.8'} />
-                      <circle cx="285" cy="60" r="6" fill="#ff453a" />
-                      <text x="285" y="105" fill="#ff8a80" fontSize="11" fontWeight="700" textAnchor="middle">CVE-2026-798</text>
-                      <text x="285" y="120" fill="#a1a1a6" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle">JWT Secret Bypass</text>
+                    <g>
+                      <rect x="340" y="82" width="100" height="56" rx="8" fill="rgba(191,90,242,0.06)" stroke="#bf5af2" strokeWidth="1.5"/>
+                      <text x="390" y="106" fill="#ffffff" fontSize="10" fontWeight="600" textAnchor="middle">Security Agent</text>
+                      <text x="390" y="120" fill="#86868b" fontSize="8" fontFamily="var(--font-mono)" textAnchor="middle">Gemini + LLM</text>
                     </g>
-
-                    {/* Node 3: Safe Route Node */}
-                    <g className="svg-node" style={{ color: '#86868b' }} opacity="0.6" onClick={() => setSelectedGraphNode('ingress')}>
-                      <circle cx="285" cy="180" r="24" fill="rgba(255, 255, 255, 0.02)" stroke="#86868b" strokeWidth="1" />
-                      <circle cx="285" cy="180" r="4" fill="#86868b" />
-                      <text x="285" y="218" fill="#86868b" fontSize="10" textAnchor="middle">Public Assets</text>
+                    <g>
+                      <rect x="480" y="82" width="90" height="56" rx="8" fill="rgba(255,214,10,0.06)" stroke="#ffd60a" strokeWidth="1.5"/>
+                      <text x="525" y="106" fill="#ffffff" fontSize="10" fontWeight="600" textAnchor="middle">Docker</text>
+                      <text x="525" y="120" fill="#86868b" fontSize="8" fontFamily="var(--font-mono)" textAnchor="middle">Sandbox</text>
                     </g>
-
-                    {/* Node 4: Sandbox Exploit Orchestrator */}
-                    <g className="svg-node" style={{ color: '#bf5af2' }} onClick={() => setSelectedGraphNode('sandbox')}>
-                      <rect x="440" y="92" width="56" height="56" rx="10" fill="rgba(191, 90, 242, 0.08)" stroke={selectedGraphNode === 'sandbox' ? '#ffffff' : '#bf5af2'} strokeWidth={selectedGraphNode === 'sandbox' ? '3' : '1.5'} />
-                      <circle cx="468" cy="120" r="6" fill="#bf5af2" className="svg-node-pulse" />
-                      <text x="468" y="165" fill="#ffffff" fontSize="11" fontWeight="600" textAnchor="middle">Docker Sandbox</text>
-                      <text x="468" y="180" fill="#86868b" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle">Exploit Simulator</text>
+                    <g>
+                      <circle cx="660" cy="110" r="32" fill="rgba(48,209,88,0.06)" stroke="#30d158" strokeWidth="1.5"/>
+                      <text x="660" y="106" fill="#ffffff" fontSize="10" fontWeight="600" textAnchor="middle">PostgreSQL</text>
+                      <text x="660" y="120" fill="#86868b" fontSize="8" fontFamily="var(--font-mono)" textAnchor="middle">Findings DB</text>
                     </g>
-
-                    {/* Node 5: Target Postgres Asset */}
-                    <g className="svg-node" style={{ color: '#30d158' }} onClick={() => setSelectedGraphNode('target')}>
-                      <circle cx="650" cy="120" r="28" fill="rgba(48, 209, 88, 0.08)" stroke={selectedGraphNode === 'target' ? '#ffffff' : '#30d158'} strokeWidth={selectedGraphNode === 'target' ? '3' : '1.5'} />
-                      <polygon points="650,112 658,124 642,124" fill="#30d158" />
-                      <text x="650" y="165" fill="#ffffff" fontSize="11" fontWeight="600" textAnchor="middle">PostgreSQL DB</text>
-                      <text x="650" y="180" fill="#86868b" fontSize="9" fontFamily="var(--font-mono)" textAnchor="middle">Neon Target</text>
-                    </g>
+                    <path d="M152 110 L308 110" stroke="#2997ff" strokeWidth="1.5" opacity="0.2" markerEnd="url(#arrow-blue)"/>
+                    <path d="M440 110 L470 110" stroke="#bf5af2" strokeWidth="1.5" opacity="0.2"/>
+                    <path d="M570 110 L628 110" stroke="#30d158" strokeWidth="1.5" opacity="0.2"/>
                   </svg>
                 </div>
-
-                {/* Live Node Inspector Panel */}
-                <div className="inspector-card">
-                  <div className="inspector-header">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: '#ffffff' }}>NODE INSPECTOR:</span>
-                      <span className="badge badge-high" style={{ textTransform: 'uppercase' }}>
-                        {selectedGraphNode === 'ingress' && 'Ingress Gateway'}
-                        {selectedGraphNode === 'exploit' && 'Vulnerability Target'}
-                        {selectedGraphNode === 'sandbox' && 'Docker Container Engine'}
-                        {selectedGraphNode === 'target' && 'PostgreSQL Cluster'}
-                      </span>
-                    </div>
-                    <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>Click graph nodes to inspect metadata</span>
-                  </div>
-
-                  <div className="inspector-grid">
-                    {selectedGraphNode === 'ingress' && (
-                      <>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Route:</div><div style={{ color: '#2997ff', fontWeight: 600 }}>POST /api/v1/auth</div></div>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Traffic:</div><div style={{ color: '#ffffff' }}>Encrypted TLS 1.3</div></div>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Rate Limit:</div><div style={{ color: '#30d158' }}>Active (100 req/s)</div></div>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Risk Score:</div><div style={{ color: '#ffd60a' }}>2.1 Low</div></div>
-                      </>
-                    )}
-                    {selectedGraphNode === 'exploit' && (
-                      <>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>CVE ID:</div><div style={{ color: '#ff453a', fontWeight: 700 }}>CVE-2026-798</div></div>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Type:</div><div style={{ color: '#ffffff' }}>Hardcoded Secret Fallback</div></div>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>File Location:</div><div style={{ color: '#bf5af2' }}>backend/src/config.rs:42</div></div>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>CVSS Severity:</div><div style={{ color: '#ff453a', fontWeight: 700 }}>9.8 CRITICAL</div></div>
-                      </>
-                    )}
-                    {selectedGraphNode === 'sandbox' && (
-                      <>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Runtime:</div><div style={{ color: '#bf5af2', fontWeight: 600 }}>Docker Linux Container</div></div>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Privileges:</div><div style={{ color: '#30d158' }}>Non-Root (ephemeral)</div></div>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Network Mode:</div><div style={{ color: '#30d158' }}>Isolated Subnet</div></div>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Verification:</div><div style={{ color: '#30d158' }}>100% Confirmed</div></div>
-                      </>
-                    )}
-                    {selectedGraphNode === 'target' && (
-                      <>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Asset:</div><div style={{ color: '#30d158', fontWeight: 600 }}>Neon PostgreSQL DB</div></div>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Tables:</div><div style={{ color: '#ffffff' }}>attack_graph_edges</div></div>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>SSL Binding:</div><div style={{ color: '#30d158' }}>Enforced</div></div>
-                        <div className="inspector-item"><div style={{ color: '#86868b' }}>Data Loss:</div><div style={{ color: '#30d158' }}>Prevented</div></div>
-                      </>
-                    )}
-                  </div>
+                <div style={{ marginTop: '1rem', padding: '0.6rem 1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', fontSize: '0.74rem', color: '#86868b', textAlign: 'center', maxWidth: '500px', lineHeight: '1.5' }}>
+                  Four isolated stages — ingestion, reasoning, sandbox verification, and persistence — with zero trust boundaries between them.
                 </div>
               </div>
             )}
 
-            {/* Tab 3: Code Remediation Diff */}
+            {/* Tab 3: Findings Preview */}
             {landingTab === 'diff' && (
-              <div className="apple-tab-content" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.82rem', lineHeight: '1.7', background: '#020203', minHeight: '300px' }}>
-                <div className="patch-selector-bar">
-                  <button 
-                    className={`patch-tab-btn ${selectedDiffPatch === 'jwt' ? 'active' : ''}`}
-                    onClick={() => setSelectedDiffPatch('jwt')}
-                  >
-                    backend/src/config.rs (JWT Secret)
-                  </button>
-                  <button 
-                    className={`patch-tab-btn ${selectedDiffPatch === 'sqli' ? 'active' : ''}`}
-                    onClick={() => setSelectedDiffPatch('sqli')}
-                  >
-                    backend/src/api/routes_auth.rs (SQL Sanitizer)
-                  </button>
-                  <button 
-                    className={`patch-tab-btn ${selectedDiffPatch === 'csrf' ? 'active' : ''}`}
-                    onClick={() => setSelectedDiffPatch('csrf')}
-                  >
-                    backend/src/main.rs (CSRF Cookie)
-                  </button>
+              <div className="apple-tab-content" style={{ background: '#020203', minHeight: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem 1.5rem', textAlign: 'center' }}>
+                <div style={{ marginBottom: '1rem' }}>
+                  <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#bf5af2" strokeWidth="1.5" style={{ opacity: 0.6 }}>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/>
+                  </svg>
                 </div>
-
-                {selectedDiffPatch === 'jwt' && (
-                  <>
-                    <div style={{ color: '#86868b', marginBottom: '0.85rem' }}>// Patch 1: Enforce Environment Guard for JWT Key</div>
-                    <div style={{ background: 'rgba(255, 69, 58, 0.12)', color: '#ff8a80', padding: '0.35rem 0.75rem', borderRadius: '6px', marginBottom: '0.35rem', borderLeft: '3px solid #ff453a' }}>
-                      - let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "default_insecure_secret".to_string());
-                    </div>
-                    <div style={{ background: 'rgba(48, 209, 88, 0.12)', color: '#86efac', padding: '0.35rem 0.75rem', borderRadius: '6px', borderLeft: '3px solid #30d158' }}>
-                      + let jwt_secret = env::var("JWT_SECRET").map_err(|_| ConfigError::MissingSecret("JWT_SECRET environment variable is mandatory in production"))?;
-                    </div>
-                  </>
-                )}
-
-                {selectedDiffPatch === 'sqli' && (
-                  <>
-                    <div style={{ color: '#86868b', marginBottom: '0.85rem' }}>// Patch 2: Parameterize Dynamic Query in Auth Model</div>
-                    <div style={{ background: 'rgba(255, 69, 58, 0.12)', color: '#ff8a80', padding: '0.35rem 0.75rem', borderRadius: '6px', marginBottom: '0.35rem', borderLeft: '3px solid #ff453a' }}>
-                      - let query = format!("SELECT * FROM users WHERE email = '{}'", user_email);
-                    </div>
-                    <div style={{ background: 'rgba(48, 209, 88, 0.12)', color: '#86efac', padding: '0.35rem 0.75rem', borderRadius: '6px', borderLeft: '3px solid #30d158' }}>
-                      + let user = sqlx::query_as::&lt;_, User&gt;("SELECT * FROM users WHERE email = $1").bind(&user_email).fetch_one(&pool).await?;
-                    </div>
-                  </>
-                )}
-
-                {selectedDiffPatch === 'csrf' && (
-                  <>
-                    <div style={{ color: '#86868b', marginBottom: '0.85rem' }}>// Patch 3: SameSite Lax Cookie Flag for OAuth Callbacks</div>
-                    <div style={{ background: 'rgba(255, 69, 58, 0.12)', color: '#ff8a80', padding: '0.35rem 0.75rem', borderRadius: '6px', marginBottom: '0.35rem', borderLeft: '3px solid #ff453a' }}>
-                      - Cookie::build("oauth_redirect_origin", origin).path("/").finish()
-                    </div>
-                    <div style={{ background: 'rgba(48, 209, 88, 0.12)', color: '#86efac', padding: '0.35rem 0.75rem', borderRadius: '6px', borderLeft: '3px solid #30d158' }}>
-                      + Cookie::build("oauth_redirect_origin", origin).path("/").same_site(SameSite::Lax).secure(true).finish()
-                    </div>
-                  </>
-                )}
-
-                <div style={{ marginTop: '1.25rem', padding: '0.75rem 1rem', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ color: '#30d158', fontSize: '0.8rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span>✓</span> Compiler & Unit Test Verification: 100% Passed
-                  </div>
-                  <span style={{ color: '#86868b', fontSize: '0.74rem' }}>Target: Rust 1.84 / Axum 0.7</span>
+                <div style={{ color: '#ffffff', fontWeight: 700, fontSize: '0.95rem', marginBottom: '0.4rem' }}>
+                  Findings appear here after a real scan.
                 </div>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* Apple Interactive Scan Playground Section */}
-        <section id="playground" className="apple-playground-section">
-          <div className="apple-playground-card">
-            <div className="apple-section-eyebrow">✦ Interactive Security Playground</div>
-            <h2 style={{ fontSize: '2rem', fontWeight: 800, color: '#ffffff', letterSpacing: '-0.03em', marginBottom: '0.6rem' }}>
-              Test Fire Crow Agent Instantly
-            </h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', marginBottom: '1.75rem', lineHeight: '1.6' }}>
-              Select a repository preset or enter your repository Git URL to trigger an instant agentic vulnerability scan simulation.
-            </p>
-
-            <div className="apple-quick-chips">
-              <span 
-                className={`apple-chip ${simRepo === 'https://github.com/expressjs/express.git' ? 'active' : ''}`}
-                onClick={() => handleRunSimulatedScan('https://github.com/expressjs/express.git')}
-              >
-                expressjs/express
-              </span>
-              <span 
-                className={`apple-chip ${simRepo === 'https://github.com/tokio-rs/axum.git' ? 'active' : ''}`}
-                onClick={() => handleRunSimulatedScan('https://github.com/tokio-rs/axum.git')}
-              >
-                tokio-rs/axum
-              </span>
-              <span 
-                className={`apple-chip ${simRepo === 'https://github.com/tiangolo/fastapi.git' ? 'active' : ''}`}
-                onClick={() => handleRunSimulatedScan('https://github.com/tiangolo/fastapi.git')}
-              >
-                tiangolo/fastapi
-              </span>
-              <span 
-                className={`apple-chip ${simRepo === 'https://github.com/kubernetes/kubernetes.git' ? 'active' : ''}`}
-                onClick={() => handleRunSimulatedScan('https://github.com/kubernetes/kubernetes.git')}
-              >
-                kubernetes/kubernetes
-              </span>
-            </div>
-
-            <div className="apple-input-group">
-              <input
-                type="text"
-                value={simRepo}
-                onChange={(e) => setSimRepo(e.target.value)}
-                placeholder="https://github.com/your-org/your-repo.git"
-                className="apple-input"
-              />
-              <button 
-                onClick={() => handleRunSimulatedScan()} 
-                disabled={isSimulating}
-                className="btn-apple-primary"
-                style={{ padding: '0.85rem 1.75rem', whiteSpace: 'nowrap' }}
-              >
-                {isSimulating ? 'Simulating Scan...' : 'Run Agentic Scan 🚀'}
-              </button>
-            </div>
-
-            {isSimulating && (
-              <div style={{ marginTop: '1.75rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: '#e5e5ea', fontFamily: 'var(--font-mono)' }}>
-                  <span>{simStage}</span>
-                  <span style={{ fontWeight: 700 }}>{simProgress}%</span>
+                <div style={{ color: '#86868b', fontSize: '0.82rem', lineHeight: '1.5', maxWidth: '400px' }}>
+                  Each finding includes severity, file location, CWE mapping, CVSS score, and an auto-generated remediation patch.
                 </div>
-                <div className="apple-progress-track">
-                  <div className="apple-progress-fill" style={{ width: `${simProgress}%` }}></div>
+                <div style={{ marginTop: '1.5rem', display: 'flex', gap: '0.6rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                  <span className="badge badge-critical" style={{ opacity: 0.5 }}>CRITICAL</span>
+                  <span className="badge badge-high" style={{ opacity: 0.5 }}>HIGH</span>
+                  <span className="badge badge-medium" style={{ opacity: 0.5 }}>MEDIUM</span>
+                  <span className="badge badge-low" style={{ opacity: 0.5 }}>LOW</span>
                 </div>
-              </div>
-            )}
-
-            {simComplete && (
-              <div className="posture-card">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '1rem', marginBottom: '1.25rem' }}>
-                  <div>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ffffff', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span>🛡️</span> Security Posture Audit: Discovered Exploit Metrics
-                    </div>
-                    <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>Target: {simRepo}</p>
-                  </div>
-                  <span className="badge badge-critical" style={{ padding: '0.3rem 0.75rem', fontSize: '0.74rem' }}>SCORE: 9.2 CRITICAL</span>
-                </div>
-                <div className="posture-grid">
-                  <div className="posture-item">
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.25rem' }}>Vulnerabilities</div>
-                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#ff453a' }}>2 Discovered</div>
-                  </div>
-                  <div className="posture-item">
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.25rem' }}>Exploit Testing</div>
-                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#30d158' }}>100% Sandbox Verified</div>
-                  </div>
-                  <div className="posture-item">
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: '0.25rem' }}>AST Code Patch</div>
-                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#bf5af2' }}>Auto-Generated</div>
-                  </div>
-                </div>
-                <div style={{ marginTop: '1.5rem', display: 'flex', justifyContent: 'flex-end' }}>
-                  <button onClick={() => setView('login')} className="btn-apple-primary" style={{ padding: '0.55rem 1.35rem', fontSize: '0.84rem' }}>
-                    View Full Console Report →
+                <div style={{ marginTop: '1.5rem' }}>
+                  <button onClick={() => setView('login')} className="btn-apple-primary" style={{ padding: '0.6rem 1.5rem', fontSize: '0.84rem' }}>
+                    Run your first scan →
                   </button>
                 </div>
               </div>
@@ -1101,60 +956,60 @@ function App() {
             {/* Bento Card 1: Col-8 (Gemini Agentic Reasoning) */}
             <div className="apple-bento-card apple-bento-col-8">
               <div>
-                <div className="apple-bento-icon">🤖</div>
-                <h3 className="apple-bento-title">Gemini Agentic Vulnerability Reasoning</h3>
+                <div className="apple-bento-icon">
+                  <svg className="bento-svg" viewBox="0 0 24 24" fill="none" stroke="#bf5af2" strokeWidth="1.8"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/><circle cx="12" cy="12" r="3"/></svg>
+                </div>
+                <h3 className="apple-bento-title">Agentic Vulnerability Reasoning</h3>
                 <p className="apple-bento-desc">
-                  Autonomous LLM agents formulate hypotheses, construct proof-of-concept exploits, and synthesize non-breaking code patches with zero hallucinated vulnerabilities.
+                  LLM agents formulate hypotheses, construct proof-of-concept exploits, and synthesize non-breaking patches — no hallucinated vulnerabilities.
                 </p>
               </div>
 
-              <div style={{ marginTop: '1.75rem', background: 'rgba(0, 0, 0, 0.4)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '12px', padding: '1rem 1.25rem', fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>
-                <div style={{ color: '#bf5af2', display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem' }}>
-                  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#bf5af2', display: 'inline-block' }}></span>
-                  Gemini 1.5 Pro Reasoning Loop
-                </div>
-                <div style={{ color: '#86868b' }}>Formulating exploit path → Verifying against Rust AST → Generating compiler-tested patch</div>
+              <div className="bento-code-strip">
+                <div className="bento-code-head"><span className="dot" style={{ background: '#bf5af2' }}></span>Reasoning loop</div>
+                <div>Hypothesize exploit path → verify against AST → generate compiler-tested patch</div>
               </div>
             </div>
 
             {/* Bento Card 2: Col-4 (Docker Sandbox Isolation) */}
             <div className="apple-bento-card apple-bento-col-4">
               <div>
-                <div className="apple-bento-icon">🐳</div>
-                <h3 className="apple-bento-title">Docker Sandbox Isolation</h3>
+                <div className="apple-bento-icon">
+                  <svg className="bento-svg" viewBox="0 0 24 24" fill="none" stroke="#30d158" strokeWidth="1.8"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3.3 8.3L12 13l8.7-4.7M12 13v9"/></svg>
+                </div>
+                <h3 className="apple-bento-title">Sandboxed Verification</h3>
                 <p className="apple-bento-desc">
-                  Ephemeral, non-root container isolation guarantees absolute host boundary protection during exploit verification.
+                  Every finding is proven in an ephemeral, non-root container before it ever reaches your report.
                 </p>
               </div>
 
-              <div style={{ marginTop: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(48, 209, 88, 0.08)', border: '1px solid rgba(48, 209, 88, 0.25)', borderRadius: '10px', padding: '0.65rem 0.9rem' }}>
-                <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#30d158' }}></div>
-                <span style={{ fontSize: '0.76rem', color: '#30d158', fontWeight: 600 }}>100% Isolated Runtime</span>
-              </div>
+              <div className="bento-status-pill green"><span className="dot"></span>100% isolated runtime</div>
             </div>
 
             {/* Bento Card 3: Col-4 (High-Throughput Rust Engine) */}
             <div className="apple-bento-card apple-bento-col-4">
               <div>
-                <div className="apple-bento-icon">⚡</div>
+                <div className="apple-bento-icon">
+                  <svg className="bento-svg" viewBox="0 0 24 24" fill="none" stroke="#ffd60a" strokeWidth="1.8"><path d="M13 2L4.09 12.97a1 1 0 0 0 .77 1.64H11l-1 7.39L18.91 11.03a1 1 0 0 0-.77-1.64H12l1-7.39z"/></svg>
+                </div>
                 <h3 className="apple-bento-title">High-Throughput Rust Engine</h3>
                 <p className="apple-bento-desc">
-                  Built on Axum 0.7, Tokio async workers, and SQLx for lightning-fast concurrent repository scans.
+                  Axum, Tokio async workers, and SQLx drive fast concurrent repository scans.
                 </p>
               </div>
 
-              <div style={{ marginTop: '1.5rem', fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: '#ff8533' }}>
-                ⚡ &lt; 2.4s AST Parse Latency
-              </div>
+              <div className="bento-status-metric">&lt; 2.4s AST parse latency</div>
             </div>
 
             {/* Bento Card 4: Col-4 (Just-In-Time PAM & IAM) */}
             <div className="apple-bento-card apple-bento-col-4">
               <div>
-                <div className="apple-bento-icon">🔑</div>
-                <h3 className="apple-bento-title">Just-In-Time PAM & IAM</h3>
+                <div className="apple-bento-icon">
+                  <svg className="bento-svg" viewBox="0 0 24 24" fill="none" stroke="#2997ff" strokeWidth="1.8"><circle cx="8" cy="15" r="4"/><path d="M10.85 12.15L19 4m-3 3l2.5 2.5M13.5 9.5L16 12"/></svg>
+                </div>
+                <h3 className="apple-bento-title">Just-In-Time PAM &amp; IAM</h3>
                 <p className="apple-bento-desc">
-                  Zero-standing access controls with temporary elevation, audit trails, and OIDC / SAML SSO integration.
+                  Zero-standing access with temporary elevation, immutable audit trails, and OIDC / SAML SSO.
                 </p>
               </div>
 
@@ -1167,26 +1022,28 @@ function App() {
             {/* Bento Card 5: Col-4 (Compliance PDF Generation) */}
             <div className="apple-bento-card apple-bento-col-4">
               <div>
-                <div className="apple-bento-icon">📄</div>
-                <h3 className="apple-bento-title">Automated Compliance PDFs</h3>
+                <div className="apple-bento-icon">
+                  <svg className="bento-svg" viewBox="0 0 24 24" fill="none" stroke="#2997ff" strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
+                </div>
+                <h3 className="apple-bento-title">Compliance Reports, Automated</h3>
                 <p className="apple-bento-desc">
-                  Instantly compiles discovered CVEs, code fixes, and CWE risk matrices into SOC2 / ISO-27001 audit reports.
+                  CVEs, fixes, and CWE risk matrices compiled into SOC2 / ISO-27001-ready PDF artifacts.
                 </p>
               </div>
 
-              <div style={{ marginTop: '1.5rem', fontSize: '0.78rem', color: '#2997ff', fontWeight: 600 }}>
-                ✓ Export Ready (PDF / JSON)
-              </div>
+              <div className="bento-status-metric blue">PDF &amp; JSON export</div>
             </div>
 
             {/* Bento Card 6: Col-12 (PostgreSQL Attack Topology Graph) */}
             <div className="apple-bento-card apple-bento-col-12">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1.5rem' }}>
                 <div style={{ maxWidth: '600px' }}>
-                  <div className="apple-bento-icon">🕸️</div>
-                  <h3 className="apple-bento-title">Multi-Node PostgreSQL Attack Topology Graph</h3>
+                  <div className="apple-bento-icon">
+                    <svg className="bento-svg" viewBox="0 0 24 24" fill="none" stroke="#ff453a" strokeWidth="1.8"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="5" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M7.3 10.8l9.4-4.6M7.3 13.2l9.4 4.6"/></svg>
+                  </div>
+                  <h3 className="apple-bento-title">Multi-Node Attack Topology Graph</h3>
                   <p className="apple-bento-desc">
-                    Models complex lateral movement paths, entrypoints, database exposures, and privilege escalation vulnerabilities stored directly in relational schemas.
+                    Lateral movement paths, entrypoints, database exposures, and privilege escalation chains — persisted to relational schemas, explorable node by node.
                   </p>
                 </div>
 
@@ -1275,9 +1132,9 @@ function App() {
         </section>
 
         {/* SaaS Pricing Grid */}
-        <section className="apple-pricing-section">
+        <section id="pricing" className="apple-pricing-section">
           <div className="apple-section-header">
-            <div className="apple-section-eyebrow">✦ Transparent SaaS Pricing</div>
+            <div className="apple-section-eyebrow">✦ Transparent Pricing</div>
             <h2 className="apple-section-title">A plan for every security posture.</h2>
             <p className="apple-section-sub">
               Initiate automated container verification scans, elevation auditing, and SOC2 compliance mapping.
@@ -1346,7 +1203,7 @@ function App() {
             <div className="pricing-card premium">
               <span className="pricing-badge">Most Popular</span>
               <div>
-                <div className="pricing-tier-name" style={{ color: '#ff8533' }}>Pro Console</div>
+                <div className="pricing-tier-name" style={{ color: 'var(--accent-bright)' }}>Pro Console</div>
                 <div className="pricing-price-wrap">
                   <span className="pricing-price">{billingCycle === 'annual' ? '$79' : '$99'}</span>
                   <span className="pricing-period">/ month</span>
@@ -1490,7 +1347,7 @@ function App() {
             </p>
             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
               <button onClick={() => setView('login')} className="btn-apple-primary" style={{ padding: '0.85rem 2.25rem', fontSize: '0.95rem' }}>
-                Launch Control Console →
+                Start scanning free →
               </button>
               <a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer" className="btn-apple-secondary" style={{ padding: '0.85rem 2rem', fontSize: '0.95rem' }}>
                 Explore on GitHub ↗
@@ -1515,10 +1372,9 @@ function App() {
             <div>
               <div className="apple-footer-col-title">Platform</div>
               <ul className="apple-footer-links">
-                <li><a href="#playground">Interactive Playground</a></li>
                 <li><a href="#capabilities">Agent Capabilities</a></li>
                 <li><a href="#architecture">Autonomous Pipeline</a></li>
-                <li><a href="#metrics">Engine Performance</a></li>
+                <li><a href="#pricing">Pricing</a></li>
               </ul>
             </div>
 
@@ -1526,9 +1382,8 @@ function App() {
               <div className="apple-footer-col-title">Developers</div>
               <ul className="apple-footer-links">
                 <li><a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer">GitHub Repository</a></li>
-                <li><a href="#architecture">Axum Engine Specs</a></li>
-                <li><a href="/documentation/API_DOCUMENTATION.md">API Documentation</a></li>
-                <li><a href="/apple_design.md">Apple Design System</a></li>
+                <li><a href="https://github.com/johan-droid/Fire-Crow-/blob/main/documentation/API_DOCUMENTATION.md" target="_blank" rel="noreferrer">API Documentation</a></li>
+                <li><a href="https://github.com/johan-droid/Fire-Crow-/blob/main/documentation/CLOUDFLARE_DEPLOYMENT.md" target="_blank" rel="noreferrer">Deployment Guide</a></li>
               </ul>
             </div>
 
@@ -1563,6 +1418,7 @@ function App() {
   if (view === 'login') {
     return (
       <div className="page-center" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#050506', backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.02) 0%, transparent 80%)', padding: '1.5rem' }}>
+        <AuroraBackdrop variant="login" />
         <div className="login-card" style={{ width: '100%', maxWidth: '400px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '2.5rem 2rem', boxShadow: '0 30px 60px rgba(0,0,0,0.8)', backdropFilter: 'blur(20px)', textAlign: 'center' }}>
           
           {/* Custom Login Tile Header */}
@@ -1632,131 +1488,124 @@ function App() {
   // Render Dashboard View (Single-board with Sidebar & Mobile Topbar)
   return (
     <div className="shell">
-      {/* Mobile Drawer Overlay */}
-      <div 
-        className={`drawer-overlay ${mobileDrawerOpen ? 'open' : ''}`}
-        onClick={() => setMobileDrawerOpen(false)}
-      />
+      {/* Ambient 3D Aurora Backdrop */}
+      <AuroraBackdrop variant="dashboard" />
 
-      {/* Sidebar Navigation */}
-      <aside className={`sidebar ${mobileDrawerOpen ? 'open' : ''}`}>
-        <div className="sidebar-logo">
-          <img src="/fire-crow-logo.png" alt="Fire Crow Flying Logo" className="logo-img" />
-          <div style={{ flex: 1 }}>
-            <div className="sidebar-logo-text">Fire Crow</div>
-          </div>
-          <span className="sidebar-logo-badge">SEC</span>
+      {/* Hover Navigation Island — collapses to icon rail, expands on hover */}
+      <nav className="nav-island" aria-label="Dashboard navigation">
+        <div className="island-brand">
+          <img src="/fire-crow-logo.png" alt="Fire Crow" className="island-logo" />
+          <span className="island-label island-brand-text">Fire Crow</span>
         </div>
 
-        <div className="sidebar-section-title">Navigation</div>
+        <div className="island-divider" />
 
-        <div className="sidebar-nav">
-          <button 
-            className={`sidebar-item ${dashTab === 'overview' ? 'active' : ''}`}
-            onClick={() => { setDashTab('overview'); setMobileDrawerOpen(false); }}
+        {([
+          { id: 'overview', label: 'Overview', badge: null, icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/></svg>
+          ) },
+          { id: 'scans', label: 'Audit Jobs', badge: jobs.length, icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          ) },
+          { id: 'identity', label: 'Identity', badge: ssoProviders.length + pamRequests.length, icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+          ) },
+          { id: 'security', label: 'Security', badge: activities.length, icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          ) },
+        ] as const).map((item) => (
+          <button
+            key={item.id}
+            className={`island-item ${dashTab === item.id ? 'active' : ''}`}
+            onClick={() => setDashTab(item.id)}
+            title={item.label}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/>
-            </svg>
-            <span>Overview</span>
+            <span className="island-item-icon">{item.icon}</span>
+            <span className="island-label">{item.label}</span>
+            {item.badge !== null && item.badge > 0 && <span className="island-badge">{item.badge}</span>}
           </button>
+        ))}
 
-          <button 
-            className={`sidebar-item ${dashTab === 'scans' ? 'active' : ''}`}
-            onClick={() => { setDashTab('scans'); setMobileDrawerOpen(false); }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-            </svg>
-            <span>Audit Jobs</span>
-            <span className="sidebar-item-badge">{jobs.length}</span>
-          </button>
+        <div className="island-flex-spacer" />
 
-          <button 
-            className={`sidebar-item ${dashTab === 'identity' ? 'active' : ''}`}
-            onClick={() => { setDashTab('identity'); setMobileDrawerOpen(false); }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-              <circle cx="9" cy="7" r="4"/>
-            </svg>
-            <span>IAM, SSO & PAM</span>
-            <span className="sidebar-item-badge">{ssoProviders.length + pamRequests.length}</span>
-          </button>
-
-          <button 
-            className={`sidebar-item ${dashTab === 'security' ? 'active' : ''}`}
-            onClick={() => { setDashTab('security'); setMobileDrawerOpen(false); }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-            </svg>
-            <span>Logs & MFA</span>
-            <span className="sidebar-item-badge">{activities.length}</span>
-          </button>
-        </div>
-
-        <div className="sidebar-user">
-          <div className="sidebar-avatar">
-            {user?.username ? user.username[0].toUpperCase() : 'U'}
-          </div>
-          <div className="sidebar-user-info">
-            <div className="sidebar-username">{user?.username}</div>
-            <div className="sidebar-email">{user?.email || user?.user_id.substring(0, 10)}</div>
-          </div>
-          <button onClick={handleLogout} className="btn btn-ghost btn-icon" title="Sign Out">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <div className="island-user">
+          <div className="island-avatar">{user?.username ? user.username[0].toUpperCase() : 'U'}</div>
+          <span className="island-label island-username">{user?.username}</span>
+          <button onClick={handleLogout} className="island-logout" title="Sign Out">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
               <polyline points="16 17 21 12 16 7"/>
               <line x1="21" y1="12" x2="9" y2="12"/>
             </svg>
           </button>
         </div>
-      </aside>
+      </nav>
 
       {/* Main Container */}
       <main className="main-content">
-        {/* Mobile Header */}
-        <div className="mobile-topbar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            <button className="hamburger" onClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <line x1="3" y1="6" x2="21" y2="6"/>
-                <line x1="3" y1="12" x2="21" y2="12"/>
-                <line x1="3" y1="18" x2="21" y2="18"/>
-              </svg>
-            </button>
-            <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>Fire Crow</span>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <button onClick={() => setIsScanModalOpen(true)} className="btn btn-primary btn-sm">
-              + Scan
-            </button>
-          </div>
-        </div>
-
-        {/* Desktop Topbar */}
+        {/* Topbar — precise single row */}
         <div className="topbar">
           <div>
             <div className="topbar-title">
-              {dashTab === 'overview' && 'System Security Console'}
-              {dashTab === 'scans' && 'Autonomous Audit Jobs'}
-              {dashTab === 'identity' && 'Identity & Access Management'}
+              {dashTab === 'overview' && 'Security Console'}
+              {dashTab === 'scans' && 'Audit Jobs'}
+              {dashTab === 'identity' && 'Identity & Access'}
               {dashTab === 'security' && 'Logs & Telemetry'}
             </div>
             <div className="topbar-subtitle">
-              Connected Node: {user?.username} • ID: {user?.user_id.substring(0, 8)}
+              Node: {user?.username} • {user?.user_id.substring(0, 8)}
             </div>
           </div>
 
           <div className="topbar-right">
             <div className="status-indicator">
               <div className="status-dot status-dot-live" />
-              <span>LIVE HYBRID NODE</span>
+              <span>LIVE</span>
             </div>
+
+            {/* Dynamic Theme Picker */}
+            <div className={`theme-picker ${themeMenuOpen ? 'open' : ''}`} onMouseLeave={() => setThemeMenuOpen(false)}>
+              <button
+                className={`theme-btn ${themeMenuOpen ? 'active' : ''}`}
+                onClick={() => setThemeMenuOpen((open) => !open)}
+                onMouseEnter={() => setThemeMenuOpen(true)}
+                title="Theme"
+                aria-label="Change accent theme"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="9"/>
+                  <path d="M12 3a9 9 0 0 0 0 18c1.5 0 2-.8 2-1.6 0-1.3-1.2-1.6-1.2-2.7 0-.9.7-1.7 1.9-1.7H16a5 5 0 0 0 5-5c0-3.9-4-7-9-7z"/>
+                </svg>
+              </button>
+              <div className="theme-menu">
+                {([
+                  { id: 'ember', color: '#ff6b00', name: 'Ember' },
+                  { id: 'azure', color: '#2997ff', name: 'Azure' },
+                  { id: 'violet', color: '#bf5af2', name: 'Violet' },
+                  { id: 'mint', color: '#4ade80', name: 'Mint' },
+                ] as const).map((t) => (
+                  <button
+                    key={t.id}
+                    className={`theme-swatch ${themeAccent === t.id ? 'selected' : ''}`}
+                    onClick={() => { setThemeAccent(t.id); setThemeMenuOpen(false); }}
+                    title={t.name}
+                  >
+                    <span className="swatch-dot" style={{ background: t.color }} />
+                    <span className="island-label">{t.name}</span>
+                    {themeAccent === t.id && (
+                      <svg className="swatch-check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <button onClick={() => setIsScanModalOpen(true)} className="btn btn-primary btn-sm">
               + New Audit Job
+            </button>
+
+            <button onClick={handleLogout} className="topbar-avatar" title="Sign Out">
+              {user?.username ? user.username[0].toUpperCase() : 'U'}
             </button>
           </div>
         </div>
@@ -1766,222 +1615,161 @@ function App() {
           {/* Tab 1: Overview */}
           {dashTab === 'overview' && (
             <>
-              {/* Metrics Row */}
+              {dashLoad === 'error' && (
+                <div className="dash-error-banner">
+                  <span>{dashError}</span>
+                  <button className="btn btn-secondary btn-sm" onClick={() => fetchDashboardData(true)}>Retry</button>
+                </div>
+              )}
+
+              {/* Metrics — 3 compact cards */}
               <div className="metrics-grid">
                 <div className="metric-card">
-                  <div className="metric-label">Audit Jobs</div>
-                  <div className="metric-value">{jobs.length}</div>
-                  <div className="metric-sub">PostgreSQL records</div>
+                  <div className="metric-label">Completed</div>
+                  <div className="metric-value">{jobs.filter(j => j.status === 'completed').length}</div>
+                  <div className="metric-sub">audits passed</div>
                 </div>
-
                 <div className="metric-card">
-                  <div className="metric-label">SSO Providers</div>
-                  <div className="metric-value">{ssoProviders.length}</div>
-                  <div className="metric-sub">OIDC / SAML</div>
-                </div>
-
-                <div className="metric-card">
-                  <div className="metric-label">PAM Requests</div>
-                  <div className="metric-value">{pamRequests.length}</div>
-                  <div className="metric-sub">Elevation requests</div>
-                </div>
-
-                <div className="metric-card" style={{ position: 'relative' }}>
-                  <div className="metric-label">User Balance</div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div className="metric-value">{user?.credit_balance ?? 10.0}</div>
-                    <button 
-                      onClick={() => setIsDodoModalOpen(true)} 
-                      className="btn btn-primary btn-sm" 
-                      style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem' }}
-                    >
-                      💳 Top-Up (Dodo)
-                    </button>
+                  <div className="metric-label">Active</div>
+                  <div className="metric-value" style={{ color: jobs.some(j => j.status === 'running' || j.status === 'queued') ? 'var(--accent-bright)' : undefined }}>
+                    {jobs.filter(j => j.status === 'running' || j.status === 'queued').length}
                   </div>
-                  <div className="metric-sub">API execution credits</div>
+                  <div className="metric-sub">in progress</div>
+                </div>
+                <div className="metric-card">
+                  <div className="metric-label">System</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.35rem' }}>
+                    <span className={`status-dot ${deepHealth && (deepHealth.database === 'ok' || deepHealth.database === 'connected') ? 'status-dot-live' : 'status-dot-down'}`} />
+                    <span className="metric-value" style={{ fontSize: '1.5rem' }}>
+                      {deepHealth ? deepHealth.database.replace('_', ' ') : 'probing'}
+                    </span>
+                  </div>
+                  <div className="metric-sub">PostgreSQL cluster</div>
                 </div>
               </div>
 
-              {/* Two Column Layout: Recent Scans + Activity Feed */}
+              {/* Terminal Progress Bar — full width */}
+              {(() => {
+                const job = jobs.find(j => j.id === (activeMonitorJobId || (jobs.length > 0 ? jobs[0].id : ''))) || (jobs.length > 0 ? jobs[0] : null);
+                if (!job) return null;
+
+                const phaseOrder = ['intake', 'recon', 'scanning', 'ai_analysis', 'remediation', 'attack_graph', 'reporting'];
+                const isRunning = job.status === 'running' || job.status === 'queued';
+                const failed = job.status === 'failed' || job.status === 'cancelled';
+
+                let pct = 0;
+                if (job.status === 'completed') pct = 100;
+                else if (job.status === 'queued') pct = 8;
+                else if (failed) pct = 100;
+                else {
+                  const done = monitorPhases.filter(p => p.status === 'completed').length;
+                  const hasStarted = monitorPhases.some(p => p.status === 'started' || p.status === 'running');
+                  pct = Math.min(95, Math.max(12, Math.round((done / phaseOrder.length) * 100) + (hasStarted ? 8 : 0)));
+                }
+
+                const createdUtc = job.created_at.includes('T') ? job.created_at : job.created_at.replace(' ', 'T') + 'Z';
+                const elapsed = Math.max(0, Math.floor((Date.now() - new Date(createdUtc).getTime()) / 1000));
+                const elapsedStr = elapsed < 60 ? `${elapsed}s` : `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`;
+
+                return (
+                  <div className="progress-card">
+                    <div className="term-progress">
+                      <div className="term-header">
+                        <div className="term-dots">
+                          <span style={{ background: '#ff5f57' }} />
+                          <span style={{ background: '#febc2e' }} />
+                          <span style={{ background: '#28c840' }} />
+                        </div>
+                        <span style={{ color: '#ffffff', fontSize: '0.72rem', fontWeight: 600 }}>
+                          {job.repo_url.split('/').slice(-2).join('/')}:{job.repo_branch}
+                        </span>
+                        <div className="term-header-meta">
+                          <span>{job.id.substring(0, 8)}</span>
+                          <span>{elapsedStr}</span>
+                          <span style={{ color: isRunning ? '#ffd60a' : failed ? '#ff3b30' : '#30d158', fontWeight: 600 }}>{job.status}</span>
+                        </div>
+                      </div>
+
+                      <div className="term-bar-row">
+                        <div className="term-bar-track">
+                          <div className={`term-bar-fill ${isRunning ? 'running' : failed ? 'fail' : 'done'}`} style={{ width: `${pct}%` }} />
+                        </div>
+                        <div className="term-bar-pct">{pct}%</div>
+                      </div>
+
+                      <div className="term-phases">
+                        {phaseOrder.map(phase => {
+                          const logged = monitorPhases.find(p => p.phase_name.toLowerCase() === phase);
+                          const done = job.status === 'completed' || (logged && logged.status === 'completed');
+                          const active = isRunning && logged && logged.status === 'started';
+                          const failedPhase = logged && logged.status === 'failed';
+                          return (
+                            <span key={phase} className={`term-phase ${done ? 'done' : active ? 'active' : failedPhase ? 'fail' : ''}`}>
+                              <span className="term-phase-dot" />
+                              {phase.replace('_', ' ')}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Two Column: Job List + Health */}
               <div className="two-col">
-                {/* Active Audit Jobs Panel */}
                 <div className="panel">
                   <div className="panel-header">
                     <div className="panel-title">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                      </svg>
-                      Recent Audit Jobs
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                      Audit Jobs
                     </div>
-                    <button onClick={() => setIsScanModalOpen(true)} className="btn btn-secondary btn-sm">
-                      + Scan
-                    </button>
+                    <button onClick={() => setIsScanModalOpen(true)} className="btn btn-secondary btn-sm">+ New</button>
                   </div>
-
                   <div className="panel-body" style={{ padding: '0.75rem' }}>
-                    {jobs.length === 0 ? (
-                      <div className="panel-empty">
-                        <p style={{ marginBottom: '0.75rem' }}>No audit jobs in database yet.</p>
-                        <button onClick={() => setIsScanModalOpen(true)} className="btn btn-primary btn-sm">
-                          Trigger First Scan
-                        </button>
-                      </div>
-                    ) : (
-                      jobs.slice(0, 5).map(j => (
-                        <div key={j.id} onClick={() => { handleViewJobDetail(j.id); setActiveMonitorJobId(j.id); }} className="list-item" style={{ borderLeft: activeMonitorJobId === j.id ? '2px solid var(--accent-green)' : undefined }}>
-                          <div className="list-item-info">
-                            <div className="list-item-title">{j.repo_url}</div>
-                            <div className="list-item-sub">branch: {j.repo_branch} • {j.id.substring(0, 8)}</div>
-                          </div>
-                          <span className={`badge ${j.status === 'completed' ? 'badge-success' : 'badge-low'}`}>
-                            {j.status}
-                          </span>
-                        </div>
-                      ))
-                    )}
+                    <PanelState state={dashLoad} error={dashError} empty={jobs.length === 0} emptyIcon="🛡" rows={3} onRetry={() => fetchDashboardData(true)}>
+                      {jobs.length === 0 ? (
+                        <p>No audit jobs yet. Trigger your first scan.</p>
+                      ) : (
+                        jobs.slice(0, 8).map(j => {
+                          const st = jobStatusInfo(j.status);
+                          return (
+                            <div
+                              key={j.id}
+                              onClick={() => { handleViewJobDetail(j.id); setActiveMonitorJobId(j.id); }}
+                              className="list-item"
+                              style={{ borderLeft: activeMonitorJobId === j.id ? '2px solid var(--accent)' : undefined, cursor: 'pointer' }}
+                            >
+                              <ScoreRing score={j.security_score ?? null} size={34} />
+                              <div className="list-item-info">
+                                <div className="list-item-title">{j.repo_url.split('/').slice(-2).join('/') || j.repo_url}</div>
+                                <div className="list-item-sub">{j.repo_branch} · {j.id.substring(0, 8)} · {timeAgo(j.created_at)}</div>
+                                {(j.status === 'failed' || j.status === 'cancelled') && j.error_message && (
+                                  <div className="list-item-sub" style={{ color: 'var(--apple-red)' }} title={j.error_message}>
+                                    {j.error_message.length > 55 ? `${j.error_message.slice(0, 55)}…` : j.error_message}
+                                  </div>
+                                )}
+                              </div>
+                              <span className={`badge ${st.cls}`}>
+                                {st.pulse && <span className="badge-pulse" />} {st.label}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </PanelState>
                   </div>
                 </div>
 
-                {/* Audit Console Tracker */}
                 <div className="panel">
                   <div className="panel-header">
                     <div className="panel-title">
-                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <polyline points="4 17 10 11 12 13 18 7 14 7 18 7 18 11"/>
-                      </svg>
-                      Audit Console Tracker
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                      System Health
                     </div>
                   </div>
-
-                  <div className="panel-body" style={{ padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                    {/* Live Progress Bar & Stage Pipeline Checklist */}
-                    {(() => {
-                      const selectedJob = jobs.find(j => j.id === (activeMonitorJobId || (jobs.length > 0 ? jobs[0].id : ''))) || (jobs.length > 0 ? jobs[0] : null);
-                      if (!selectedJob) return null;
-
-                      const phaseOrder = [
-                        { key: 'intake', label: '1. Intake' },
-                        { key: 'recon', label: '2. Recon' },
-                        { key: 'scanning', label: '3. AST Scan' },
-                        { key: 'ai_analysis', label: '4. AI Analysis' },
-                        { key: 'remediation', label: '5. Remediation' },
-                        { key: 'attack_graph', label: '6. Attack Graph' },
-                        { key: 'reporting', label: '7. Report' },
-                      ];
-
-                      let percentage = 0;
-                      if (selectedJob.status === 'completed') percentage = 100;
-                      else if (selectedJob.status === 'queued') percentage = 8;
-                      else if (selectedJob.status === 'failed' || selectedJob.status === 'cancelled') percentage = 100;
-                      else {
-                        const completedCount = monitorPhases.filter(p => p.status === 'completed').length;
-                        const hasStarted = monitorPhases.some(p => p.status === 'started' || p.status === 'running');
-                        percentage = Math.min(95, Math.max(12, Math.round((completedCount / phaseOrder.length) * 100) + (hasStarted ? 8 : 0)));
-                      }
-
-                      const isRunning = selectedJob.status === 'running' || selectedJob.status === 'queued';
-
-                      return (
-                        <div className="progress-card">
-                          <div className="progress-header">
-                            <div className="progress-title">
-                              {isRunning && <span className="pulse-spinner"></span>}
-                              <span>{selectedJob.repo_url}</span>
-                              <span style={{ fontSize: '0.75rem', fontWeight: 500, color: 'var(--text-muted)' }}>
-                                ({selectedJob.repo_branch})
-                              </span>
-                            </div>
-                            <div className="progress-percent">{percentage}%</div>
-                          </div>
-
-                          <div className="progress-track">
-                            <div 
-                              className={`progress-fill ${isRunning ? 'animated' : ''}`}
-                              style={{ 
-                                width: `${percentage}%`,
-                                background: selectedJob.status === 'failed' ? '#ff3b30' : selectedJob.status === 'completed' ? '#30d158' : undefined 
-                              }}
-                            ></div>
-                          </div>
-
-                          <div className="progress-steps-list">
-                            {phaseOrder.map(phase => {
-                              const loggedPhase = monitorPhases.find(p => p.phase_name.toLowerCase() === phase.key.toLowerCase());
-                              const isDone = selectedJob.status === 'completed' || (loggedPhase && loggedPhase.status === 'completed');
-                              const isActive = isRunning && loggedPhase && loggedPhase.status === 'started';
-                              return (
-                                <div 
-                                  key={phase.key} 
-                                  className={`progress-step-item ${isDone ? 'completed' : isActive ? 'active' : ''}`}
-                                >
-                                  <span>{isDone ? '✓' : isActive ? '⏳' : '◦'}</span>
-                                  <span>{phase.label}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    {/* Console Output Log */}
-                    <div style={{
-                      backgroundColor: '#000000',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      borderRadius: '4px',
-                      padding: '0.75rem',
-                      height: '180px',
-                      overflowY: 'auto',
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: '0.73rem',
-                      color: '#00ff00',
-                      lineHeight: '1.4',
-                      boxShadow: 'inset 0 0 10px rgba(0,0,0,0.8)'
-                    }}>
-                      <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-                        {(() => {
-                          const selectedJob = jobs.find(j => j.id === (activeMonitorJobId || (jobs.length > 0 ? jobs[0].id : ''))) || (jobs.length > 0 ? jobs[0] : null);
-                          let terminalContent = '';
-                          if (!selectedJob) {
-                            terminalContent = '[SYSTEM] No active audit job found.\n[SYSTEM] Run a scan or select a job from the list to begin tracking.';
-                          } else {
-                            terminalContent += `[SYSTEM] Monitoring Job: ${selectedJob.id.substring(0, 8)}...\n`;
-                            terminalContent += `[SYSTEM] Repo: ${selectedJob.repo_url}\n`;
-                            terminalContent += '------------------------------------------------------------\n';
-                            if (monitorPhases.length === 0) {
-                              if (selectedJob.status === 'queued') {
-                                terminalContent += '[QUEUE] Job is currently queued. Waiting for worker...\n';
-                              } else {
-                                terminalContent += '[SYSTEM] Spawning scan sandbox environment...\n';
-                              }
-                            } else {
-                              monitorPhases.forEach(p => {
-                                // Backend stores NaiveDateTime in UTC — convert to local time
-                                const utcStr = p.started_at ? p.started_at.replace(' ', 'T') + 'Z' : null;
-                                const localTime = utcStr ? new Date(utcStr).toLocaleTimeString('en-GB', { hour12: false }) : '00:00:00';
-                                const endUtcStr = p.ended_at ? p.ended_at.replace(' ', 'T') + 'Z' : null;
-                                const endLocalTime = endUtcStr ? new Date(endUtcStr).toLocaleTimeString('en-GB', { hour12: false }) : null;
-                                terminalContent += `[${localTime}] [AGENT:${p.phase_name.toUpperCase()}] Spawning agent...\n`;
-                                if (p.status === 'completed') {
-                                  const dur = p.duration_sec ? p.duration_sec.toFixed(2) : '0.00';
-                                  terminalContent += `[${endLocalTime || localTime}] [AGENT:${p.phase_name.toUpperCase()}] ✓ Phase completed in ${dur}s.\n`;
-                                } else if (p.status === 'failed') {
-                                  terminalContent += `[${endLocalTime || localTime}] [AGENT:${p.phase_name.toUpperCase()}] ✗ ERROR: ${p.error_message || 'Phase execution failed'}\n`;
-                                } else {
-                                  terminalContent += `[${localTime}] [AGENT:${p.phase_name.toUpperCase()}] ⏳ Agent is working...\n`;
-                                }
-                              });
-                            }
-                            if (selectedJob.status === 'completed') {
-                              terminalContent += '------------------------------------------------------------\n';
-                              terminalContent += '[SYSTEM] Scan sequence successfully completed.\n';
-                              terminalContent += '[SYSTEM] Discovered findings saved to PostgreSQL.\n';
-                            }
-                          }
-                          return terminalContent;
-                        })()}
-                      </pre>
-                    </div>
+                  <div className="panel-body" style={{ padding: '0.85rem' }}>
+                    <HealthWidget deep={deepHealth} />
                   </div>
                 </div>
               </div>
@@ -1992,55 +1780,103 @@ function App() {
           {dashTab === 'scans' && (
             <div className="panel">
               <div className="panel-header">
-                <div className="panel-title">Database Audit Jobs ({jobs.length})</div>
-                <button onClick={() => setIsScanModalOpen(true)} className="btn btn-primary btn-sm">
-                  + Trigger Scan
-                </button>
-              </div>
-
-              {jobs.length === 0 ? (
-                <div className="panel-empty">
-                  <p style={{ marginBottom: '0.75rem' }}>No audit jobs registered in PostgreSQL database.</p>
+                <div className="panel-title">
+                  Database Audit Jobs ({jobs.length})
+                  {dashLoad === 'ready' && lastSync && (
+                    <span style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
+                      synced {timeAgo(lastSync.toISOString())}
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button onClick={() => fetchDashboardData(true)} className="btn btn-secondary btn-sm" disabled={dashLoad === 'loading'}>
+                    {dashLoad === 'loading' ? 'Syncing…' : '↻ Refresh'}
+                  </button>
                   <button onClick={() => setIsScanModalOpen(true)} className="btn btn-primary btn-sm">
-                    Submit Repo for Scan
+                    + Trigger Scan
                   </button>
                 </div>
-              ) : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Job ID</th>
-                        <th>Repository</th>
-                        <th>Branch</th>
-                        <th>Status</th>
-                        <th>Date</th>
-                        <th>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {jobs.map(j => (
-                        <tr key={j.id}>
-                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{j.id.substring(0, 8)}</td>
-                          <td style={{ fontWeight: 600 }}>{j.repo_url}</td>
-                          <td><code style={{ fontSize: '0.75rem', background: 'rgba(255,255,255,0.06)', padding: '0.15rem 0.4rem', borderRadius: '4px' }}>{j.repo_branch}</code></td>
-                          <td>
-                            <span className={`badge ${j.status === 'completed' ? 'badge-success' : 'badge-low'}`}>
-                              {j.status}
-                            </span>
-                          </td>
-                          <td style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{j.created_at.substring(0, 16)}</td>
-                          <td>
-                            <button onClick={() => handleViewJobDetail(j.id)} className="btn btn-secondary btn-sm">
-                              Inspect
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              </div>
+
+              {modalError && (
+                <div style={{ padding: '0.75rem 1.25rem 0' }}>
+                  <div className="error-box">{modalError}</div>
                 </div>
               )}
+
+              <div className="panel-body" style={{ padding: dashLoad === 'ready' && jobs.length > 0 ? '0.75rem' : undefined }}>
+                <PanelState
+                  state={dashLoad}
+                  error={dashError}
+                  empty={jobs.length === 0}
+                  emptyIcon="📡"
+                  rows={5}
+                  onRetry={() => fetchDashboardData(true)}
+                >
+                  {jobs.length === 0 ? (
+                    <>
+                      <p style={{ marginBottom: '0.75rem' }}>No audit jobs registered in PostgreSQL yet.</p>
+                      <button onClick={() => setIsScanModalOpen(true)} className="btn btn-primary btn-sm">
+                        Submit Repo for Scan
+                      </button>
+                    </>
+                  ) : (
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Job</th>
+                            <th>Repository</th>
+                            <th>Status</th>
+                            <th>Score</th>
+                            <th>Created</th>
+                            <th style={{ textAlign: 'right' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {jobs.map(j => {
+                            const st = jobStatusInfo(j.status);
+                            const isActive = j.status === 'queued' || j.status === 'running';
+                            const busy = cancellingIds.includes(j.id);
+                            return (
+                              <tr key={j.id} style={{ opacity: busy ? 0.55 : 1 }}>
+                                <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem' }}>{j.id.substring(0, 8)}</td>
+                                <td>
+                                  <div style={{ fontWeight: 600 }}>{j.repo_url.split('/').slice(-2).join('/') || j.repo_url}</div>
+                                  <code style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⎇ {j.repo_branch}</code>
+                                </td>
+                                <td>
+                                  <span className={`badge ${st.cls}`}>{st.pulse && <span className="badge-pulse" />} {st.label}</span>
+                                  {(j.status === 'failed') && j.error_message && (
+                                    <div style={{ fontSize: '0.68rem', color: 'var(--apple-red)', marginTop: '0.25rem', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={j.error_message}>
+                                      {j.error_message}
+                                    </div>
+                                  )}
+                                </td>
+                                <td><ScoreRing score={j.security_score ?? null} size={38} /></td>
+                                <td style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }} title={fmtUtc(j.created_at)}>{timeAgo(j.created_at)}</td>
+                                <td>
+                                  <div style={{ display: 'flex', gap: '0.4rem', justifyContent: 'flex-end' }}>
+                                    <button onClick={() => handleViewJobDetail(j.id)} className="btn btn-secondary btn-sm">Inspect</button>
+                                    {j.status === 'completed' && (
+                                      <button onClick={() => handleDownloadReport(j.id)} className="btn btn-secondary btn-sm" title="Download report">↓ Report</button>
+                                    )}
+                                    {isActive && (
+                                      <button onClick={() => handleCancelJob(j.id)} className="btn btn-danger btn-sm" disabled={busy}>
+                                        {busy ? '…' : 'Cancel'}
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </PanelState>
+              </div>
             </div>
           )}
 
@@ -2056,19 +1892,21 @@ function App() {
                   </button>
                 </div>
                 <div className="panel-body" style={{ padding: '0.75rem' }}>
-                  {ssoProviders.length === 0 ? (
-                    <div className="panel-empty">No SSO providers configured.</div>
-                  ) : (
-                    ssoProviders.map(p => (
-                      <div key={p.id} className="list-item" style={{ cursor: 'default' }}>
-                        <div className="list-item-info">
-                          <div className="list-item-title">{p.name}</div>
-                          <div className="list-item-sub">Type: {p.provider_type} • Issuer: {p.issuer_url || 'N/A'}</div>
+                  <PanelState state={dashLoad} error={dashError} empty={ssoProviders.length === 0} emptyIcon="🔑" rows={2} onRetry={() => fetchDashboardData(true)}>
+                    {ssoProviders.length === 0 ? (
+                      <p>No SSO providers configured yet.</p>
+                    ) : (
+                      ssoProviders.map(p => (
+                        <div key={p.id} className="list-item" style={{ cursor: 'default' }}>
+                          <div className="list-item-info">
+                            <div className="list-item-title">{p.name}</div>
+                            <div className="list-item-sub">Type: {p.provider_type} • Issuer: {p.issuer_url || 'N/A'}</div>
+                          </div>
+                          <span className="badge badge-success">ACTIVE</span>
                         </div>
-                        <span className="badge badge-success">ACTIVE</span>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </PanelState>
                 </div>
               </div>
 
@@ -2081,19 +1919,21 @@ function App() {
                   </button>
                 </div>
                 <div className="panel-body" style={{ padding: '0.75rem' }}>
-                  {pamRequests.length === 0 ? (
-                    <div className="panel-empty">No PAM requests submitted.</div>
-                  ) : (
-                    pamRequests.map(r => (
-                      <div key={r.id} className="list-item" style={{ cursor: 'default' }}>
-                        <div className="list-item-info">
-                          <div className="list-item-title">{r.role_name} ({r.permission})</div>
-                          <div className="list-item-sub">{r.reason} • {r.requested_duration_minutes}m</div>
+                  <PanelState state={dashLoad} error={dashError} empty={pamRequests.length === 0} emptyIcon="🔐" rows={2} onRetry={() => fetchDashboardData(true)}>
+                    {pamRequests.length === 0 ? (
+                      <p>No PAM elevation requests submitted.</p>
+                    ) : (
+                      pamRequests.map(r => (
+                        <div key={r.id} className="list-item" style={{ cursor: 'default' }}>
+                          <div className="list-item-info">
+                            <div className="list-item-title">{r.role_name} ({r.permission})</div>
+                            <div className="list-item-sub">{r.reason} • {r.requested_duration_minutes}m</div>
+                          </div>
+                          <span className="badge badge-medium">{r.status}</span>
                         </div>
-                        <span className="badge badge-medium">{r.status}</span>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </PanelState>
                 </div>
               </div>
 
@@ -2106,21 +1946,23 @@ function App() {
                   </button>
                 </div>
                 <div className="panel-body" style={{ padding: '0.75rem' }}>
-                  {domains.length === 0 ? (
-                    <div className="panel-empty">No domain verifications registered.</div>
-                  ) : (
-                    domains.map(d => (
-                      <div key={d.id} className="list-item" style={{ cursor: 'default' }}>
-                        <div className="list-item-info">
-                          <div className="list-item-title">{d.domain}</div>
-                          <div className="list-item-sub">{d.verified ? 'Domain verified' : 'Pending DNS verification'}</div>
+                  <PanelState state={dashLoad} error={dashError} empty={domains.length === 0} emptyIcon="🌐" rows={2} onRetry={() => fetchDashboardData(true)}>
+                    {domains.length === 0 ? (
+                      <p>No domain verifications registered.</p>
+                    ) : (
+                      domains.map(d => (
+                        <div key={d.id} className="list-item" style={{ cursor: 'default' }}>
+                          <div className="list-item-info">
+                            <div className="list-item-title">{d.domain}</div>
+                            <div className="list-item-sub">{d.verified ? 'Domain verified' : 'Pending DNS verification'}</div>
+                          </div>
+                          <span className={`badge ${d.verified ? 'badge-success' : 'badge-medium'}`}>
+                            {d.verified ? 'VERIFIED' : 'PENDING DNS'}
+                          </span>
                         </div>
-                        <span className={`badge ${d.verified ? 'badge-success' : 'badge-medium'}`}>
-                          {d.verified ? 'VERIFIED' : 'PENDING DNS'}
-                        </span>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </PanelState>
                 </div>
               </div>
             </div>
@@ -2132,17 +1974,32 @@ function App() {
               <div className="panel">
                 <div className="panel-header">
                   <div className="panel-title">MFA Authentication Status</div>
+                  <span className={`badge ${mfaStatus.enabled ? 'badge-success' : 'badge-neutral'}`}>
+                    {mfaStatus.enabled ? 'ACTIVE' : 'DISABLED'}
+                  </span>
                 </div>
                 <div className="panel-body">
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>TOTP Authenticator App</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Status: {mfaStatus.enabled ? 'Active & Enforced' : 'Not Enrolled'}</div>
+                  <PanelState state={dashLoad} error={dashError} onRetry={() => fetchDashboardData(true)}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>TOTP Authenticator App</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            {mfaStatus.enabled
+                              ? `Protected • ${mfaStatus.backup_codes_remaining} recovery codes remaining`
+                              : 'Two-factor protection is not enrolled'}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        {mfaStatus.enabled ? (
+                          <button onClick={handleMfaDisable} className="btn btn-danger btn-sm">Disable MFA</button>
+                        ) : (
+                          <button onClick={handleMfaEnroll} className="btn btn-primary btn-sm">Enroll TOTP App</button>
+                        )}
+                      </div>
                     </div>
-                    <span className={`badge ${mfaStatus.enabled ? 'badge-success' : 'badge-neutral'}`}>
-                      {mfaStatus.enabled ? 'ACTIVE' : 'DISABLED'}
-                    </span>
-                  </div>
+                  </PanelState>
                 </div>
               </div>
 
@@ -2150,20 +2007,58 @@ function App() {
                 <div className="panel-header">
                   <div className="panel-title">User Security Activities ({activities.length})</div>
                 </div>
-                <div className="panel-body" style={{ padding: '0.75rem' }}>
-                  {activities.length === 0 ? (
-                    <div className="panel-empty">No security logs recorded.</div>
-                  ) : (
-                    activities.map(act => (
-                      <div key={act.id} className="list-item" style={{ cursor: 'default' }}>
-                        <div className="list-item-info">
-                          <div className="list-item-title">{act.action}</div>
-                          {act.details_json && <div className="list-item-sub">{act.details_json}</div>}
+                <div className="panel-body" style={{ padding: '0.75rem', maxHeight: '420px', overflowY: 'auto' }}>
+                  <PanelState state={dashLoad} error={dashError} empty={activities.length === 0} emptyIcon="🧾" rows={4} onRetry={() => fetchDashboardData(true)}>
+                    {activities.length === 0 ? (
+                      <p>No security events recorded yet.</p>
+                    ) : (
+                      activities.map(act => (
+                        <div key={act.id} className="list-item" style={{ cursor: 'default' }}>
+                          <div className="list-item-info">
+                            <div className="list-item-title">{act.action}</div>
+                            {act.details_json && <div className="list-item-sub">{act.details_json}</div>}
+                          </div>
+                          <span className="badge badge-neutral" title={fmtUtc(act.created_at)}>{timeAgo(act.created_at)}</span>
                         </div>
-                        <span className="badge badge-neutral">{act.created_at.substring(11, 19)}</span>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </PanelState>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal: MFA Enrollment (POST /mfa/enroll response) */}
+          {mfaEnrollment && (
+            <div className="modal-backdrop" onClick={() => setMfaEnrollment(null)}>
+              <div className="modal" onClick={e => e.stopPropagation()}>
+                <div className="modal-head">
+                  <div>
+                    <div className="modal-title">MFA Enrollment</div>
+                    <div className="modal-sub">Add the secret to your authenticator app, then activate with a 6-digit code from /mfa endpoints or CLI.</div>
+                  </div>
+                  <button onClick={() => setMfaEnrollment(null)} className="btn btn-ghost btn-icon">✕</button>
+                </div>
+                <div className="modal-body">
+                  <div className="form-group">
+                    <label className="form-label">TOTP Secret</label>
+                    <code className="code-block" style={{ display: 'block', padding: '0.6rem' }}>{mfaEnrollment.secret}</code>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">otpauth URI</label>
+                    <code className="code-block" style={{ display: 'block', padding: '0.6rem', wordBreak: 'break-all' }}>{mfaEnrollment.uri}</code>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Emergency Recovery Codes — store securely, shown once</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                      {(mfaEnrollment.recovery_codes || []).map((c) => (
+                        <code key={c} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.35rem 0.55rem' }}>{c}</code>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button onClick={() => setMfaEnrollment(null)} className="btn btn-primary">I've stored my codes</button>
                 </div>
               </div>
             </div>
@@ -2259,42 +2154,82 @@ function App() {
       {/* Modal: Job Findings Detail */}
       {selectedJobDetail && (
         <div className="modal-backdrop" onClick={() => setSelectedJobDetail(null)}>
-          <div className="modal" style={{ maxWidth: '650px' }} onClick={e => e.stopPropagation()}>
+          <div className="modal" style={{ maxWidth: '680px' }} onClick={e => e.stopPropagation()}>
             <div className="modal-head">
-              <div>
-                <div className="modal-title">Job Details: {selectedJobDetail.job.id.substring(0, 8)}</div>
-                <div className="modal-sub">{selectedJobDetail.job.repo_url}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
+                <ScoreRing score={detailLoading ? null : (selectedJobDetail.job.security_score ?? null)} size={54} />
+                <div>
+                  <div className="modal-title">
+                    Audit {selectedJobDetail.job.id.substring(0, 8)}
+                    {!detailLoading && (() => { const st = jobStatusInfo(selectedJobDetail.job.status); return (
+                      <span className={`badge ${st.cls}`} style={{ marginLeft: '0.6rem', verticalAlign: 'middle' }}>
+                        {st.pulse && <span className="badge-pulse" />} {st.label}
+                      </span>
+                    ); })()}
+                  </div>
+                  <div className="modal-sub" style={{ fontFamily: 'var(--font-mono)' }}>
+                    {selectedJobDetail.job.repo_url || '…'} ⎇ {selectedJobDetail.job.repo_branch || '?'} • {fmtUtc(selectedJobDetail.job.created_at)}
+                  </div>
+                </div>
               </div>
               <button onClick={() => setSelectedJobDetail(null)} className="btn btn-ghost btn-icon">✕</button>
             </div>
 
-            <div className="modal-body" style={{ maxHeight: '420px', overflowY: 'auto' }}>
-              <div style={{ fontSize: '0.82rem', fontWeight: 700, marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
-                Reported Findings ({selectedJobDetail.findings.length})
-              </div>
-
-              {selectedJobDetail.findings.length === 0 ? (
-                <div className="panel-empty">No findings reported for this audit job.</div>
+            <div className="modal-body" style={{ maxHeight: '440px', overflowY: 'auto' }}>
+              {detailLoading ? (
+                <div className="state-skeleton">
+                  {[0, 1, 2].map(i => <div key={i} className="skeleton-row" style={{ animationDelay: `${i * 0.12}s`, width: `${90 - i * 10}%` }} />)}
+                </div>
               ) : (
-                selectedJobDetail.findings.map(f => (
-                  <div key={f.id} className="panel" style={{ marginBottom: '0.75rem', padding: '0.85rem' }}>
-                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.35rem' }}>
-                      <span className="badge badge-critical">{f.severity}</span>
-                      <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{f.cwe_id || 'CWE-UNKNOWN'}</span>
+                <>
+                  {/* Severity distribution */}
+                  <div className="detail-summary-row">
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
+                      Findings ({selectedJobDetail.findings.length})
                     </div>
-                    <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{f.title}</div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.4rem 0' }}>{f.description}</div>
-                    {f.remediation && (
-                      <pre className="code-block" style={{ marginTop: '0.4rem' }}>
-                        <code>{f.remediation}</code>
-                      </pre>
-                    )}
+                    {selectedJobDetail.findings.length > 0 && <SeverityBars findings={selectedJobDetail.findings} />}
                   </div>
-                ))
+
+                  {selectedJobDetail.findings.length === 0 ? (
+                    <div className="panel-empty">
+                      {selectedJobDetail.job.status === 'completed'
+                        ? 'Clean audit — no vulnerabilities reported.'
+                        : `No findings yet — job is ${selectedJobDetail.job.status}.`}
+                    </div>
+                  ) : (
+                    selectedJobDetail.findings.map(f => (
+                      <div key={f.id} className="finding-card">
+                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.35rem', flexWrap: 'wrap' }}>
+                          <span className={`badge ${severityClass(f.severity)}`}>{(f.severity || 'info').toUpperCase()}</span>
+                          {f.cvss_score != null && (
+                            <span className="badge badge-neutral" title={f.cvss_vector || ''}>CVSS {f.cvss_score.toFixed(1)}</span>
+                          )}
+                          <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{f.cwe_id || ''}</span>
+                          {f.file_path && (
+                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>
+                              {f.file_path}{f.line_number != null ? `:${f.line_number}` : ''}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{f.title}</div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.4rem 0' }}>{f.description}</div>
+                        {f.remediation && (
+                          <details className="remediation-details">
+                            <summary>View remediation</summary>
+                            <pre className="code-block"><code>{f.remediation}</code></pre>
+                          </details>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </>
               )}
             </div>
 
             <div className="modal-footer">
+              {selectedJobDetail.job.status === 'completed' && (
+                <button onClick={() => handleDownloadReport(selectedJobDetail.job.id)} className="btn btn-secondary">↓ Download Report</button>
+              )}
               <button onClick={() => setSelectedJobDetail(null)} className="btn btn-primary">Close</button>
             </div>
           </div>

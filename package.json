@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
     "frontend": "npm --prefix frontend run dev",
     "backend": "cd backend && cargo run",
-    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
     "build": "npm install --prefix frontend && npm run build --prefix frontend",
-    "deploy": "npx wrangler pages deploy frontend/dist --project-name=fire-crow",
+    "cargo:check": "cargo check --manifest-path backend/Cargo.toml",
     "cf:build": "npm --prefix frontend run build",
     "cf:deploy": "npx wrangler pages deploy frontend/dist --project-name=fire-crow",
     "cf:preview": "npx wrangler pages dev frontend/dist"

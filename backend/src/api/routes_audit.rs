@@ -57,14 +57,15 @@ pub async fn get_job_detail(State(state): State<Arc<crate::AppState>>, Path(job_
 }
 
 pub async fn cancel_job(State(state): State<Arc<crate::AppState>>, Path(job_id): Path<String>, user: crate::middleware::auth::AuthenticatedUser) -> Result<Json<serde_json::Value>> {
-    let result = sqlx::query("UPDATE audit_jobs SET cancel_requested=true, cancel_requested_at=$1, status=$2 WHERE id=$3 AND user_id=$4")
+    // Only queued/running jobs can be cancelled — finished jobs are immutable.
+    let result = sqlx::query("UPDATE audit_jobs SET cancel_requested=true, cancel_requested_at=$1, status=$2 WHERE id=$3 AND user_id=$4 AND status IN ('queued','running')")
         .bind(chrono::Utc::now().naive_utc())
         .bind(crate::models::JobStatus::Cancelled)
         .bind(&job_id)
         .bind(&user.user_id)
         .execute(state.pool()).await.map_err(AppError::Database)?;
     if result.rows_affected() == 0 {
-        return Err(AppError::NotFound("Job not found or access denied".into()));
+        return Err(AppError::NotFound("Job not found, already finished, or access denied".into()));
     }
     Ok(Json(serde_json::json!({"status": "cancellation_requested"})))
 }

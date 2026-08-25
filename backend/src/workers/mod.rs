@@ -128,12 +128,19 @@ impl WorkerPool {
 
             // Atomic claim: SELECT + UPDATE in one statement with row-level locking.
             // FOR UPDATE SKIP LOCKED ensures each worker grabs a different job.
-            let claimed: Option<AuditJob> = sqlx::query_as::<_, AuditJob>(
+            let claimed: Option<AuditJob> = match sqlx::query_as::<_, AuditJob>(
                 "UPDATE audit_jobs SET status='running' WHERE id = (SELECT id FROM audit_jobs WHERE status='queued' ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *"
             )
                 .fetch_optional(&pool)
                 .await
-                .unwrap_or(None);
+            {
+                Ok(job) => job,
+                Err(e) => {
+                    error!("Worker {}: failed to claim job from queue: {}", id, e);
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
 
             if let Some(job) = claimed {
                 info!("Worker {}: claimed job {}", id, job.id);

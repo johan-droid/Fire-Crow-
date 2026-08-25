@@ -13,6 +13,7 @@
 *.crt
 .dev.vars
 backend/scripts/cf_secrets.json
+deploy/cloudflare/cf_secrets.json
 
 # Rust / Cargo Build Output
 target/
@@ -57,6 +58,7 @@ downloads/
 !.vscode/tasks.json
 .idea/
 .claude/
+.agents/
 *.swp
 *.swo
 *.suo
