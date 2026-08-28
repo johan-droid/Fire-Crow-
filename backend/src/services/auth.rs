@@ -52,7 +52,41 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
     Ok(Argon2::default().verify_password(password.as_bytes(), &parsed).is_ok())
 }
 
-pub fn password_needs_rehash(_hash: &str) -> bool { false }
+pub fn password_needs_rehash(hash: &str) -> bool {
+    // Parse the modular crypt format to extract argon2 parameters
+    // Format: $argon2id$v=19$m=65536,t=3,p=4$salt$hash
+    let parts: Vec<&str> = hash.split('$').collect();
+    if parts.len() < 6 {
+        // If we can't parse, assume it needs rehash (better safe)
+        return true;
+    }
+    // The parameter part is parts[3] (after $argon2id$v=19$)
+    let param_part = parts[3];
+    // Parse m=...,t=...,p=...
+    let mut m: Option<u32> = None;
+    let mut t: Option<u32> = None;
+    let mut p: Option<u32> = None;
+    for param in param_part.split(',') {
+        let kv: Vec<&str> = param.split('=').collect();
+        if kv.len() == 2 {
+            match kv[0] {
+                "m" => m = kv[1].parse().ok(),
+                "t" => t = kv[1].parse().ok(),
+                "p" => p = kv[1].parse().ok(),
+                _ => {}
+            }
+        }
+    }
+    // Current recommended parameters (matching Argon2::default() used in hash_password)
+    let current_m = 65536;
+    let current_t = 3;
+    let current_p = 1; // Note: Argon2::default() uses parallelism=1
+    // If any parameter is less than current, recommend rehash
+    let needs_rehash = m.map_or(true, |val| val < current_m)
+        || t.map_or(true, |val| val < current_t)
+        || p.map_or(true, |val| val < current_p);
+    needs_rehash
+}
 
 pub async fn check_login_lockout(pool: &sqlx::PgPool, key: &str, window_minutes: i64, limit: i32) -> Result<bool> {
     let window_start = (Utc::now() - Duration::minutes(window_minutes)).naive_utc();
@@ -209,7 +243,7 @@ pub async fn revoke_token_in_db(pool: &sqlx::PgPool, jti: &str, token_family: &s
 pub fn create_oauth_state() -> String { Uuid::new_v4().to_string() }
 
 pub async fn verify_and_consume_exchange_code(pool: &sqlx::PgPool, code: &str, crypto: &Arc<CryptoManager>) -> Result<Option<(String, String, String)>> {
-    let record = sqlx::query_as::<_, AuthExchangeCode>("SELECT * FROM auth_exchange_codes WHERE code = $1 AND expires_at > NOW()")
+    let record = sqlx::query_as::<_, AuthExchangeCode>("SELECT id, code, user_id, username, access_token, created_at, expires_at FROM auth_exchange_codes WHERE code = $1 AND expires_at > NOW()")
         .bind(code)
         .fetch_optional(pool).await.map_err(AppError::Database)?;
     if let Some(record) = record {

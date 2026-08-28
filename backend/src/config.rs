@@ -236,7 +236,7 @@ impl Settings {
         let _ = dotenvy::from_filename(".env.local");
         let _ = dotenvy::from_filename("../.env.local");
         let _ = dotenvy::dotenv();
-        let run_mode = std::env::var("RUN_MODE").unwrap_or_else(|_| "production".into());
+        let run_mode = std::env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
 
         let config = Config::builder()
             .set_default("port", default_port())?
@@ -260,10 +260,10 @@ impl Settings {
 
         if settings.debug {
             if settings.secret_key.is_empty() {
-                settings.secret_key = "local_dev_secret_key_change_me_1234567890".into();
+                settings.secret_key = "local_dev_secret_key_change_me_1234567890_DO_NOT_USE_IN_PRODUCTION".into();
             }
             if settings.encryption_key.is_empty() {
-                settings.encryption_key = "local_dev_encryption_key_change_me_1234567890".into();
+                settings.encryption_key = "local_dev_encryption_key_change_me_1234567890_DO_NOT_USE_IN_PRODUCTION".into();
             }
         } else {
             if settings.secret_key.is_empty() {

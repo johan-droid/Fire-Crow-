@@ -14,6 +14,11 @@
 .dev.vars
 backend/scripts/cf_secrets.json
 deploy/cloudflare/cf_secrets.json
+# Explicit local overrides (Vite / Wrangler)
+frontend/.env.local
+backend/.env.local
+.dev.vars.local
+wrangler.toml.local
 
 # Rust / Cargo Build Output
 target/
@@ -23,6 +28,9 @@ backend/workspace/
 workspace/
 *.rs.bk
 *.rmeta
+# sqlx offline data (if used)
+.sqlx/
+sqlx-data.json
 
 # Node.js & Vite Build Artifacts
 node_modules/
@@ -32,10 +40,21 @@ dist-ssr/
 frontend/dist/
 build/
 .output/
+.next/
+out/
 .wrangler/
+.wrangler/tmp/
 wrangler-debug.log*
+.vite/
+.turbo/
+.parcel-cache/
+cache/
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+# Vite / ESBuild
+*.vite
 
-# Package Manager Logs
+# Package Manager Logs & Locks (keep package-lock.json, ignore logs)
 logs/
 *.log
 npm-debug.log*
@@ -43,6 +62,10 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+# Uncomment to ignore lockfiles if you prefer (keep for reproducible installs):
+# package-lock.json
+# pnpm-lock.yaml
+# yarn.lock
 
 # Storage & Temporary Audit Artifacts
 tmp/
@@ -50,6 +73,16 @@ temp/
 *.tmp
 reports/*.pdf
 downloads/
+uploads/
+storage/
+
+# Testing / Coverage
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+junit.xml
+*.lcov
 
 # IDE & Editor Settings
 .vscode/*
@@ -59,12 +92,15 @@ downloads/
 .idea/
 .claude/
 .agents/
+.opencode/
+.cursor/
 *.swp
 *.swo
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
+*.code-workspace
 
 # OS Metadata
 .DS_Store
@@ -74,3 +110,15 @@ downloads/
 .Trashes
 ehthumbs.db
 Thumbs.db
+desktop.ini
+
+# Database & Local State
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# Misc
+*.bak
+*.orig
+*.rej

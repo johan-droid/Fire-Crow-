@@ -15,3 +15,4 @@ pub mod routes_tenant;
 pub mod routes_verify;
 pub mod routes_health;
 pub mod routes_dodo;
+pub mod routes_dashboard;

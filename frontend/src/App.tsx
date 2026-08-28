@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { HeroScene, AuroraBackdrop, useScrollReveal } from './scene';
+import { AuroraBackdrop } from './scene';
+import LandingPage from './LandingPage';
+import LoginPage from './LoginPage';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   PanelState, ScoreRing, SeverityBars, HealthWidget, jobStatusInfo, severityClass,
   fmtUtc, timeAgo, type LoadState, type DeepHealth,
@@ -140,14 +143,36 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
   return res;
 };
 
+// Lightweight in-memory cache for dashboard summary (5 s TTL, avoids duplicate calls on re-render)
+let _dashboardCache: { data: any; ts: number } | null = null;
+const DASH_CACHE_TTL = 5000;
+
 function App() {
   const [view, setView] = useState<'landing' | 'login' | 'dashboard'>('landing');
+  void view; void setView;
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
   // Dashboard Tab state
-  const [dashTab, setDashTab] = useState<'overview' | 'scans' | 'identity' | 'security'>('overview');
+  type ConsoleWindow = 'overview' | 'jobs' | 'sso' | 'pam' | 'iam' | 'domains' | 'mfa' | 'activity';
+  const navigate = useNavigate();
+  const location = useLocation();
+  const getWindowFromPath = (): ConsoleWindow => {
+    const seg = location.pathname.replace(/^\/console\/?/, '').split('/')[0] as ConsoleWindow;
+    if (['overview','jobs','sso','pam','iam','domains','mfa','activity'].includes(seg)) return seg as ConsoleWindow;
+    return 'overview';
+  };
+  const activeWindow = getWindowFromPath();
+  // keep dashTab for internal handlers; sync from router
+  const [dashTab, setDashTabRaw] = useState<ConsoleWindow>('overview');
+  const setDashTab = (w: ConsoleWindow) => navigate(`/console/${w}`);
+  void setDashTab;
+  useEffect(() => {
+    const w = getWindowFromPath();
+    if (w !== dashTab) setDashTabRaw(w);
+    if (location.pathname === '/console' || location.pathname === '/console/') navigate('/console/overview', { replace: true });
+  }, [location.pathname]);
   const [themeAccent, setThemeAccent] = useState<'ember' | 'azure' | 'violet' | 'mint'>(() => {
     const stored = localStorage.getItem('fc-accent');
     return stored === 'azure' || stored === 'violet' || stored === 'mint' || stored === 'ember' ? stored : 'ember';
@@ -166,7 +191,7 @@ function App() {
   const [ssoProviders, setSsoProviders] = useState<SsoProvider[]>([]);
   const [pamRequests, setPamRequests] = useState<PamRequest[]>([]);
   const [_pamGrants, setPamGrants] = useState<PamGrant[]>([]);
-  const [_iamPolicies, setIamPolicies] = useState<IamPolicy[]>([]);
+  const [iamPolicies, setIamPolicies] = useState<IamPolicy[]>([]);
   const [domains, setDomains] = useState<DomainVerification[]>([]);
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [mfaStatus, setMfaStatus] = useState<MfaStatus>({ enabled: false, backup_codes_remaining: 0 });
@@ -192,7 +217,15 @@ function App() {
   const [userRepos, setUserRepos] = useState<any[]>([]);
   const [isLoadingRepos, setIsLoadingRepos] = useState(false);
 
-  const fetchUserRepos = async () => {
+  const lastRepoFetchRef = useRef<number>(0);
+  const reposInflightRef = useRef(false);
+  const fetchUserRepos = useCallback(async (force = false) => {
+    if (reposInflightRef.current) return;
+    const now = Date.now();
+    if (!force && now - lastRepoFetchRef.current < 30_000) return; // 30 s throttle
+    if (isLoadingRepos) return;
+    lastRepoFetchRef.current = now;
+    reposInflightRef.current = true;
     setIsLoadingRepos(true);
     try {
       const res = await apiFetch('/user/repos');
@@ -206,8 +239,9 @@ function App() {
       console.error('Failed to fetch user repos', err);
     } finally {
       setIsLoadingRepos(false);
+      reposInflightRef.current = false;
     }
-  };
+  }, [isLoadingRepos]);
 
   const [isPamModalOpen, setIsPamModalOpen] = useState(false);
   const [pamRole, setPamRole] = useState('production_admin');
@@ -228,9 +262,7 @@ function App() {
   const [dodoPackage, setDodoPackage] = useState<'starter' | 'pro' | 'enterprise'>('pro');
   const [dodoCheckoutUrl, setDodoCheckoutUrl] = useState('');
 
-  // Interactive Dynamic Landing Page States
-  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
-  const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(0);
+
 
   const handleInitiateDodoCheckout = async (amount: number, packageName: string) => {
     setIsSubmitting(true);
@@ -259,42 +291,80 @@ function App() {
     }
   };
 
-  // Auth Form State
+  // Auth & Navigation State
   const [authFormError, setAuthFormError] = useState('');
 
-  // Landing Page Interactive State
-  const [landingTab, setLandingTab] = useState<'terminal' | 'graph' | 'diff'>('terminal');
+  const [loginMode, setLoginMode] = useState<'github' | 'demo'>('github');
 
-  // Fetch all real backend data in parallel with explicit load-state tracking
-  const fetchDashboardData = useCallback(async (showSpinner = false) => {
-    if (showSpinner) setDashLoad('loading');
+  const handleDemoLogin = async () => {
+    setIsSubmitting(true);
+    setAuthFormError('');
     try {
-      const results = await Promise.allSettled([
-        apiFetch('/audit/jobs'),
-        apiFetch('/sso/providers'),
-        apiFetch('/pam/requests'),
-        apiFetch('/pam/grants'),
-        apiFetch('/iam/policies'),
-        apiFetch('/verify/domains'),
-        apiFetch('/auth/activities'),
-        apiFetch('/mfa/status'),
-      ]);
-
-      const [jobsRes, ssoRes, pamReqRes, pamGrantRes, iamRes, domainRes, actRes, mfaRes] = results;
-
-      // Jobs are the primary dataset — a failure here surfaces as a dashboard error.
-      let jobsOk = false;
-      if (jobsRes.status === 'fulfilled' && jobsRes.value.ok) {
-        setJobs(await jobsRes.value.json());
-        jobsOk = true;
-      } else if (jobsRes.status === 'rejected') {
-        throw jobsRes.reason;
-      } else if (jobsRes.value.status === 401) {
-        throw new Error('Session expired — please sign in again.');
+      const res = await apiFetch('/auth/demo', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.access_token) {
+          localStorage.setItem('access_token', data.access_token);
+        }
+        setUser(data.user || { user_id: 'demo-1', username: 'github-developer', email: 'dev@github.com' });
+        await fetchDashboardData(false, { force: true });
+        await fetchUserRepos(true);
+        navigate('/console/overview');
       } else {
-        throw new Error(`Audit API returned HTTP ${jobsRes.value.status}`);
+        const errData = await res.json().catch(() => ({}));
+        setAuthFormError(errData.message || errData.error || 'Demo authentication failed.');
       }
+    } catch (err: any) {
+      setAuthFormError(err.message || 'Network error during login.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
+
+
+  // Dedupe guard for concurrent dashboard fetches
+  const dashboardInflightRef = useRef(false);
+
+  // Fetch all dashboard data via SINGLE batched endpoint (remedy: 8 → 1 request).
+  // Falls back to legacy 8-call flow if batch endpoint is unavailable.
+  const fetchDashboardData = useCallback(async (showSpinner = false, opts: { force?: boolean } = {}) => {
+    if (dashboardInflightRef.current) return;
+    const now = Date.now();
+    if (!opts.force && _dashboardCache && (now - _dashboardCache.ts) < DASH_CACHE_TTL) {
+      const d = _dashboardCache.data;
+      setJobs(d.jobs || []); setSsoProviders(d.sso_providers || []); setPamRequests(d.pam_requests || []);
+      setPamGrants(d.pam_grants || []); setIamPolicies(d.iam_policies || []); setDomains(d.domains || []);
+      setActivities(d.activities || []); if (d.mfa_status) setMfaStatus(d.mfa_status);
+      setLastSync(new Date(_dashboardCache.ts)); setDashError(null); setDashLoad('ready');
+      return;
+    }
+    if (showSpinner) setDashLoad('loading');
+    dashboardInflightRef.current = true;
+    try {
+      // Prefer batched summary: single auth validation + single round-trip
+      const batchRes = await apiFetch('/dashboard/summary');
+      if (batchRes.ok) {
+        const d = await batchRes.json();
+        _dashboardCache = { data: d, ts: Date.now() };
+        setJobs(d.jobs || []); setSsoProviders(d.sso_providers || []); setPamRequests(d.pam_requests || []);
+        setPamGrants(d.pam_grants || []); setIamPolicies(d.iam_policies || []); setDomains(d.domains || []);
+        setActivities(d.activities || []); if (d.mfa_status) setMfaStatus(d.mfa_status);
+        setDashError(null); setDashLoad('ready'); setLastSync(new Date());
+        return;
+      }
+      // Fallback: legacy fan-out (if backend not yet deployed) — keep working
+      const results = await Promise.allSettled([
+        apiFetch('/audit/jobs'), apiFetch('/sso/providers'), apiFetch('/pam/requests'),
+        apiFetch('/pam/grants'), apiFetch('/iam/policies'), apiFetch('/verify/domains'),
+        apiFetch('/auth/activities'), apiFetch('/mfa/status'),
+      ]) as PromiseSettledResult<Response>[];
+      const [jobsRes, ssoRes, pamReqRes, pamGrantRes, iamRes, domainRes, actRes, mfaRes] = results;
+      let jobsOk = false;
+      if (jobsRes.status === 'fulfilled' && jobsRes.value.ok) { setJobs(await jobsRes.value.json()); jobsOk = true; }
+      else if (jobsRes.status === 'rejected') { throw jobsRes.reason; }
+      else if ((jobsRes as any).value?.status === 401) { throw new Error('Session expired — please sign in again.'); }
+      else { throw new Error(`Audit API returned HTTP ${(jobsRes as any).value?.status}`); }
       if (ssoRes.status === 'fulfilled' && ssoRes.value.ok) setSsoProviders(await ssoRes.value.json());
       if (pamReqRes.status === 'fulfilled' && pamReqRes.value.ok) setPamRequests(await pamReqRes.value.json());
       if (pamGrantRes.status === 'fulfilled' && pamGrantRes.value.ok) setPamGrants(await pamGrantRes.value.json());
@@ -302,15 +372,28 @@ function App() {
       if (domainRes.status === 'fulfilled' && domainRes.value.ok) setDomains(await domainRes.value.json());
       if (actRes.status === 'fulfilled' && actRes.value.ok) setActivities(await actRes.value.json());
       if (mfaRes.status === 'fulfilled' && mfaRes.value.ok) setMfaStatus(await mfaRes.value.json());
-
-      setDashError(null);
-      setDashLoad('ready');
-      if (jobsOk) setLastSync(new Date());
+      setDashError(null); setDashLoad('ready'); if (jobsOk) setLastSync(new Date());
     } catch (err: any) {
       console.warn('Dashboard live data fetch error:', err);
       setDashError(err?.message || 'Network error — backend unreachable.');
       setDashLoad('error');
-    }
+    } finally { dashboardInflightRef.current = false; }
+  }, []);
+
+  // Lightweight poll: only jobs (+ phases via separate call) when a job is running.
+  // Saves ~7/8 requests per tick vs full fetchDashboardData.
+  const fetchJobsLite = useCallback(async () => {
+    try {
+      const res = await apiFetch('/dashboard/jobs-lite');
+      if (res.ok) {
+        const d = await res.json();
+        setJobs(d.jobs || []);
+        setLastSync(new Date());
+      } else {
+        const r = await apiFetch('/audit/jobs');
+        if (r.ok) { setJobs(await r.json()); setLastSync(new Date()); }
+      }
+    } catch { /* silent — next tick will retry */ }
   }, []);
 
   // Deep health telemetry (public endpoint, per API docs §14)
@@ -345,7 +428,7 @@ function App() {
       setModalError('Network error while cancelling job.');
     } finally {
       setCancellingIds((ids) => ids.filter((id) => id !== jobId));
-      fetchDashboardData();
+      fetchDashboardData(false, { force: true });
     }
   };
 
@@ -372,7 +455,7 @@ function App() {
       const res = await apiFetch('/mfa/enroll', { method: 'POST' });
       if (!res.ok) { setModalError(`MFA enrollment failed (HTTP ${res.status})`); return; }
       setMfaEnrollment(await res.json());
-      fetchDashboardData();
+      fetchDashboardData(false, { force: true });
     } catch {
       setModalError('Network error during MFA enrollment.');
     }
@@ -383,59 +466,130 @@ function App() {
       const res = await apiFetch('/mfa/disable', { method: 'POST' });
       if (!res.ok) { setModalError(`MFA disable failed (HTTP ${res.status})`); return; }
       setMfaEnrollment(null);
-      fetchDashboardData();
+      fetchDashboardData(false, { force: true });
     } catch {
       setModalError('Network error while disabling MFA.');
     }
   };
 
+  // Live progress — SSE-first with strict rate-limit fallback (fixes “backend works but frontend blank”)
+  const jobsRef = useRef(jobs);
+  useEffect(() => { jobsRef.current = jobs; }, [jobs]);
+
   useEffect(() => {
     if (view !== 'dashboard') return;
-    const targetJobId = activeMonitorJobId || (jobs.length > 0 ? jobs[0].id : null);
+    const targetJobId = activeMonitorJobId || (jobsRef.current.length > 0 ? jobsRef.current[0].id : null);
     if (!targetJobId) return;
+
+    let sse: EventSource | null = null;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let sseFailed = false;
+    let cancelled = false;
 
     const fetchPhases = async () => {
       try {
         const res = await apiFetch(`/audit/job/${targetJobId}/phases`);
-        if (res.ok) {
-          const data = await res.json();
-          setMonitorPhases(data);
-        }
-      } catch (err) {
-        console.warn('Error fetching job phases:', err);
-      }
+        if (res.ok) setMonitorPhases(await res.json());
+      } catch (err) { console.warn('Error fetching job phases:', err); }
+    };
+    const isJobActive = () => {
+      const j = jobsRef.current.find(x => x.id === targetJobId);
+      return !j || j.status === 'running' || j.status === 'queued';
     };
 
-    // Determine if job is still active using current jobs state
-    const activeJob = jobs.find(j => j.id === targetJobId);
-    const isJobActive = !activeJob || activeJob.status === 'running' || activeJob.status === 'queued';
-
-    // Initial fetch
-    fetchPhases();
-    if (isJobActive) {
-      fetchDashboardData();
-    }
-
-    // If job is finished, do a single fetch but don't start polling
-    if (!isJobActive) return;
-
-    // Poll at 2s intervals while job is active
-    const interval = setInterval(() => {
+    const startPolling = () => {
+      if (cancelled || pollTimer) return;
+      // Rate limit: 1x phases + 1x jobs-lite every 5s (was 9 req / 2s → now 0.4 req/s)
       fetchPhases();
-      fetchDashboardData();
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [view, activeMonitorJobId, jobs]);
+      if (isJobActive()) void fetchJobsLite();
+      if (!isJobActive()) return;
+      pollTimer = setInterval(() => {
+        if (document.hidden) return; // pause when tab hidden — zero stress when backgrounded
+        if (!isJobActive()) { if (pollTimer) clearInterval(pollTimer); pollTimer = null; return; }
+        void fetchPhases();
+        void fetchJobsLite();
+      }, 5000);
+    };
 
-  // Scroll-reveal choreography for landing page sections
-  useScrollReveal(view === 'landing', '.apple-landing-page section');
+    // SSE: backend now accepts ?token= (EventSource can't send Bearer header)
+    const token = localStorage.getItem('access_token') || '';
+    const sseUrl = token
+      ? `${API_BASE}/sse/job/${targetJobId}?token=${encodeURIComponent(token)}`
+      : `${API_BASE}/sse/job/${targetJobId}`;
 
-  // Auto-sync repositories from GitHub whenever dashboard opens or scan modal opens
-  useEffect(() => {
-    if (user && (view === 'dashboard' || isScanModalOpen)) {
-      fetchUserRepos();
+    try {
+      sse = new EventSource(sseUrl);
+      const onUpdate = (ev: MessageEvent) => {
+        try {
+          const p = JSON.parse((ev as any).data);
+          if (Array.isArray(p.phases)) setMonitorPhases(p.phases);
+          if (p.job) setJobs(prev => {
+            const exists = prev.some(x => x.id === p.job.id);
+            return exists ? prev.map(x => x.id === p.job.id ? { ...x, ...p.job } : x) : prev;
+          });
+        } catch {}
+      };
+      const onDone = (ev: MessageEvent) => {
+        try {
+          const p = JSON.parse((ev as any).data);
+          if (Array.isArray(p.phases)) setMonitorPhases(p.phases);
+          if (p.job) setJobs(prev => prev.map(x => x.id === p.job.id ? { ...x, ...p.job } : x));
+        } catch {}
+        try { sse?.close(); } catch {}
+        sse = null;
+        void fetchJobsLite(); // final sync
+      };
+      const onErrorEvent = (ev: MessageEvent) => {
+        console.warn('SSE job error event', (ev as any).data);
+        // error payload is still useful — try to apply it before fallback
+        try { const p = JSON.parse((ev as any).data); if (p.phases) setMonitorPhases(p.phases); } catch {}
+      };
+      sse.addEventListener('update', onUpdate as EventListener);
+      sse.addEventListener('done', onDone as EventListener);
+      sse.addEventListener('error', onErrorEvent as EventListener);
+      sse.onerror = () => {
+        if (sseFailed) return;
+        sseFailed = true;
+        try { sse?.close(); } catch {}
+        sse = null;
+        startPolling();
+      };
+      // If not OPEN in 2.5s → fallback (backend emits instantly, so this catches auth/firewall blocks)
+      setTimeout(() => {
+        if (!cancelled && sse && sse.readyState !== 1 && !sseFailed) {
+          sseFailed = true; try { sse.close(); } catch {} sse = null; startPolling();
+        }
+      }, 2500);
+      // If SSE never fires update within 4s, also trigger phases fetch to avoid blank
+      setTimeout(() => { if (!cancelled && !sseFailed && sse) void fetchPhases(); }, 4000);
+    } catch {
+      startPolling();
     }
-  }, [user, view, isScanModalOpen]);
+
+    // Safety net: if SSE object never created
+    setTimeout(() => { if (!cancelled && !sse && !pollTimer) startPolling(); }, 3200);
+
+    return () => {
+      cancelled = true;
+      try { sse?.close(); } catch {}
+      if (pollTimer) clearInterval(pollTimer);
+    };
+  }, [view, activeMonitorJobId, fetchJobsLite]);
+
+
+
+
+  // Auto-sync repositories — throttled to 30 s, manual refresh via button forces it
+  useEffect(() => {
+    if (user && view === 'dashboard') {
+      fetchUserRepos(false);
+    }
+  }, [user, view, fetchUserRepos]);
+  useEffect(() => {
+    if (user && isScanModalOpen) {
+      fetchUserRepos(false);
+    }
+  }, [user, isScanModalOpen, fetchUserRepos]);
 
   const oauthHandledRef = useRef(false);
   const sessionCheckedRef = useRef(false);
@@ -453,8 +607,8 @@ function App() {
             email: data.email,
             credit_balance: data.credit_balance,
           });
-          setView('dashboard');
-          fetchDashboardData(true);
+          navigate('/console/overview');
+          fetchDashboardData(true, { force: true });
         } else {
           localStorage.removeItem('access_token');
           document.cookie = 'access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
@@ -481,7 +635,8 @@ function App() {
         });
 
         if (!exchangeRes.ok) {
-          throw new Error('Failed to exchange authorization code.');
+          const errData = await exchangeRes.json().catch(() => ({}));
+          throw new Error(errData.message || errData.error || `Failed to exchange authorization code (HTTP ${exchangeRes.status})`);
         }
 
         const exchangeData = await exchangeRes.json();
@@ -495,8 +650,8 @@ function App() {
             username: exchangeData.username,
             email: exchangeData.email || null,
           });
-          setView('dashboard');
-          fetchDashboardData();
+          navigate('/console/overview');
+          fetchDashboardData(false, { force: true });
         }
 
         try {
@@ -509,16 +664,15 @@ function App() {
               email: data.email,
               credit_balance: data.credit_balance,
             });
-            setView('dashboard');
+            navigate('/console/overview');
           }
         } catch {
           // If background meRes fails, remain logged in via exchangeData
         }
       } catch (err: any) {
         setError(err.message || 'Authentication failed. Please try again.');
-        setView('login');
+        navigate('/login');
       } finally {
-        window.history.replaceState({}, document.title, window.location.pathname);
         setIsLoading(false);
       }
     };
@@ -529,7 +683,7 @@ function App() {
 
     if (oauthError) {
       setError(`OAuth login failed: ${decodeURIComponent(oauthError)}`);
-      setView('login');
+      navigate('/login');
       window.history.replaceState({}, document.title, window.location.pathname);
       setIsLoading(false);
     } else if (code) {
@@ -569,7 +723,7 @@ function App() {
       setDomains([]);
       setActivities([]);
       setMfaStatus({ enabled: false, backup_codes_remaining: 0 });
-      setView('landing');
+      navigate('/');
       setIsLoading(false);
     }
   };
@@ -598,9 +752,9 @@ function App() {
         if (data && data.job_id) {
           setActiveMonitorJobId(data.job_id);
         }
-        setDashTab('overview');
-        setView('dashboard');
-        fetchDashboardData();
+        navigate('/console/overview');
+        navigate('/console/overview');
+        fetchDashboardData(false, { force: true });
       } else {
         const errData = await res.json().catch(() => ({}));
         setModalError(errData.message || errData.error || errData.detail || 'Failed to submit audit job.');
@@ -635,7 +789,7 @@ function App() {
       if (res.ok) {
         setIsPamModalOpen(false);
         setPamReason('');
-        fetchDashboardData();
+        fetchDashboardData(false, { force: true });
       } else {
         const errData = await res.json().catch(() => ({}));
         setModalError(errData.message || errData.error || 'Failed to create PAM request.');
@@ -668,7 +822,7 @@ function App() {
         setIsSsoModalOpen(false);
         setSsoName('');
         setSsoIssuer('');
-        fetchDashboardData();
+        fetchDashboardData(false, { force: true });
       } else {
         const errData = await res.json().catch(() => ({}));
         setModalError(errData.message || errData.error || 'Failed to save SSO provider.');
@@ -694,7 +848,7 @@ function App() {
       if (res.ok) {
         setIsDomainModalOpen(false);
         setNewDomainName('');
-        fetchDashboardData();
+        fetchDashboardData(false, { force: true });
       } else {
         const errData = await res.json().catch(() => ({}));
         setModalError(errData.message || errData.error || 'Failed to initiate domain verification.');
@@ -731,6 +885,10 @@ function App() {
     }
   };
 
+  const isLanding = location.pathname === '/' ;
+  const isLogin = location.pathname === '/login';
+  const isConsole = location.pathname.startsWith('/console');
+
   if (isLoading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }}>
@@ -743,749 +901,49 @@ function App() {
   }
 
   // Render Landing View
-  if (view === 'landing') {
+  if (isLanding) {
     return (
-      <div className="apple-landing-page">
-        {/* Ambient Apple Atmospheric Glows */}
-        <div className="apple-ambient-glow-top"></div>
-        <div className="apple-ambient-glow-mid"></div>
-
-        {/* Apple Frosted Glass Navigation Bar */}
-        <header className="apple-nav">
-          <div className="apple-nav-container">
-            <div className="apple-logo-wrap" onClick={() => setView('landing')}>
-              <img src="/fire-crow-logo.png" alt="Fire Crow Logo" className="logo-img" />
-              <span className="apple-logo-text">Fire Crow</span>
-            </div>
-
-            <nav className="apple-nav-links">
-              <a href="#capabilities" className="apple-nav-link">Product</a>
-              <a href="#architecture" className="apple-nav-link">How it works</a>
-              <a href="#metrics" className="apple-nav-link">Performance</a>
-              <a href="#pricing" className="apple-nav-link">Pricing</a>
-              <a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer" className="apple-nav-link">GitHub</a>
-            </nav>
-
-            <div className="apple-nav-actions">
-              <button onClick={() => setView('login')} className="btn-apple-secondary" style={{ padding: '0.45rem 1.1rem', fontSize: '0.82rem' }}>
-                Sign In
-              </button>
-              <button onClick={() => setView('login')} className="btn-apple-primary" style={{ padding: '0.45rem 1.25rem', fontSize: '0.82rem' }}>
-                Launch Console →
-              </button>
-            </div>
-          </div>
-        </header>
-
-        {/* Apple Hero Section */}
-        <section className="apple-hero-section">
-          <HeroScene />
-          <div className="apple-pill-badge">
-            <div className="apple-status-beacon"></div>
-            <span>Agentic Application Security Platform</span>
-          </div>
-
-          <h1 className="apple-hero-headline">
-            <span className="apple-headline-gradient">Ship code,</span><br />
-            <span className="apple-headline-accent">not vulnerabilities.</span>
-          </h1>
-
-          <p className="apple-hero-subtext">
-            Fire Crow audits your repositories with autonomous LLM security agents, verifies every finding in an isolated sandbox, and delivers compiler-tested patches. Zero false positives, SOC2-ready reports.
-          </p>
-
-          <div className="apple-hero-cta-group">
-            <button onClick={() => setView('login')} className="btn-apple-primary" style={{ padding: '0.8rem 2rem', fontSize: '0.95rem' }}>
-              Start scanning free →
-            </button>
-            <a href="#capabilities" className="btn-apple-secondary" style={{ padding: '0.8rem 1.8rem', fontSize: '0.95rem' }}>
-              See how it works
-            </a>
-          </div>
-
-          <div className="hero-trust-row">
-            {['Zero false positives', 'Compiler-verified patches', 'SOC2 / ISO-27001 reporting', 'JIT PAM & SSO'].map(claim => (
-              <span key={claim} className="hero-check-item">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#30d158" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                {claim}
-              </span>
-            ))}
-          </div>
-
-          {/* Apple macOS / iPadOS Window Preview Widget */}
-          <div className="apple-preview-window">
-            <div className="apple-window-header">
-              <div className="apple-traffic-lights">
-                <div className="apple-light apple-light-red"></div>
-                <div className="apple-light apple-light-yellow"></div>
-                <div className="apple-light apple-light-green"></div>
-              </div>
-
-              <div className="apple-segmented-tabs">
-                <button
-                  className={`apple-tab-button ${landingTab === 'terminal' ? 'active' : ''}`}
-                  onClick={() => setLandingTab('terminal')}
-                >
-                  Live Agent Stream
-                </button>
-                <button
-                  className={`apple-tab-button ${landingTab === 'graph' ? 'active' : ''}`}
-                  onClick={() => setLandingTab('graph')}
-                >
-                  Attack Topology
-                </button>
-                <button
-                  className={`apple-tab-button ${landingTab === 'diff' ? 'active' : ''}`}
-                  onClick={() => setLandingTab('diff')}
-                >
-                  Verified Patch
-                </button>
-              </div>
-
-              <div className="apple-window-badge">
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#30d158', display: 'inline-block' }}></span>
-                <span>SANDBOX: DOCKER_NODE_RUST</span>
-              </div>
-            </div>
-
-            {/* Tab 1: Agent Stream */}
-            {landingTab === 'terminal' && (
-              <div className="apple-tab-content" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', lineHeight: '1.75', color: '#e5e5ea', background: '#020203' }}>
-                <div><span style={{ color: '#86868b' }}>$</span> firecrow scan --repo https://github.com/org/app</div>
-                <div><span style={{ color: '#2997ff' }}>[intake]</span> Cloning repository and resolving dependency graph...</div>
-                <div><span style={{ color: '#2997ff' }}>[recon]</span> Ingesting AST structure across 84 source files.</div>
-                <div><span style={{ color: '#ffd60a' }}>[scanning]</span> Running SAST rules and secret detection heuristics.</div>
-                <div><span style={{ color: '#bf5af2' }}>[ai_analysis]</span> Gemini reasoning loop analyzing 12 candidate findings...</div>
-                <div><span style={{ color: '#bf5af2' }}>[ai_analysis]</span> Filtering false positives via Docker sandbox verification.</div>
-                <div><span style={{ color: '#ffd60a' }}>[remediation]</span> Synthesizing non-breaking AST patches.</div>
-                <div><span style={{ color: '#ffd60a' }}>[attack_graph]</span> Mapping multi-node lateral movement paths.</div>
-                <div><span style={{ color: '#2997ff' }}>[report]</span> Compiling SOC2 compliance PDF artifact.</div>
-                <div style={{ marginTop: '0.5rem', color: '#30d158', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <span>✓</span> Scan complete — 4 findings confirmed, 2 patches ready.
-                </div>
-                <div style={{ marginTop: '0.25rem', color: '#86868b' }}>
-                  Sign in to run a real scan against your own repository.
-                </div>
-              </div>
-            )}
-
-            {/* Tab 2: Architecture Overview */}
-            {landingTab === 'graph' && (
-              <div className="apple-tab-content" style={{ background: '#020203', minHeight: '340px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                <div className="topology-svg-container">
-                  <svg width="100%" height="220" viewBox="0 0 800 220" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <defs>
-                      <linearGradient id="grad-blue" x1="0%" y1="0%" x2="100%"><stop offset="0%" stopColor="#2997ff"/><stop offset="100%" stopColor="#2997ff"/></linearGradient>
-                      <linearGradient id="grad-purple" x1="0%" y1="0%" x2="100%"><stop offset="0%" stopColor="#bf5af2"/><stop offset="100%" stopColor="#bf5af2"/></linearGradient>
-                      <linearGradient id="grad-green" x1="0%" y1="0%" x2="100%"><stop offset="0%" stopColor="#30d158"/><stop offset="100%" stopColor="#30d158"/></linearGradient>
-                    </defs>
-                    <path d="M140 110 L320 110" stroke="#2997ff" strokeWidth="2" strokeDasharray="6" opacity="0.5"/>
-                    <path d="M480 110 L640 110" stroke="#bf5af2" strokeWidth="2" strokeDasharray="6" opacity="0.5"/>
-                    <g>
-                      <circle cx="120" cy="110" r="32" fill="rgba(41,151,255,0.06)" stroke="#2997ff" strokeWidth="1.5"/>
-                      <text x="120" y="106" fill="#ffffff" fontSize="10" fontWeight="600" textAnchor="middle">Git Repo</text>
-                      <text x="120" y="120" fill="#86868b" fontSize="8" fontFamily="var(--font-mono)" textAnchor="middle">AST + deps</text>
-                    </g>
-                    <g>
-                      <rect x="340" y="82" width="100" height="56" rx="8" fill="rgba(191,90,242,0.06)" stroke="#bf5af2" strokeWidth="1.5"/>
-                      <text x="390" y="106" fill="#ffffff" fontSize="10" fontWeight="600" textAnchor="middle">Security Agent</text>
-                      <text x="390" y="120" fill="#86868b" fontSize="8" fontFamily="var(--font-mono)" textAnchor="middle">Gemini + LLM</text>
-                    </g>
-                    <g>
-                      <rect x="480" y="82" width="90" height="56" rx="8" fill="rgba(255,214,10,0.06)" stroke="#ffd60a" strokeWidth="1.5"/>
-                      <text x="525" y="106" fill="#ffffff" fontSize="10" fontWeight="600" textAnchor="middle">Docker</text>
-                      <text x="525" y="120" fill="#86868b" fontSize="8" fontFamily="var(--font-mono)" textAnchor="middle">Sandbox</text>
-                    </g>
-                    <g>
-                      <circle cx="660" cy="110" r="32" fill="rgba(48,209,88,0.06)" stroke="#30d158" strokeWidth="1.5"/>
-                      <text x="660" y="106" fill="#ffffff" fontSize="10" fontWeight="600" textAnchor="middle">PostgreSQL</text>
-                      <text x="660" y="120" fill="#86868b" fontSize="8" fontFamily="var(--font-mono)" textAnchor="middle">Findings DB</text>
-                    </g>
-                    <path d="M152 110 L308 110" stroke="#2997ff" strokeWidth="1.5" opacity="0.2" markerEnd="url(#arrow-blue)"/>
-                    <path d="M440 110 L470 110" stroke="#bf5af2" strokeWidth="1.5" opacity="0.2"/>
-                    <path d="M570 110 L628 110" stroke="#30d158" strokeWidth="1.5" opacity="0.2"/>
-                  </svg>
-                </div>
-                <div style={{ marginTop: '1rem', padding: '0.6rem 1rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', fontSize: '0.74rem', color: '#86868b', textAlign: 'center', maxWidth: '500px', lineHeight: '1.5' }}>
-                  Four isolated stages — ingestion, reasoning, sandbox verification, and persistence — with zero trust boundaries between them.
-                </div>
-              </div>
-            )}
-
-            {/* Tab 3: Findings Preview */}
-            {landingTab === 'diff' && (
-              <div className="apple-tab-content" style={{ background: '#020203', minHeight: '300px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem 1.5rem', textAlign: 'center' }}>
-                <div style={{ marginBottom: '1rem' }}>
-                  <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#bf5af2" strokeWidth="1.5" style={{ opacity: 0.6 }}>
-                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/>
-                  </svg>
-                </div>
-                <div style={{ color: '#ffffff', fontWeight: 700, fontSize: '0.95rem', marginBottom: '0.4rem' }}>
-                  Findings appear here after a real scan.
-                </div>
-                <div style={{ color: '#86868b', fontSize: '0.82rem', lineHeight: '1.5', maxWidth: '400px' }}>
-                  Each finding includes severity, file location, CWE mapping, CVSS score, and an auto-generated remediation patch.
-                </div>
-                <div style={{ marginTop: '1.5rem', display: 'flex', gap: '0.6rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-                  <span className="badge badge-critical" style={{ opacity: 0.5 }}>CRITICAL</span>
-                  <span className="badge badge-high" style={{ opacity: 0.5 }}>HIGH</span>
-                  <span className="badge badge-medium" style={{ opacity: 0.5 }}>MEDIUM</span>
-                  <span className="badge badge-low" style={{ opacity: 0.5 }}>LOW</span>
-                </div>
-                <div style={{ marginTop: '1.5rem' }}>
-                  <button onClick={() => setView('login')} className="btn-apple-primary" style={{ padding: '0.6rem 1.5rem', fontSize: '0.84rem' }}>
-                    Run your first scan →
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* Apple Bento Grid Section (Platform Capabilities) */}
-        <section id="capabilities" className="apple-bento-section">
-          <div className="apple-section-header">
-            <div className="apple-section-eyebrow">✦ Platform Capabilities</div>
-            <h2 className="apple-section-title">Engineered for Zero False Positives.</h2>
-            <p className="apple-section-sub">
-              Every security finding is synthesized, verified in an isolated Docker sandbox, and mapped to an interactive multi-node attack graph.
-            </p>
-          </div>
-
-          <div className="apple-bento-grid">
-            {/* Bento Card 1: Col-8 (Gemini Agentic Reasoning) */}
-            <div className="apple-bento-card apple-bento-col-8">
-              <div>
-                <div className="apple-bento-icon">
-                  <svg className="bento-svg" viewBox="0 0 24 24" fill="none" stroke="#bf5af2" strokeWidth="1.8"><rect x="5" y="5" width="14" height="14" rx="2"/><path d="M9 2v3M15 2v3M9 19v3M15 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/><circle cx="12" cy="12" r="3"/></svg>
-                </div>
-                <h3 className="apple-bento-title">Agentic Vulnerability Reasoning</h3>
-                <p className="apple-bento-desc">
-                  LLM agents formulate hypotheses, construct proof-of-concept exploits, and synthesize non-breaking patches — no hallucinated vulnerabilities.
-                </p>
-              </div>
-
-              <div className="bento-code-strip">
-                <div className="bento-code-head"><span className="dot" style={{ background: '#bf5af2' }}></span>Reasoning loop</div>
-                <div>Hypothesize exploit path → verify against AST → generate compiler-tested patch</div>
-              </div>
-            </div>
-
-            {/* Bento Card 2: Col-4 (Docker Sandbox Isolation) */}
-            <div className="apple-bento-card apple-bento-col-4">
-              <div>
-                <div className="apple-bento-icon">
-                  <svg className="bento-svg" viewBox="0 0 24 24" fill="none" stroke="#30d158" strokeWidth="1.8"><path d="M21 8l-9-5-9 5v8l9 5 9-5V8z"/><path d="M3.3 8.3L12 13l8.7-4.7M12 13v9"/></svg>
-                </div>
-                <h3 className="apple-bento-title">Sandboxed Verification</h3>
-                <p className="apple-bento-desc">
-                  Every finding is proven in an ephemeral, non-root container before it ever reaches your report.
-                </p>
-              </div>
-
-              <div className="bento-status-pill green"><span className="dot"></span>100% isolated runtime</div>
-            </div>
-
-            {/* Bento Card 3: Col-4 (High-Throughput Rust Engine) */}
-            <div className="apple-bento-card apple-bento-col-4">
-              <div>
-                <div className="apple-bento-icon">
-                  <svg className="bento-svg" viewBox="0 0 24 24" fill="none" stroke="#ffd60a" strokeWidth="1.8"><path d="M13 2L4.09 12.97a1 1 0 0 0 .77 1.64H11l-1 7.39L18.91 11.03a1 1 0 0 0-.77-1.64H12l1-7.39z"/></svg>
-                </div>
-                <h3 className="apple-bento-title">High-Throughput Rust Engine</h3>
-                <p className="apple-bento-desc">
-                  Axum, Tokio async workers, and SQLx drive fast concurrent repository scans.
-                </p>
-              </div>
-
-              <div className="bento-status-metric">&lt; 2.4s AST parse latency</div>
-            </div>
-
-            {/* Bento Card 4: Col-4 (Just-In-Time PAM & IAM) */}
-            <div className="apple-bento-card apple-bento-col-4">
-              <div>
-                <div className="apple-bento-icon">
-                  <svg className="bento-svg" viewBox="0 0 24 24" fill="none" stroke="#2997ff" strokeWidth="1.8"><circle cx="8" cy="15" r="4"/><path d="M10.85 12.15L19 4m-3 3l2.5 2.5M13.5 9.5L16 12"/></svg>
-                </div>
-                <h3 className="apple-bento-title">Just-In-Time PAM &amp; IAM</h3>
-                <p className="apple-bento-desc">
-                  Zero-standing access with temporary elevation, immutable audit trails, and OIDC / SAML SSO.
-                </p>
-              </div>
-
-              <div style={{ marginTop: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span className="badge badge-success">Active Elevation</span>
-                <span className="badge badge-low">Audit Logged</span>
-              </div>
-            </div>
-
-            {/* Bento Card 5: Col-4 (Compliance PDF Generation) */}
-            <div className="apple-bento-card apple-bento-col-4">
-              <div>
-                <div className="apple-bento-icon">
-                  <svg className="bento-svg" viewBox="0 0 24 24" fill="none" stroke="#2997ff" strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 13h6M9 17h6"/></svg>
-                </div>
-                <h3 className="apple-bento-title">Compliance Reports, Automated</h3>
-                <p className="apple-bento-desc">
-                  CVEs, fixes, and CWE risk matrices compiled into SOC2 / ISO-27001-ready PDF artifacts.
-                </p>
-              </div>
-
-              <div className="bento-status-metric blue">PDF &amp; JSON export</div>
-            </div>
-
-            {/* Bento Card 6: Col-12 (PostgreSQL Attack Topology Graph) */}
-            <div className="apple-bento-card apple-bento-col-12">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1.5rem' }}>
-                <div style={{ maxWidth: '600px' }}>
-                  <div className="apple-bento-icon">
-                    <svg className="bento-svg" viewBox="0 0 24 24" fill="none" stroke="#ff453a" strokeWidth="1.8"><circle cx="5" cy="12" r="2.5"/><circle cx="19" cy="5" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M7.3 10.8l9.4-4.6M7.3 13.2l9.4 4.6"/></svg>
-                  </div>
-                  <h3 className="apple-bento-title">Multi-Node Attack Topology Graph</h3>
-                  <p className="apple-bento-desc">
-                    Lateral movement paths, entrypoints, database exposures, and privilege escalation chains — persisted to relational schemas, explorable node by node.
-                  </p>
-                </div>
-
-                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-                  <span className="badge badge-critical">CWE-798 Hardcoded Secrets</span>
-                  <span className="badge badge-high">OWASP A01 Access Control</span>
-                  <span className="badge badge-low">SQLx ORM Validated</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* 4-Stage Architecture Pipeline Section */}
-        <section id="architecture" className="apple-pipeline-section">
-          <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            <div className="apple-section-header">
-              <div className="apple-section-eyebrow">✦ Autonomous Lifecycle</div>
-              <h2 className="apple-section-title">End-to-End Autonomous Pipeline</h2>
-              <p className="apple-section-sub">
-                From source code ingestion to compiler-verified patch generation and compliance delivery.
-              </p>
-            </div>
-
-            <div className="apple-pipeline-grid">
-              <div className="apple-pipeline-card">
-                <div className="apple-step-tag" style={{ color: '#2997ff' }}>STEP 01</div>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.5rem' }}>Repository Ingestion</h3>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                  Parses Abstract Syntax Trees (AST), dependencies, and configuration matrices via secure Git cloning.
-                </p>
-              </div>
-
-              <div className="apple-pipeline-card">
-                <div className="apple-step-tag" style={{ color: '#bf5af2' }}>STEP 02</div>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.5rem' }}>Agentic Reasoning</h3>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                  Security LLM reasoning loops discover architectural vulnerabilities and construct attack graphs.
-                </p>
-              </div>
-
-              <div className="apple-pipeline-card">
-                <div className="apple-step-tag" style={{ color: '#ffd60a' }}>STEP 03</div>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.5rem' }}>Sandboxed Testing</h3>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                  Simulates exploit paths inside isolated Docker containers to confirm zero false positives.
-                </p>
-              </div>
-
-              <div className="apple-pipeline-card">
-                <div className="apple-step-tag" style={{ color: '#30d158' }}>STEP 04</div>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#ffffff', marginBottom: '0.5rem' }}>Patch & Delivery</h3>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                  Generates ready-to-merge remediation pull requests and compliance-ready PDF artifacts.
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Key Performance Metrics Showcase */}
-        <section id="metrics" className="apple-metrics-section">
-          <div className="apple-metric-box">
-            <div className="apple-metric-num">0%</div>
-            <div className="apple-metric-title">False Positive Guarantee</div>
-            <div className="apple-metric-sub">Sandboxed container exploit verification</div>
-          </div>
-
-          <div className="apple-metric-box">
-            <div className="apple-metric-num">&lt; 2.4s</div>
-            <div className="apple-metric-title">AST Ingestion Latency</div>
-            <div className="apple-metric-sub">High-throughput Rust Tokio async worker</div>
-          </div>
-
-          <div className="apple-metric-box">
-            <div className="apple-metric-num">100%</div>
-            <div className="apple-metric-title">Docker Sandbox Isolation</div>
-            <div className="apple-metric-sub">Zero host escape runtime protection</div>
-          </div>
-
-          <div className="apple-metric-box">
-            <div className="apple-metric-num">SOC2</div>
-            <div className="apple-metric-title">Compliance Artifacts</div>
-            <div className="apple-metric-sub">Automated audit reports & ISO 27001</div>
-          </div>
-        </section>
-
-        {/* SaaS Pricing Grid */}
-        <section id="pricing" className="apple-pricing-section">
-          <div className="apple-section-header">
-            <div className="apple-section-eyebrow">✦ Transparent Pricing</div>
-            <h2 className="apple-section-title">A plan for every security posture.</h2>
-            <p className="apple-section-sub">
-              Initiate automated container verification scans, elevation auditing, and SOC2 compliance mapping.
-            </p>
-
-            {/* Billing Cycle Switch */}
-            <div className="billing-toggle-wrapper">
-              <span style={{ fontSize: '0.86rem', color: billingCycle === 'monthly' ? '#ffffff' : 'var(--text-muted)', fontWeight: billingCycle === 'monthly' ? 600 : 400 }}>Monthly</span>
-              <div className="billing-toggle">
-                <button 
-                  className={`billing-toggle-btn ${billingCycle === 'monthly' ? 'active' : ''}`}
-                  onClick={() => setBillingCycle('monthly')}
-                >
-                  Monthly
-                </button>
-                <button 
-                  className={`billing-toggle-btn ${billingCycle === 'annual' ? 'active' : ''}`}
-                  onClick={() => setBillingCycle('annual')}
-                >
-                  Annual <span className="billing-discount-badge">Save 20%</span>
-                </button>
-              </div>
-              <span style={{ fontSize: '0.86rem', color: billingCycle === 'annual' ? '#ffffff' : 'var(--text-muted)', fontWeight: billingCycle === 'annual' ? 600 : 400 }}>Annual</span>
-            </div>
-          </div>
-
-          <div className="pricing-grid">
-            {/* Tier 1: Starter */}
-            <div className="pricing-card">
-              <div>
-                <div className="pricing-tier-name">Starter</div>
-                <div className="pricing-price-wrap">
-                  <span className="pricing-price">{billingCycle === 'annual' ? '$15' : '$19'}</span>
-                  <span className="pricing-period">/ month</span>
-                </div>
-                <p className="pricing-desc">Essential automated code security reasoning for solo developers and side projects.</p>
-                <ul className="pricing-features">
-                  <li className="pricing-feature-item">
-                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    <span>5 Repository scans per month</span>
-                  </li>
-                  <li className="pricing-feature-item">
-                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    <span>Ephemeral Docker sandbox validation</span>
-                  </li>
-                  <li className="pricing-feature-item">
-                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    <span>Standard email alerts</span>
-                  </li>
-                  <li className="pricing-feature-item">
-                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    <span>Basic PDF report exports</span>
-                  </li>
-                </ul>
-              </div>
-              <button 
-                onClick={() => user ? handleInitiateDodoCheckout(billingCycle === 'annual' ? 15 : 19, 'starter') : setView('login')} 
-                className="btn-apple-secondary" 
-                style={{ width: '100%', padding: '0.75rem 0' }}
-              >
-                {user ? 'Upgrade to Starter' : 'Get Started'}
-              </button>
-            </div>
-
-            {/* Tier 2: Pro (Premium) */}
-            <div className="pricing-card premium">
-              <span className="pricing-badge">Most Popular</span>
-              <div>
-                <div className="pricing-tier-name" style={{ color: 'var(--accent-bright)' }}>Pro Console</div>
-                <div className="pricing-price-wrap">
-                  <span className="pricing-price">{billingCycle === 'annual' ? '$79' : '$99'}</span>
-                  <span className="pricing-period">/ month</span>
-                </div>
-                <p className="pricing-desc">Advanced agentic reasoning, code patches, and multi-node attack topology mapping.</p>
-                <ul className="pricing-features">
-                  <li className="pricing-feature-item">
-                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    <span style={{ color: '#ffffff', fontWeight: 600 }}>Unlimited repository scans</span>
-                  </li>
-                  <li className="pricing-feature-item">
-                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    <span>Advanced Gemini reasoning engine</span>
-                  </li>
-                  <li className="pricing-feature-item">
-                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    <span>PoC exploit path verification</span>
-                  </li>
-                  <li className="pricing-feature-item">
-                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    <span>Auto-generated pull request patches</span>
-                  </li>
-                  <li className="pricing-feature-item">
-                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    <span>Full interactive attack topology graphs</span>
-                  </li>
-                  <li className="pricing-feature-item">
-                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    <span>SOC2 & ISO-27001 compliance PDFs</span>
-                  </li>
-                </ul>
-              </div>
-              <button 
-                onClick={() => user ? handleInitiateDodoCheckout(billingCycle === 'annual' ? 79 : 99, 'pro') : setView('login')} 
-                className="btn-apple-primary" 
-                style={{ width: '100%', padding: '0.75rem 0' }}
-              >
-                {user ? 'Upgrade to Pro' : 'Start Pro Free Trial'}
-              </button>
-            </div>
-
-            {/* Tier 3: Enterprise */}
-            <div className="pricing-card">
-              <div>
-                <div className="pricing-tier-name">Enterprise</div>
-                <div className="pricing-price-wrap">
-                  <span className="pricing-price">{billingCycle === 'annual' ? '$399' : '$499'}</span>
-                  <span className="pricing-period">/ month</span>
-                </div>
-                <p className="pricing-desc">SLA-backed execution, private sandboxes, and zero-standing elevation permissions.</p>
-                <ul className="pricing-features">
-                  <li className="pricing-feature-item">
-                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    <span>All Pro features included</span>
-                  </li>
-                  <li className="pricing-feature-item">
-                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    <span>Private cloud sandbox deployments</span>
-                  </li>
-                  <li className="pricing-feature-item">
-                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    <span>Multi-tenant OIDC SSO & SAML support</span>
-                  </li>
-                  <li className="pricing-feature-item">
-                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    <span>Custom JIT permission boundary rules</span>
-                  </li>
-                  <li className="pricing-feature-item">
-                    <svg className="pricing-feature-check" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
-                    <span>24/7 dedicated support & SLA metrics</span>
-                  </li>
-                </ul>
-              </div>
-              <button 
-                onClick={() => user ? handleInitiateDodoCheckout(billingCycle === 'annual' ? 399 : 499, 'enterprise') : setView('login')} 
-                className="btn-apple-secondary" 
-                style={{ width: '100%', padding: '0.75rem 0' }}
-              >
-                Contact Sales / Upgrade
-              </button>
-            </div>
-          </div>
-        </section>
-
-        {/* Interactive FAQ Section */}
-        <section className="apple-faq-section">
-          <div className="apple-section-header">
-            <div className="apple-section-eyebrow">✦ Frequently Asked Questions</div>
-            <h2 className="apple-section-title">Everything you need to know.</h2>
-            <p className="apple-section-sub">
-              Got questions about autonomous code execution, container safety, or custom deployments?
-            </p>
-          </div>
-
-          <div className="faq-list">
-            {[
-              {
-                q: "How does Fire Crow eliminate zero-day false positives?",
-                a: "Fire Crow doesn't rely solely on static pattern matching. It spawns an isolated, non-root Docker container sandbox for each candidate vulnerability to dynamically compile, execute, and verify exploit vectors before reporting them."
-              },
-              {
-                q: "Is my proprietary repository source code shared with third-party LLMs?",
-                a: "No. Source code ASTs and repository contents are parsed locally by the high-throughput Rust engine. Only anonymized code snippets required for vulnerability reasoning are transmitted via encrypted TLS endpoints."
-              },
-              {
-                q: "Can Fire Crow be deployed on-premise or in private clouds?",
-                a: "Yes. Enterprise plans support private Kubernetes cluster deployments, custom Docker registry integration, and air-gapped security orchestrators."
-              },
-              {
-                q: "How does Just-In-Time (JIT) PAM elevation work with our IAM?",
-                a: "Fire Crow integrates natively with OIDC and SAML 2.0 identity providers. Security architects can request temporary privilege elevation that automatically expires after a predefined TTL, complete with immutable PostgreSQL audit trails."
-              }
-            ].map((faq, idx) => (
-              <div 
-                key={idx}
-                className={`faq-item ${openFaqIndex === idx ? 'open' : ''}`}
-                onClick={() => setOpenFaqIndex(openFaqIndex === idx ? null : idx)}
-              >
-                <div className="faq-question">
-                  <span>{faq.q}</span>
-                  <div className="faq-toggle-icon">+</div>
-                </div>
-                {openFaqIndex === idx && (
-                  <div className="faq-answer">
-                    {faq.a}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* Cupertino Call to Action Spotlight Banner */}
-        <section className="apple-cta-section">
-          <div className="apple-cta-card">
-            <h2 style={{ fontSize: 'clamp(2rem, 4vw, 3.2rem)', fontWeight: 800, letterSpacing: '-0.04em', color: '#ffffff', marginBottom: '1rem' }}>
-              Ready to harden your enterprise stack?
-            </h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem', maxWidth: '620px', margin: '0 auto 2.5rem', lineHeight: '1.6' }}>
-              Deploy Fire Crow in your CI/CD pipeline or launch the interactive cloud console in seconds.
-            </p>
-            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <button onClick={() => setView('login')} className="btn-apple-primary" style={{ padding: '0.85rem 2.25rem', fontSize: '0.95rem' }}>
-                Start scanning free →
-              </button>
-              <a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer" className="btn-apple-secondary" style={{ padding: '0.85rem 2rem', fontSize: '0.95rem' }}>
-                Explore on GitHub ↗
-              </a>
-            </div>
-          </div>
-        </section>
-
-        {/* Multi-Column Apple-Style Footer */}
-        <footer className="apple-footer">
-          <div className="apple-footer-grid">
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', marginBottom: '1.1rem' }}>
-                <img src="/fire-crow-logo.png" alt="Fire Crow Logo" style={{ width: '28px', height: '28px', borderRadius: '6px' }} />
-                <span style={{ fontWeight: 700, fontSize: '1.05rem', color: '#ffffff' }}>Fire Crow</span>
-              </div>
-              <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', lineHeight: '1.65', maxWidth: '340px' }}>
-                Autonomous agentic security intelligence and vulnerability hardening platform built natively in Rust with Tokio async workers and Gemini LLM reasoning.
-              </p>
-            </div>
-
-            <div>
-              <div className="apple-footer-col-title">Platform</div>
-              <ul className="apple-footer-links">
-                <li><a href="#capabilities">Agent Capabilities</a></li>
-                <li><a href="#architecture">Autonomous Pipeline</a></li>
-                <li><a href="#pricing">Pricing</a></li>
-              </ul>
-            </div>
-
-            <div>
-              <div className="apple-footer-col-title">Developers</div>
-              <ul className="apple-footer-links">
-                <li><a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer">GitHub Repository</a></li>
-                <li><a href="https://github.com/johan-droid/Fire-Crow-/blob/main/documentation/API_DOCUMENTATION.md" target="_blank" rel="noreferrer">API Documentation</a></li>
-                <li><a href="https://github.com/johan-droid/Fire-Crow-/blob/main/documentation/CLOUDFLARE_DEPLOYMENT.md" target="_blank" rel="noreferrer">Deployment Guide</a></li>
-              </ul>
-            </div>
-
-            <div>
-              <div className="apple-footer-col-title">Security & Trust</div>
-              <ul className="apple-footer-links">
-                <li><span style={{ color: 'var(--text-muted)' }}>SOC2 Type II Ready</span></li>
-                <li><span style={{ color: 'var(--text-muted)' }}>ISO 27001 Mapping</span></li>
-                <li><span style={{ color: 'var(--text-muted)' }}>Docker Sandbox Isolation</span></li>
-                <li><span style={{ color: 'var(--text-muted)' }}>Zero-Standing PAM</span></li>
-              </ul>
-            </div>
-          </div>
-
-          <div className="apple-footer-bottom">
-            <div>© {new Date().getFullYear()} Fire Crow Security Intelligence Inc. All rights reserved.</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1.75rem' }}>
-              <span style={{ color: 'var(--text-muted)' }}>Privacy Policy</span>
-              <span style={{ color: 'var(--text-muted)' }}>Terms of Service</span>
-              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#30d158', fontWeight: 600 }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#30d158', display: 'inline-block' }}></span>
-                System Operational
-              </span>
-            </div>
-          </div>
-        </footer>
-      </div>
+      <LandingPage
+        user={user}
+        onNavigateLogin={() => navigate('/login')}
+        onInitiateCheckout={handleInitiateDodoCheckout}
+      />
     );
   }
 
   // Render Login View
-  if (view === 'login') {
+  if (isLogin) {
     return (
-      <div className="page-center" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#050506', backgroundImage: 'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.02) 0%, transparent 80%)', padding: '1.5rem' }}>
-        <AuroraBackdrop variant="login" />
-        <div className="login-card" style={{ width: '100%', maxWidth: '400px', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '16px', padding: '2.5rem 2rem', boxShadow: '0 30px 60px rgba(0,0,0,0.8)', backdropFilter: 'blur(20px)', textAlign: 'center' }}>
-          
-          {/* Custom Login Tile Header */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '2rem' }}>
-            <div style={{ width: '56px', height: '56px', borderRadius: '12px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem', boxShadow: '0 8px 16px rgba(0,0,0,0.4)' }}>
-              <img src="/fire-crow-logo.png" alt="Fire Crow" style={{ width: '38px', height: '38px' }} />
-            </div>
-            <h2 className="saas-h1-accent" style={{ fontSize: '1.5rem', fontWeight: 800, margin: 0, letterSpacing: '-0.03em', color: '#ffffff' }}>Fire Crow</h2>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.35rem', letterSpacing: '-0.01em' }}>Secure Autonomous Security Orchestration Console</p>
-          </div>
-
-          {/* Pure GitHub Signin Tile Button */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', margin: '2rem 0' }}>
-            <button 
-              onClick={handleGitHubLogin} 
-              className="btn-saas-solid" 
-              style={{ 
-                width: '100%', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                gap: '0.75rem', 
-                background: '#ffffff', 
-                color: '#000000', 
-                padding: '0.85rem', 
-                fontSize: '0.88rem', 
-                fontWeight: 700, 
-                borderRadius: '8px', 
-                border: 'none', 
-                cursor: 'pointer',
-                transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)'
-              }}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 4.42 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.603-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.579.688.481C19.137 20.162 22 16.418 22 12c0-5.523-4.477-10-10-10z" />
-              </svg>
-              Continue with GitHub
-            </button>
-          </div>
-
-          {(error || authFormError) && (
-            <div className="error-box" style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#f87171', padding: '0.75rem', borderRadius: '8px', fontSize: '0.8rem', marginBottom: '1.25rem' }}>
-              {authFormError || error}
-            </div>
-          )}
-
-          {/* Secure monospaced audit info */}
-          <div style={{ padding: '0.75rem', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px', fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', textAlign: 'left', marginBottom: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-              <span>Connection:</span>
-              <span style={{ color: '#4ade80' }}>SECURE (TLS 1.3)</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Identity Provider:</span>
-              <span>github.com</span>
-            </div>
-          </div>
-
-          <button onClick={() => { setError(''); setAuthFormError(''); setView('landing'); }} className="btn btn-ghost" style={{ width: '100%', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-            ← Back to landing page
-          </button>
-        </div>
-      </div>
+      <LoginPage
+        onNavigateLanding={() => navigate('/')}
+        onGitHubLogin={handleGitHubLogin}
+        onDemoLogin={handleDemoLogin}
+        loginMode={loginMode}
+        setLoginMode={setLoginMode}
+        isSubmitting={isSubmitting}
+        error={error}
+        authFormError={authFormError}
+        clearErrors={() => { setError(''); setAuthFormError(''); }}
+      />
     );
   }
 
-  // Render Dashboard View (Single-board with Sidebar & Mobile Topbar)
+  // Guard: unauthenticated console access -> redirect to login
+  if (isConsole && !user && !isLoading) {
+    // let checkSession try first; but immediate redirect if no token
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      // will be handled by checkSession; show loading briefly
+    }
+  }
+
+  // Render Dashboard View — per-function windows with proper navigation
+  if (!isConsole) {
+    // fallback: unknown route -> landing
+    return (
+      <LandingPage user={user} onNavigateLogin={() => navigate('/login')} onInitiateCheckout={handleInitiateDodoCheckout} />
+    );
+  }
   return (
     <div className="shell">
       {/* Ambient 3D Aurora Backdrop */}
@@ -1504,20 +962,32 @@ function App() {
           { id: 'overview', label: 'Overview', badge: null, icon: (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z"/></svg>
           ) },
-          { id: 'scans', label: 'Audit Jobs', badge: jobs.length, icon: (
+          { id: 'jobs', label: 'Audit Jobs', badge: jobs.length, icon: (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           ) },
-          { id: 'identity', label: 'Identity', badge: ssoProviders.length + pamRequests.length, icon: (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+          { id: 'sso', label: 'SSO', badge: ssoProviders.length, icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
           ) },
-          { id: 'security', label: 'Security', badge: activities.length, icon: (
+          { id: 'pam', label: 'PAM', badge: pamRequests.length, icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          ) },
+          { id: 'iam', label: 'IAM', badge: iamPolicies.length, icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11v6M16 11v6M16 11h6"/></svg>
+          ) },
+          { id: 'domains', label: 'Domains', badge: domains.length, icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+          ) },
+          { id: 'mfa', label: 'MFA', badge: mfaStatus.enabled ? 1 : 0, icon: (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="12" cy="16" r="1"/></svg>
+          ) },
+          { id: 'activity', label: 'Activity', badge: activities.length, icon: (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
           ) },
         ] as const).map((item) => (
           <button
             key={item.id}
-            className={`island-item ${dashTab === item.id ? 'active' : ''}`}
-            onClick={() => setDashTab(item.id)}
+            className={`island-item ${activeWindow === item.id ? 'active' : ''}`}
+            onClick={() => navigate(`/console/${item.id}`)}
             title={item.label}
           >
             <span className="island-item-icon">{item.icon}</span>
@@ -1547,10 +1017,14 @@ function App() {
         <div className="topbar">
           <div>
             <div className="topbar-title">
-              {dashTab === 'overview' && 'Security Console'}
-              {dashTab === 'scans' && 'Audit Jobs'}
-              {dashTab === 'identity' && 'Identity & Access'}
-              {dashTab === 'security' && 'Logs & Telemetry'}
+              {activeWindow === 'overview' && 'Security Console'}
+              {activeWindow === 'jobs' && 'Audit Jobs'}
+              {activeWindow === 'sso' && 'SSO Providers'}
+              {activeWindow === 'pam' && 'Privileged Access'}
+              {activeWindow === 'iam' && 'IAM Policies'}
+              {activeWindow === 'domains' && 'Domain Verification'}
+              {activeWindow === 'mfa' && 'MFA & Keys'}
+              {activeWindow === 'activity' && 'Activity & Logs'}
             </div>
             <div className="topbar-subtitle">
               Node: {user?.username} • {user?.user_id.substring(0, 8)}
@@ -1613,12 +1087,12 @@ function App() {
         {/* Page Content Body */}
         <div className="page-body">
           {/* Tab 1: Overview */}
-          {dashTab === 'overview' && (
+          {activeWindow === 'overview' && (
             <>
               {dashLoad === 'error' && (
                 <div className="dash-error-banner">
                   <span>{dashError}</span>
-                  <button className="btn btn-secondary btn-sm" onClick={() => fetchDashboardData(true)}>Retry</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => fetchDashboardData(true, { force: true })}>Retry</button>
                 </div>
               )}
 
@@ -1727,7 +1201,7 @@ function App() {
                     <button onClick={() => setIsScanModalOpen(true)} className="btn btn-secondary btn-sm">+ New</button>
                   </div>
                   <div className="panel-body" style={{ padding: '0.75rem' }}>
-                    <PanelState state={dashLoad} error={dashError} empty={jobs.length === 0} emptyIcon="🛡" rows={3} onRetry={() => fetchDashboardData(true)}>
+                    <PanelState state={dashLoad} error={dashError} empty={jobs.length === 0} emptyIcon="🛡" rows={3} onRetry={() => fetchDashboardData(true, { force: true })}>
                       {jobs.length === 0 ? (
                         <p>No audit jobs yet. Trigger your first scan.</p>
                       ) : (
@@ -1777,7 +1251,7 @@ function App() {
           )}
 
           {/* Tab 2: Audit Jobs */}
-          {dashTab === 'scans' && (
+          {activeWindow === 'jobs' && (
             <div className="panel">
               <div className="panel-header">
                 <div className="panel-title">
@@ -1789,7 +1263,7 @@ function App() {
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button onClick={() => fetchDashboardData(true)} className="btn btn-secondary btn-sm" disabled={dashLoad === 'loading'}>
+                  <button onClick={() => fetchDashboardData(true, { force: true })} className="btn btn-secondary btn-sm" disabled={dashLoad === 'loading'}>
                     {dashLoad === 'loading' ? 'Syncing…' : '↻ Refresh'}
                   </button>
                   <button onClick={() => setIsScanModalOpen(true)} className="btn btn-primary btn-sm">
@@ -1811,7 +1285,7 @@ function App() {
                   empty={jobs.length === 0}
                   emptyIcon="📡"
                   rows={5}
-                  onRetry={() => fetchDashboardData(true)}
+                  onRetry={() => fetchDashboardData(true, { force: true })}
                 >
                   {jobs.length === 0 ? (
                     <>
@@ -1880,150 +1354,121 @@ function App() {
             </div>
           )}
 
-          {/* Tab 3: Identity & Access */}
-          {dashTab === 'identity' && (
-            <div className="two-col">
-              {/* SSO Providers */}
-              <div className="panel">
-                <div className="panel-header">
-                  <div className="panel-title">SSO Providers ({ssoProviders.length})</div>
-                  <button onClick={() => setIsSsoModalOpen(true)} className="btn btn-secondary btn-sm">
-                    + Provider
-                  </button>
-                </div>
-                <div className="panel-body" style={{ padding: '0.75rem' }}>
-                  <PanelState state={dashLoad} error={dashError} empty={ssoProviders.length === 0} emptyIcon="🔑" rows={2} onRetry={() => fetchDashboardData(true)}>
-                    {ssoProviders.length === 0 ? (
-                      <p>No SSO providers configured yet.</p>
-                    ) : (
-                      ssoProviders.map(p => (
-                        <div key={p.id} className="list-item" style={{ cursor: 'default' }}>
-                          <div className="list-item-info">
-                            <div className="list-item-title">{p.name}</div>
-                            <div className="list-item-sub">Type: {p.provider_type} • Issuer: {p.issuer_url || 'N/A'}</div>
-                          </div>
-                          <span className="badge badge-success">ACTIVE</span>
-                        </div>
-                      ))
-                    )}
-                  </PanelState>
-                </div>
+          {/* Window: SSO Providers — per-function */}
+          {activeWindow === 'sso' && (
+            <div className="panel" style={{ maxWidth: '900px', margin: '0 auto', width: '100%' }}>
+              <div className="panel-header">
+                <div className="panel-title">SSO Providers ({ssoProviders.length})</div>
+                <button onClick={() => setIsSsoModalOpen(true)} className="btn btn-secondary btn-sm">+ Provider</button>
               </div>
-
-              {/* PAM Requests */}
-              <div className="panel">
-                <div className="panel-header">
-                  <div className="panel-title">PAM Elevation Requests ({pamRequests.length})</div>
-                  <button onClick={() => setIsPamModalOpen(true)} className="btn btn-secondary btn-sm">
-                    + Request
-                  </button>
-                </div>
-                <div className="panel-body" style={{ padding: '0.75rem' }}>
-                  <PanelState state={dashLoad} error={dashError} empty={pamRequests.length === 0} emptyIcon="🔐" rows={2} onRetry={() => fetchDashboardData(true)}>
-                    {pamRequests.length === 0 ? (
-                      <p>No PAM elevation requests submitted.</p>
-                    ) : (
-                      pamRequests.map(r => (
-                        <div key={r.id} className="list-item" style={{ cursor: 'default' }}>
-                          <div className="list-item-info">
-                            <div className="list-item-title">{r.role_name} ({r.permission})</div>
-                            <div className="list-item-sub">{r.reason} • {r.requested_duration_minutes}m</div>
-                          </div>
-                          <span className="badge badge-medium">{r.status}</span>
-                        </div>
-                      ))
-                    )}
-                  </PanelState>
-                </div>
-              </div>
-
-              {/* Domain Verifications */}
-              <div className="panel" style={{ gridColumn: '1 / -1' }}>
-                <div className="panel-header">
-                  <div className="panel-title">Domain Verifications ({domains.length})</div>
-                  <button onClick={() => setIsDomainModalOpen(true)} className="btn btn-secondary btn-sm">
-                    + Add Domain
-                  </button>
-                </div>
-                <div className="panel-body" style={{ padding: '0.75rem' }}>
-                  <PanelState state={dashLoad} error={dashError} empty={domains.length === 0} emptyIcon="🌐" rows={2} onRetry={() => fetchDashboardData(true)}>
-                    {domains.length === 0 ? (
-                      <p>No domain verifications registered.</p>
-                    ) : (
-                      domains.map(d => (
-                        <div key={d.id} className="list-item" style={{ cursor: 'default' }}>
-                          <div className="list-item-info">
-                            <div className="list-item-title">{d.domain}</div>
-                            <div className="list-item-sub">{d.verified ? 'Domain verified' : 'Pending DNS verification'}</div>
-                          </div>
-                          <span className={`badge ${d.verified ? 'badge-success' : 'badge-medium'}`}>
-                            {d.verified ? 'VERIFIED' : 'PENDING DNS'}
-                          </span>
-                        </div>
-                      ))
-                    )}
-                  </PanelState>
-                </div>
+              <div className="panel-body" style={{ padding: '0.75rem' }}>
+                <PanelState state={dashLoad} error={dashError} empty={ssoProviders.length === 0} emptyIcon="🔑" rows={2} onRetry={() => fetchDashboardData(true, { force: true })}>
+                  {ssoProviders.length === 0 ? <p>No SSO providers configured yet.</p> : ssoProviders.map(p => (
+                    <div key={p.id} className="list-item" style={{ cursor: 'default' }}>
+                      <div className="list-item-info"><div className="list-item-title">{p.name}</div><div className="list-item-sub">Type: {p.provider_type} • Issuer: {p.issuer_url || 'N/A'}</div></div>
+                      <span className="badge badge-success">ACTIVE</span>
+                    </div>
+                  ))}
+                </PanelState>
               </div>
             </div>
           )}
 
-          {/* Tab 4: Logs & MFA */}
-          {dashTab === 'security' && (
-            <div className="two-col">
-              <div className="panel">
-                <div className="panel-header">
-                  <div className="panel-title">MFA Authentication Status</div>
-                  <span className={`badge ${mfaStatus.enabled ? 'badge-success' : 'badge-neutral'}`}>
-                    {mfaStatus.enabled ? 'ACTIVE' : 'DISABLED'}
-                  </span>
-                </div>
-                <div className="panel-body">
-                  <PanelState state={dashLoad} error={dashError} onRetry={() => fetchDashboardData(true)}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <div>
-                          <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>TOTP Authenticator App</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                            {mfaStatus.enabled
-                              ? `Protected • ${mfaStatus.backup_codes_remaining} recovery codes remaining`
-                              : 'Two-factor protection is not enrolled'}
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        {mfaStatus.enabled ? (
-                          <button onClick={handleMfaDisable} className="btn btn-danger btn-sm">Disable MFA</button>
-                        ) : (
-                          <button onClick={handleMfaEnroll} className="btn btn-primary btn-sm">Enroll TOTP App</button>
-                        )}
-                      </div>
-                    </div>
-                  </PanelState>
-                </div>
+          {/* Window: PAM Requests — per-function */}
+          {activeWindow === 'pam' && (
+            <div className="panel" style={{ maxWidth: '900px', margin: '0 auto', width: '100%' }}>
+              <div className="panel-header">
+                <div className="panel-title">PAM Elevation Requests ({pamRequests.length})</div>
+                <button onClick={() => setIsPamModalOpen(true)} className="btn btn-secondary btn-sm">+ Request</button>
               </div>
+              <div className="panel-body" style={{ padding: '0.75rem' }}>
+                <PanelState state={dashLoad} error={dashError} empty={pamRequests.length === 0} emptyIcon="🔐" rows={2} onRetry={() => fetchDashboardData(true, { force: true })}>
+                  {pamRequests.length === 0 ? <p>No PAM elevation requests submitted.</p> : pamRequests.map(r => (
+                    <div key={r.id} className="list-item" style={{ cursor: 'default' }}>
+                      <div className="list-item-info"><div className="list-item-title">{r.role_name} ({r.permission})</div><div className="list-item-sub">{r.reason} • {r.requested_duration_minutes}m</div></div>
+                      <span className="badge badge-medium">{r.status}</span>
+                    </div>
+                  ))}
+                </PanelState>
+              </div>
+            </div>
+          )}
 
-              <div className="panel">
-                <div className="panel-header">
-                  <div className="panel-title">User Security Activities ({activities.length})</div>
-                </div>
-                <div className="panel-body" style={{ padding: '0.75rem', maxHeight: '420px', overflowY: 'auto' }}>
-                  <PanelState state={dashLoad} error={dashError} empty={activities.length === 0} emptyIcon="🧾" rows={4} onRetry={() => fetchDashboardData(true)}>
-                    {activities.length === 0 ? (
-                      <p>No security events recorded yet.</p>
-                    ) : (
-                      activities.map(act => (
-                        <div key={act.id} className="list-item" style={{ cursor: 'default' }}>
-                          <div className="list-item-info">
-                            <div className="list-item-title">{act.action}</div>
-                            {act.details_json && <div className="list-item-sub">{act.details_json}</div>}
-                          </div>
-                          <span className="badge badge-neutral" title={fmtUtc(act.created_at)}>{timeAgo(act.created_at)}</span>
-                        </div>
-                      ))
-                    )}
-                  </PanelState>
-                </div>
+          {/* Window: IAM Policies — per-function */}
+          {activeWindow === 'iam' && (
+            <div className="panel" style={{ maxWidth: '900px', margin: '0 auto', width: '100%' }}>
+              <div className="panel-header">
+                <div className="panel-title">IAM Policies ({iamPolicies.length})</div>
+                <span className="badge badge-neutral">{iamPolicies.length} policies</span>
+              </div>
+              <div className="panel-body" style={{ padding: '0.75rem' }}>
+                <PanelState state={dashLoad} error={dashError} empty={iamPolicies.length === 0} emptyIcon="🛡️" rows={2} onRetry={() => fetchDashboardData(true, { force: true })}>
+                  {iamPolicies.length === 0 ? <p>No IAM policies defined.</p> : iamPolicies.map((pol: any) => (
+                    <div key={pol.id} className="list-item" style={{ cursor: 'default' }}>
+                      <div className="list-item-info"><div className="list-item-title">{pol.name}</div><div className="list-item-sub">{pol.effect} • {pol.actions} → {pol.resources}</div></div>
+                      <span className="badge badge-info">P{pol.priority}</span>
+                    </div>
+                  ))}
+                </PanelState>
+              </div>
+            </div>
+          )}
+
+          {/* Window: Domains — per-function */}
+          {activeWindow === 'domains' && (
+            <div className="panel" style={{ maxWidth: '900px', margin: '0 auto', width: '100%' }}>
+              <div className="panel-header">
+                <div className="panel-title">Domain Verifications ({domains.length})</div>
+                <button onClick={() => setIsDomainModalOpen(true)} className="btn btn-secondary btn-sm">+ Add Domain</button>
+              </div>
+              <div className="panel-body" style={{ padding: '0.75rem' }}>
+                <PanelState state={dashLoad} error={dashError} empty={domains.length === 0} emptyIcon="🌐" rows={2} onRetry={() => fetchDashboardData(true, { force: true })}>
+                  {domains.length === 0 ? <p>No domain verifications registered.</p> : domains.map(d => (
+                    <div key={d.id} className="list-item" style={{ cursor: 'default' }}>
+                      <div className="list-item-info"><div className="list-item-title">{d.domain}</div><div className="list-item-sub">{d.verified ? 'Domain verified' : 'Pending DNS verification'}</div></div>
+                      <span className={`badge ${d.verified ? 'badge-success' : 'badge-medium'}`}>{d.verified ? 'VERIFIED' : 'PENDING DNS'}</span>
+                    </div>
+                  ))}
+                </PanelState>
+              </div>
+            </div>
+          )}
+
+                    {/* Window: MFA — per-function */}
+          {activeWindow === 'mfa' && (
+            <div className="panel" style={{ maxWidth: '700px', margin: '0 auto', width: '100%' }}>
+              <div className="panel-header">
+                <div className="panel-title">MFA Authentication Status</div>
+                <span className={`badge ${mfaStatus.enabled ? 'badge-success' : 'badge-neutral'}`}>{mfaStatus.enabled ? 'ACTIVE' : 'DISABLED'}</span>
+              </div>
+              <div className="panel-body">
+                <PanelState state={dashLoad} error={dashError} onRetry={() => fetchDashboardData(true, { force: true })}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div><div style={{ fontWeight: 600, fontSize: '0.9rem' }}>TOTP Authenticator App</div><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{mfaStatus.enabled ? `Protected • ${mfaStatus.backup_codes_remaining} recovery codes remaining` : 'Two-factor protection is not enrolled'}</div></div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      {mfaStatus.enabled ? <button onClick={handleMfaDisable} className="btn btn-danger btn-sm">Disable MFA</button> : <button onClick={handleMfaEnroll} className="btn btn-primary btn-sm">Enroll TOTP App</button>}
+                    </div>
+                  </div>
+                </PanelState>
+              </div>
+            </div>
+          )}
+
+          {/* Window: Activity — per-function */}
+          {activeWindow === 'activity' && (
+            <div className="panel" style={{ maxWidth: '900px', margin: '0 auto', width: '100%' }}>
+              <div className="panel-header"><div className="panel-title">User Security Activities ({activities.length})</div></div>
+              <div className="panel-body" style={{ padding: '0.75rem', maxHeight: '520px', overflowY: 'auto' }}>
+                <PanelState state={dashLoad} error={dashError} empty={activities.length === 0} emptyIcon="🧾" rows={4} onRetry={() => fetchDashboardData(true, { force: true })}>
+                  {activities.length === 0 ? <p>No security events recorded yet.</p> : activities.map(act => (
+                    <div key={act.id} className="list-item" style={{ cursor: 'default' }}>
+                      <div className="list-item-info"><div className="list-item-title">{act.action}</div>{act.details_json && <div className="list-item-sub">{act.details_json}</div>}</div>
+                      <span className="badge badge-neutral" title={fmtUtc(act.created_at)}>{timeAgo(act.created_at)}</span>
+                    </div>
+                  ))}
+                </PanelState>
               </div>
             </div>
           )}
@@ -2085,7 +1530,7 @@ function App() {
                     <label className="form-label" style={{ margin: 0 }}>Sync'd GitHub Repositories</label>
                     <button 
                       type="button" 
-                      onClick={fetchUserRepos} 
+                      onClick={() => fetchUserRepos(true)} 
                       className="btn btn-ghost btn-sm"
                       style={{ padding: '0.15rem 0.5rem', fontSize: '0.72rem', color: 'var(--apple-blue-light)' }}
                     >
@@ -2209,6 +1654,56 @@ function App() {
                             <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>
                               {f.file_path}{f.line_number != null ? `:${f.line_number}` : ''}
                             </span>
+                          )}
+                          {f.id && (
+                            <button
+                              onClick={(e) => {
+                                navigator.clipboard.writeText(f.id);
+                                const btn = e.currentTarget;
+                                const originalTitle = btn.title;
+                                btn.title = 'Copied!';
+                                setTimeout(() => {
+                                  btn.title = originalTitle;
+                                }, 1500);
+                              }}
+                              title="Copy finding ID"
+                              style={{
+                                padding: '0.2rem 0.4rem',
+                                fontSize: '0.65rem',
+                                background: 'rgba(255,255,255,0.05)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '3px',
+                                color: 'var(--text-muted)',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              📄 ID
+                            </button>
+                          )}
+                          {f.remediation && (
+                            <button
+                              onClick={(e) => {
+                                navigator.clipboard.writeText(f.remediation || '');
+                                const btn = e.currentTarget;
+                                const originalTitle = btn.title;
+                                btn.title = 'Copied!';
+                                setTimeout(() => {
+                                  btn.title = originalTitle;
+                                }, 1500);
+                              }}
+                              title="Copy remediation"
+                              style={{
+                                padding: '0.2rem 0.4rem',
+                                fontSize: '0.65rem',
+                                background: 'rgba(255,255,255,0.05)',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '3px',
+                                color: 'var(--text-muted)',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              📋 Fix
+                            </button>
                           )}
                         </div>
                         <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{f.title}</div>

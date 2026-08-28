@@ -41,6 +41,26 @@ impl axum::extract::FromRequestParts<Arc<crate::AppState>> for AuthenticatedUser
                             }
                         })
                     })
+            })
+            .or_else(|| {
+                // SSE / EventSource cannot set Authorization header — allow ?token= fallback.
+                // Query is `?token=<jwt>` or `?access_token=<jwt>` (both accepted).
+                let q = parts.uri.query().unwrap_or("");
+                for pair in q.split('&') {
+                    let mut kv = pair.splitn(2, '=');
+                    let k = kv.next().unwrap_or("");
+                    let v = kv.next().unwrap_or("");
+                    if k == "token" || k == "access_token" {
+                        let decoded = percent_encoding::percent_decode_str(v)
+                            .decode_utf8()
+                            .map(|s| s.into_owned())
+                            .unwrap_or_else(|_| v.to_string());
+                        if !decoded.is_empty() {
+                            return Some(decoded);
+                        }
+                    }
+                }
+                None
             });
 
         let token = token_opt.ok_or_else(|| AppError::Unauthorized("Missing authentication token".into()))?;

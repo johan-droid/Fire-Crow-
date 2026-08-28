@@ -20,8 +20,6 @@ pub fn router() -> Router<Arc<crate::AppState>> {
         .route("/activities", get(get_activities))
         .route("/github", get(github_login))
         .route("/github/callback", get(github_callback))
-        .route("/google", get(google_login))
-        .route("/google/callback", get(google_callback))
 }
 
 pub async fn exchange_token(
@@ -42,18 +40,19 @@ pub async fn exchange_token(
     let (refresh_token_str, _) = crate::services::auth::create_refresh_token(&user_id, &username, &state.settings().secret_key, &tenant_id, &token_family)?;
 
     let cookie_name = state.settings().auth_cookie_name.clone();
+    let samesite = get_cookie_samesite(&state);
     let access_cookie = Cookie::build((cookie_name.clone(), access_token_str.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
-    .same_site(axum_extra::extract::cookie::SameSite::Strict)
+        .same_site(samesite)
         .build();
 
     let refresh_cookie = Cookie::build((format!("{}_refresh", cookie_name), refresh_token_str.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
-    .same_site(axum_extra::extract::cookie::SameSite::Strict)
+        .same_site(samesite)
         .build();
 
     let jar = jar.add(access_cookie).add(refresh_cookie);
@@ -98,18 +97,19 @@ pub async fn refresh_token(
     let (refresh_token_str, _) = crate::services::auth::create_refresh_token(&claims.claims.sub, &claims.claims.username, &state.settings().secret_key, &tenant_id, &new_family)?;
 
     let cookie_name = state.settings().auth_cookie_name.clone();
+    let samesite = get_cookie_samesite(&state);
     let access_cookie = Cookie::build((cookie_name.clone(), access_token_str.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
-    .same_site(axum_extra::extract::cookie::SameSite::Strict)
+        .same_site(samesite)
         .build();
 
     let refresh_cookie = Cookie::build((format!("{}_refresh", cookie_name), refresh_token_str.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
-    .same_site(axum_extra::extract::cookie::SameSite::Strict)
+        .same_site(samesite)
         .build();
 
     let jar = jar.add(access_cookie).add(refresh_cookie);
@@ -170,18 +170,19 @@ pub async fn login(
     sqlx::query("UPDATE users SET last_login_at=$1 WHERE id=$2").bind(chrono::Utc::now().naive_utc()).bind(&user.id).execute(state.pool()).await.ok();
 
     let cookie_name = state.settings().auth_cookie_name.clone();
+    let samesite = get_cookie_samesite(&state);
     let access_cookie = Cookie::build((cookie_name.clone(), access_token_str.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
-    .same_site(axum_extra::extract::cookie::SameSite::Strict)
+        .same_site(samesite)
         .build();
 
     let refresh_cookie = Cookie::build((format!("{}_refresh", cookie_name), refresh_token_str.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
-    .same_site(axum_extra::extract::cookie::SameSite::Strict)
+        .same_site(samesite)
         .build();
 
     let jar = jar.add(access_cookie).add(refresh_cookie);
@@ -281,11 +282,7 @@ pub async fn github_login(
                 origin
             };
             
-            let allowed = origin == "http://localhost:3000" 
-                || origin == "http://127.0.0.1:3000"
-                || origin == "http://localhost:8000"
-                || origin == "http://127.0.0.1:8000"
-                || origin == state.settings().frontend_url.trim_end_matches('/');
+            let allowed = is_allowed_origin(&origin, &state);
                 
             if allowed {
                 let redirect_cookie = Cookie::build(("oauth_redirect_origin", origin))
@@ -471,18 +468,19 @@ pub async fn github_callback(
     };
 
     let cookie_name = state.settings().auth_cookie_name.clone();
+    let samesite = get_cookie_samesite(&state);
     let access_cookie = Cookie::build((cookie_name.clone(), access_token_str.clone()))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
-    .same_site(axum_extra::extract::cookie::SameSite::Strict)
+        .same_site(samesite)
         .build();
 
     let refresh_cookie = Cookie::build((format!("{}_refresh", cookie_name), refresh_token_str))
         .path("/")
         .http_only(true)
         .secure(!state.settings().debug)
-    .same_site(axum_extra::extract::cookie::SameSite::Strict)
+        .same_site(samesite)
         .build();
 
     let jar = jar.add(access_cookie).add(refresh_cookie);
@@ -498,221 +496,6 @@ fn urlencoding(s: &str) -> String {
     utf8_percent_encode(s, percent_encoding::CONTROLS).to_string()
 }
 
-#[derive(serde::Deserialize)]
-struct GoogleTokenResponse {
-    access_token: String,
-}
-
-#[derive(serde::Deserialize)]
-struct GoogleUser {
-    sub: String,
-    name: Option<String>,
-    email: Option<String>,
-}
-
-pub async fn google_login(
-    State(state): State<Arc<crate::AppState>>,
-    headers: axum::http::HeaderMap,
-    jar: CookieJar,
-) -> Result<(CookieJar, Redirect)> {
-    let oauth_state = crate::services::auth::create_oauth_state();
-    let cookie = Cookie::build(("google_oauth_state", oauth_state.clone()))
-        .path("/")
-        .http_only(true)
-        .secure(!state.settings().debug)
-        .same_site(axum_extra::extract::cookie::SameSite::Lax)
-        .build();
-        
-    let mut jar = jar.add(cookie);
-
-    let referer = headers
-        .get(axum::http::header::REFERER)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    if !referer.is_empty() {
-        if let Ok(url) = url::Url::parse(referer) {
-            let origin = format!("{}://{}", url.scheme(), url.host_str().unwrap_or(""));
-            let origin = if let Some(port) = url.port() {
-                format!("{}:{}", origin, port)
-            } else {
-                origin
-            };
-            
-            let allowed = origin == "http://localhost:3000" 
-                || origin == "http://127.0.0.1:3000"
-                || origin == "http://localhost:8000"
-                || origin == "http://127.0.0.1:8000"
-                || origin == state.settings().frontend_url.trim_end_matches('/');
-                
-            if allowed {
-                let redirect_cookie = Cookie::build(("oauth_redirect_origin", origin))
-                    .path("/")
-                    .http_only(true)
-                    .secure(!state.settings().debug)
-                    .same_site(axum_extra::extract::cookie::SameSite::Lax)
-                    .build();
-                jar = jar.add(redirect_cookie);
-            }
-        }
-    }
-        
-    let base_url = state.settings().backend_base_url.trim_end_matches('/');
-    let client_id = &state.settings().google_client_id;
-    if client_id.is_empty() {
-        return Err(AppError::BadRequest("Google OAuth client ID is not configured".into()));
-    }
-    let redirect_uri = format!("{}/api/v1/auth/google/callback", base_url);
-    let auth_url = format!(
-        "https://accounts.google.com/o/oauth2/v2/auth?client_id={}&redirect_uri={}&response_type=code&scope=openid%20email%20profile&state={}",
-        client_id,
-        urlencoding(&redirect_uri),
-        oauth_state
-    );
-    Ok((jar, Redirect::temporary(&auth_url)))
-}
-
-pub async fn google_callback(
-    State(state): State<Arc<crate::AppState>>,
-    jar: CookieJar,
-    Query(query): Query<OAuthCallbackQuery>
-) -> (CookieJar, Redirect) {
-    let redirect_origin = jar.get("oauth_redirect_origin").map(|c| c.value().to_string());
-    let jar = jar.remove(Cookie::from("oauth_redirect_origin"));
-
-    let frontend_base = redirect_origin.unwrap_or_else(|| {
-        state.settings().frontend_url.trim_end_matches('/').to_string()
-    });
-    let error_redirect = |msg: &str| {
-        error!("Google OAuth error: {}", msg);
-        let url = format!("{}/?oauth_error={}", frontend_base, urlencoding(msg));
-        Redirect::temporary(&url)
-    };
-
-    let stored_state = match jar.get("google_oauth_state").map(|c| c.value().to_string()) {
-        Some(s) => s,
-        None => return (jar, error_redirect("Missing OAuth state cookie")),
-    };
-    if query.state != stored_state {
-        return (jar, error_redirect("Invalid OAuth state"));
-    }
-    let jar = jar.remove(Cookie::from("google_oauth_state"));
-
-    let base_url = state.settings().backend_base_url.trim_end_matches('/');
-    let redirect_uri = format!("{}/api/v1/auth/google/callback", base_url);
-
-    let client = reqwest::Client::new();
-    let token_res = client.post("https://oauth2.googleapis.com/token")
-        .header("Content-Type", "application/x-www-form-urlencoded")
-        .form(&[
-            ("client_id", state.settings().google_client_id.as_str()),
-            ("client_secret", state.settings().google_client_secret.as_str()),
-            ("code", query.code.as_str()),
-            ("grant_type", "authorization_code"),
-            ("redirect_uri", redirect_uri.as_str()),
-        ])
-        .send().await;
-
-    let token_body = match token_res {
-        Ok(r) => match r.text().await {
-            Ok(t) => t,
-            Err(e) => return (jar, error_redirect(&format!("Failed to read token response: {e}"))),
-        },
-        Err(e) => return (jar, error_redirect(&format!("Google token request failed: {e}"))),
-    };
-
-    let token_data: GoogleTokenResponse = match serde_json::from_str(&token_body) {
-        Ok(t) => t,
-        Err(e) => return (jar, error_redirect(&format!("Google token parse error: {e}. Body: {token_body}"))),
-    };
-
-    let user_res = client.get("https://openidconnect.googleapis.com/v1/userinfo")
-        .header("Authorization", format!("Bearer {}", token_data.access_token))
-        .send().await;
-
-    let user_body = match user_res {
-        Ok(r) => match r.text().await {
-            Ok(t) => t,
-            Err(e) => return (jar, error_redirect(&format!("Failed to read user info response: {e}"))),
-        },
-        Err(e) => return (jar, error_redirect(&format!("Google user info request failed: {e}"))),
-    };
-
-    let google_user: GoogleUser = match serde_json::from_str(&user_body) {
-        Ok(u) => u,
-        Err(e) => return (jar, error_redirect(&format!("Google user parse error: {e}. Body: {user_body}"))),
-    };
-
-    let google_id_str = google_user.sub;
-
-    let db_user_opt = sqlx::query_as::<_, crate::models::User>(
-        "SELECT * FROM users WHERE google_id = $1")
-        .bind(&google_id_str)
-        .fetch_optional(state.pool()).await;
-
-    let mut db_user = match db_user_opt {
-        Ok(u) => u,
-        Err(e) => return (jar, error_redirect(&format!("Database error: {e}"))),
-    };
-
-    if db_user.is_none() {
-        if let Some(email) = &google_user.email {
-            db_user = match sqlx::query_as::<_, crate::models::User>(
-                "SELECT * FROM users WHERE email = $1")
-                .bind(email)
-                .fetch_optional(state.pool()).await {
-                Ok(u) => u,
-                Err(_) => None,
-            };
-        }
-    }
-
-    let user = if let Some(mut existing) = db_user {
-        let _ = sqlx::query("UPDATE users SET google_id = $1 WHERE id = $2")
-            .bind(&google_id_str)
-            .bind(&existing.id)
-            .execute(state.pool()).await;
-        existing.google_id = Some(google_id_str);
-        existing
-    } else {
-        let new_id = uuid::Uuid::new_v4().to_string();
-        let name_prefix = google_user.name.as_deref().unwrap_or("user");
-        let username = format!("{}_{}", name_prefix.replace(' ', "_").to_lowercase(), new_id.chars().take(4).collect::<String>());
-        let now = chrono::Utc::now().naive_utc();
-        match sqlx::query(
-            "INSERT INTO users (id, username, email, is_active, credit_balance, google_id, created_at) VALUES ($1, $2, $3, true, 0.0, $4, $5)")
-            .bind(&new_id).bind(&username).bind(&google_user.email)
-            .bind(&google_id_str).bind(now)
-            .execute(state.pool()).await {
-            Ok(_) => {},
-            Err(e) => return (jar, error_redirect(&format!("Failed to create user: {e}"))),
-        };
-        match sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = $1")
-            .bind(&new_id).fetch_one(state.pool()).await {
-            Ok(u) => u,
-            Err(e) => return (jar, error_redirect(&format!("Failed to fetch new user: {e}"))),
-        }
-    };
-
-    let access_token_str = match crate::services::auth::create_access_token(
-        &user.id, &user.username, &state.settings().secret_key,
-        user.tenant_id.as_deref().unwrap_or(""),
-        state.settings().jwt_access_token_expire_minutes) {
-        Ok((tok, _)) => tok,
-        Err(e) => return (jar, error_redirect(&format!("Token creation failed: {e}"))),
-    };
-
-    let exchange_code = uuid::Uuid::new_v4().to_string();
-    if let Err(e) = crate::services::auth::create_exchange_code(
-        state.pool(), &exchange_code, &user.id, &user.username, &access_token_str, 120, state.crypto()).await {
-        return (jar, error_redirect(&format!("Exchange code creation failed: {e}")));
-    }
-
-    let frontend_redirect = format!("{}/?code={}", frontend_base, exchange_code);
-    info!("Google OAuth success for user: {}, redirecting to frontend", user.username);
-    (jar, Redirect::temporary(&frontend_redirect))
-}
-
 pub async fn policy_context() -> Result<Json<serde_json::Value>> {
     Ok(Json(serde_json::json!({"privacy_policy_version": "2026-06-06", "terms_version": "2026-06-06"})))
 }
@@ -720,3 +503,32 @@ pub async fn create_policy_event(State(state): State<Arc<crate::AppState>>, Json
     crate::services::security_log::record_security_event(state.pool(), None, None, "policy_event", Some(&payload.to_string()), None).await?;
     Ok(StatusCode::ACCEPTED)
 }
+
+fn is_allowed_origin(origin: &str, state: &crate::AppState) -> bool {
+    let frontend_base = state.settings().frontend_url.trim_end_matches('/');
+    if origin == frontend_base {
+        return true;
+    }
+    let cors_origins: Vec<&str> = state.settings().cors_origins.split(',').map(|s| s.trim().trim_end_matches('/')).collect();
+    if cors_origins.contains(&origin) {
+        return true;
+    }
+    matches!(
+        origin,
+        "http://localhost:3000"
+            | "http://127.0.0.1:3000"
+            | "http://localhost:5173"
+            | "http://127.0.0.1:5173"
+            | "http://localhost:8000"
+            | "http://127.0.0.1:8000"
+    )
+}
+
+fn get_cookie_samesite(state: &crate::AppState) -> axum_extra::extract::cookie::SameSite {
+    match state.settings().auth_cookie_samesite.to_lowercase().as_str() {
+        "lax" => axum_extra::extract::cookie::SameSite::Lax,
+        "none" => axum_extra::extract::cookie::SameSite::None,
+        _ => axum_extra::extract::cookie::SameSite::Strict,
+    }
+}
+

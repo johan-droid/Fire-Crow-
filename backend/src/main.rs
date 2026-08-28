@@ -167,6 +167,7 @@ async fn main() -> anyhow::Result<()> {
         .nest("/tenant", crate::api::routes_tenant::router())
         .nest("/verify", crate::api::routes_verify::router())
         .nest("/payments/dodo", crate::api::routes_dodo::router().layer(crate::middleware::rate_limit::rate_limiter("30/minute")))
+        .nest("/dashboard", crate::api::routes_dashboard::router())
         .nest("/sse", crate::api::routes_sse::router());
 
     let frontend_dir = std::env::var("FRONTEND_DIST_DIR")
@@ -204,17 +205,21 @@ async fn main() -> anyhow::Result<()> {
         .with_state(state.clone());
 
     // Global rate limiting keyed by CF extracted IP instead of Peer IP
-    let rate_limiter_conf = tower_governor::governor::GovernorConfigBuilder::default()
-        .per_second(20)
-        .burst_size(40)
-        .key_extractor(crate::middleware::rate_limit::CloudflareKeyExtractor)
-        .finish()
-        .expect("rate limiter config is valid");
+    // Apply only in production to avoid hitting limits during development
+    let app = if settings.debug {
+        app
+    } else {
+        // Cloudflare middleware must run before rate limiting to set CF info
+        let app = app.layer(from_fn(crate::middleware::cloudflare::cloudflare_middleware));
+        let rate_limiter_conf = tower_governor::governor::GovernorConfigBuilder::default()
+            .per_second(20)
+            .burst_size(40)
+            .key_extractor(crate::middleware::rate_limit::CloudflareKeyExtractor)
+            .finish()
+            .expect("rate limiter config is valid");
+        app.layer(tower_governor::GovernorLayer { config: std::sync::Arc::new(rate_limiter_conf) })
+    };
 
-    let app = app.layer(tower_governor::GovernorLayer {
-        config: std::sync::Arc::new(rate_limiter_conf),
-    })
-    .layer(from_fn(crate::middleware::cloudflare::cloudflare_middleware)); // P0-3: Must run before rate limiting to set CF info
 
     // Add CSRF protection when enabled.
     let app = if settings.csrf_enabled {

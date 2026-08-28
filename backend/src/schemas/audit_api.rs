@@ -22,7 +22,7 @@ pub struct EmailReportRequest {
 fn default_branch() -> Option<String> { Some("main".into()) }
 fn default_auth_scope() -> Option<String> { Some("authorized_representative".into()) }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobResponse {
     pub id: String,
     pub user_id: String,
