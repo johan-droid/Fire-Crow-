@@ -10,7 +10,7 @@ use axum::{
 };
 use std::time::Instant;
 use tracing::info;
-use crate::middleware::cloudflare::extract_client_ip;
+use crate::middleware::cloudflare::{peer_ip_of, resolve_client_ip};
 
 /// Recursively redacts sensitive keys in JSON payloads
 pub fn redact_json_value(val: &mut serde_json::Value) {
@@ -161,7 +161,7 @@ pub async fn http_audit_logger(
 ) -> Result<Response, axum::http::StatusCode> {
     let method = req.method().clone();
     let uri = redact_uri_for_log(&req.uri().to_string());
-    let client_ip = extract_client_ip(req.headers(), None);
+    let client_ip = resolve_client_ip(req.headers(), peer_ip_of(&req));
     let start_time = Instant::now();
 
     // 1. Inspect Request Body
