@@ -188,6 +188,11 @@ async fn main() -> anyhow::Result<()> {
         app
     };
 
+    // NOTE: in axum the LAST `.layer()` is the OUTERMOST, so this list reads
+    // bottom-up. `CatchPanicLayer` must sit OUTSIDE `http_audit_logger`, otherwise
+    // a panic inside the logger (e.g. a bad byte-index string slice on an
+    // attacker-controlled body) escapes and, under `panic = "abort"`, kills the
+    // process. security_p0_1.
     let app = app
         .layer(cors_layer(&settings))
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
@@ -196,9 +201,9 @@ async fn main() -> anyhow::Result<()> {
         .layer(tower_http::timeout::TimeoutLayer::new(
             std::time::Duration::from_secs(30)
         ))
-        .layer(tower_http::catch_panic::CatchPanicLayer::new())
         .layer(from_fn(crate::middleware::security_headers::security_headers_middleware))
         .layer(from_fn(crate::middleware::http_logger::http_audit_logger))
+        .layer(tower_http::catch_panic::CatchPanicLayer::new())
         .layer(from_fn(request_id_middleware))
         .layer(from_fn(body_size_limit_middleware))
         .layer(from_fn_with_state(state.clone(), crate::middleware::error_sanitizer::error_sanitizer))

@@ -74,4 +74,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 lto = true
 codegen-units = 1
 strip = true
-panic = "abort"
+# `panic = "abort"` is intentionally NOT set. It makes `CatchPanicLayer`
+# (main.rs) a no-op, so any panic in a handler or in the audit logger would
+# terminate the whole process instead of returning a 500. That turned an
+# unauthenticated malformed request body into a remote DoS. security_p0_1.

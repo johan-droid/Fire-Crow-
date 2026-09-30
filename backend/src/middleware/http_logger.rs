@@ -48,6 +48,90 @@ pub fn redact_json_value(val: &mut serde_json::Value) {
     }
 }
 
+/// Query-string keys whose values must never reach the log.
+/// `token`/`access_token` are accepted by `AuthenticatedUser` (middleware/auth.rs),
+/// so a bearer JWT arrives in the URI on every SSE connect.
+const SENSITIVE_QUERY_KEYS: &[&str] = &[
+    "token",
+    "access_token",
+    "refresh_token",
+    "code",
+    "password",
+    "secret",
+    "api_key",
+];
+
+/// Strips sensitive query-string values from a URI before it is logged.
+///
+/// Returns the URI unchanged when it has no query string. The path is never
+/// modified — only the *values* of sensitive keys are replaced, so the log stays
+/// useful for debugging while never containing a usable credential.
+///
+/// security_p0_1b: the audit logger must not write bearer tokens to disk.
+pub fn redact_uri_for_log(uri: &str) -> String {
+    let Some((path, query)) = uri.split_once('?') else {
+        return uri.to_string();
+    };
+    if query.is_empty() {
+        return uri.to_string();
+    }
+
+    let mut out = String::with_capacity(uri.len());
+    out.push_str(path);
+    out.push('?');
+
+    for (i, pair) in query.split('&').enumerate() {
+        if i > 0 {
+            out.push('&');
+        }
+        match pair.split_once('=') {
+            Some((k, _)) if SENSITIVE_QUERY_KEYS
+                .iter()
+                .any(|sensitive| sensitive.eq_ignore_ascii_case(k))
+            =>
+            {
+                out.push_str(k);
+                out.push_str("=[REDACTED]");
+            }
+            _ => out.push_str(pair),
+        }
+    }
+    out
+}
+
+/// Truncates on a UTF-8 character boundary.
+///
+/// `&s[..max_len]` panics when `max_len` lands inside a multi-byte character.
+/// An attacker fully controls request bodies, so that panic is remotely
+/// reachable and, under `panic = "abort"`, terminates the process.
+///
+/// security_p0_1: all audit-log truncation goes through here.
+pub fn truncate_utf8_safe(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        return s.to_string();
+    }
+    let end = s.floor_char_boundary(max_len);
+    format!("{}... [truncated]", &s[..end])
+}
+
+/// Patterns for redacting `key: value` / `key=value` pairs in non-JSON bodies.
+///
+/// Compiled once. Compiling these per request let an attacker force 10 regex
+/// compilations for every 2 MB non-JSON POST.
+static TEXT_REDACT_PATTERNS: std::sync::OnceLock<Vec<regex::Regex>> = std::sync::OnceLock::new();
+
+fn text_redact_patterns() -> &'static [regex::Regex] {
+    TEXT_REDACT_PATTERNS.get_or_init(|| {
+        [
+            "password", "secret", "token", "authorization", "bearer", "cookie",
+            "api_key", "gemini_api_key", "encryption_key", "secret_key",
+        ]
+        .iter()
+        .filter_map(|key| regex::Regex::new(&format!(r"(?i)({}\s*[:=]\s*)[^\s&,}}]+", key)).ok())
+        .collect()
+    })
+}
+
 /// Helper to parse and safely redact JSON or text payloads
 pub fn safe_payload_snippet(bytes: &[u8], max_len: usize) -> String {
     if bytes.is_empty() {
@@ -57,29 +141,13 @@ pub fn safe_payload_snippet(bytes: &[u8], max_len: usize) -> String {
     if let Ok(utf8_str) = std::str::from_utf8(bytes) {
         if let Ok(mut json_val) = serde_json::from_str::<serde_json::Value>(utf8_str) {
             redact_json_value(&mut json_val);
-            let s = json_val.to_string();
-            if s.len() > max_len {
-                format!("{}... [truncated]", &s[..max_len])
-            } else {
-                s
-            }
+            truncate_utf8_safe(&json_val.to_string(), max_len)
         } else {
             let mut text = utf8_str.to_string();
-            let keys = [
-                "password", "secret", "token", "authorization", "bearer", "cookie",
-                "api_key", "gemini_api_key", "encryption_key", "secret_key"
-            ];
-            for key in keys {
-                let pattern = format!(r"(?i)({}\s*[:=]\s*)[^\s&,}}]+", key);
-                if let Ok(re) = regex::Regex::new(&pattern) {
-                    text = re.replace_all(&text, "${1}[REDACTED]").to_string();
-                }
+            for re in text_redact_patterns() {
+                text = re.replace_all(&text, "${1}[REDACTED]").to_string();
             }
-            if text.len() > max_len {
-                format!("{}... [truncated]", &text[..max_len])
-            } else {
-                text
-            }
+            truncate_utf8_safe(&text, max_len)
         }
     } else {
         format!("<binary data {} bytes>", bytes.len())
@@ -92,7 +160,7 @@ pub async fn http_audit_logger(
     next: Next,
 ) -> Result<Response, axum::http::StatusCode> {
     let method = req.method().clone();
-    let uri = req.uri().to_string();
+    let uri = redact_uri_for_log(&req.uri().to_string());
     let client_ip = extract_client_ip(req.headers(), None);
     let start_time = Instant::now();
 
