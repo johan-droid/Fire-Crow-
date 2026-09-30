@@ -513,15 +513,23 @@ fn is_allowed_origin(origin: &str, state: &crate::AppState) -> bool {
     if cors_origins.contains(&origin) {
         return true;
     }
-    matches!(
-        origin,
-        "http://localhost:3000"
-            | "http://127.0.0.1:3000"
-            | "http://localhost:5173"
-            | "http://127.0.0.1:5173"
-            | "http://localhost:8000"
-            | "http://127.0.0.1:8000"
-    )
+    // security_p0_3: localhost was previously accepted in every environment, so a
+    // `Referer: http://localhost:8000` header made `github_login` store
+    // `oauth_redirect_origin` on the victim's browser and then deliver the
+    // single-use session code to whatever host that cookie named. Local origins
+    // are now a development-only allowance.
+    if state.settings().debug {
+        return matches!(
+            origin,
+            "http://localhost:3000"
+                | "http://127.0.0.1:3000"
+                | "http://localhost:5173"
+                | "http://127.0.0.1:5173"
+                | "http://localhost:8000"
+                | "http://127.0.0.1:8000"
+        );
+    }
+    false
 }
 
 fn get_cookie_samesite(state: &crate::AppState) -> axum_extra::extract::cookie::SameSite {

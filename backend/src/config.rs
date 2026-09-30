@@ -12,8 +12,14 @@ pub struct Settings {
     pub port: u16,
     #[serde(default = "default_host")]
     pub host: String,
+    /// Verbose error/log detail. Affects **presentation only** — never whether a
+    /// security control runs. security_p0_3.
     #[serde(default)]
     pub debug: bool,
+    /// Global request rate limiting. Governed independently of `debug` so that
+    /// enabling debug logging can never disable rate limiting. security_p0_3.
+    #[serde(default = "default_true")]
+    pub rate_limit_enabled: bool,
     pub secret_key: String,
     #[serde(default)]
     pub encryption_key: String,
@@ -236,12 +242,14 @@ impl Settings {
         let _ = dotenvy::from_filename(".env.local");
         let _ = dotenvy::from_filename("../.env.local");
         let _ = dotenvy::dotenv();
-        let run_mode = std::env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
-
         let config = Config::builder()
             .set_default("port", default_port())?
             .set_default("host", default_host())?
-            .set_default("debug", run_mode == "development")?
+            // security_p0_3: production is the default. This was
+            // `RUN_MODE == "development"`, so an unset RUN_MODE implied development
+            // mode, which disabled the global rate limiter, disabled error
+            // sanitization, and substituted a source-visible signing key.
+            .set_default("debug", false)?
             .add_source(Environment::default())
             .build()?;
 
@@ -256,43 +264,45 @@ impl Settings {
             "change_me", "changeme", "secret", "development",
             "local_dev_secret_key_change_me_1234567890",
             "local_dev_encryption_key_change_me_1234567890",
+            // Was substituted as a development fallback before security_p0_3.
+            "local_dev_secret_key_change_me_1234567890_DO_NOT_USE_IN_PRODUCTION",
+            // Committed as the docker-compose default. security_p0_2. Any
+            // environment that ever used it must treat it as compromised.
+            "a7f3b8c29e4d5f6a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a",
         ];
 
-        if settings.debug {
-            if settings.secret_key.is_empty() {
-                settings.secret_key = "local_dev_secret_key_change_me_1234567890_DO_NOT_USE_IN_PRODUCTION".into();
-            }
-            if settings.encryption_key.is_empty() {
-                settings.encryption_key = "local_dev_encryption_key_change_me_1234567890_DO_NOT_USE_IN_PRODUCTION".into();
-            }
-        } else {
-            if settings.secret_key.is_empty() {
-                return Err(ConfigError::Message("SECRET_KEY is required. Set a strong random value (min 32 chars).".into()));
-            }
-            if insecure_dev_values.contains(&settings.secret_key.as_str()) {
-                return Err(ConfigError::Message("SECRET_KEY cannot use a known development value.".into()));
-            }
-            if settings.secret_key.len() < 32 {
-                return Err(ConfigError::Message("SECRET_KEY must be at least 32 characters.".into()));
-            }
+        // security_p0_3: secrets are required and validated in every mode. There
+        // is deliberately no development fallback, so a missing key is a loud
+        // startup failure rather than a silently substituted constant.
+        if settings.secret_key.trim().is_empty() {
+            return Err(ConfigError::Message(
+                "SECRET_KEY is required. Generate one with: openssl rand -base64 48".into()));
+        }
+        if insecure_dev_values.contains(&settings.secret_key.as_str()) {
+            return Err(ConfigError::Message(
+                "SECRET_KEY is set to a known development or previously-committed value. \
+                 Treat it as compromised and rotate it.".into()));
+        }
+        if settings.secret_key.len() < 32 {
+            return Err(ConfigError::Message("SECRET_KEY must be at least 32 characters.".into()));
+        }
 
-            if settings.encryption_key.is_empty() {
-                return Err(ConfigError::Message("ENCRYPTION_KEY is required. Set a strong random value (min 32 chars).".into()));
-            }
-            if insecure_dev_values.contains(&settings.encryption_key.as_str())
-                || settings.encryption_key.len() < 32
-            {
-                return Err(ConfigError::Message("ENCRYPTION_KEY must be at least 32 characters and not a dev value.".into()));
-            }
+        if settings.encryption_key.trim().is_empty() {
+            return Err(ConfigError::Message(
+                "ENCRYPTION_KEY is required. Generate one with: openssl rand -base64 48".into()));
+        }
+        if insecure_dev_values.contains(&settings.encryption_key.as_str())
+            || settings.encryption_key.len() < 32
+        {
+            return Err(ConfigError::Message(
+                "ENCRYPTION_KEY must be at least 32 characters and not a known development \
+                 or previously-committed value.".into()));
         }
 
         // CRIT-02: SECRET_KEY and ENCRYPTION_KEY must never be identical.
         // Reusing one key for JWT signing AND data encryption collapses the
         // security boundary — compromising one key compromises both.
-        if !settings.encryption_key.is_empty()
-            && !settings.secret_key.is_empty()
-            && settings.encryption_key == settings.secret_key
-        {
+        if settings.encryption_key == settings.secret_key {
             return Err(ConfigError::Message(
                 "SECRET_KEY and ENCRYPTION_KEY must be different values. Using the same \
                  value for both collapses crypto separation (CWE-326)."

@@ -209,20 +209,26 @@ async fn main() -> anyhow::Result<()> {
         .layer(from_fn_with_state(state.clone(), crate::middleware::error_sanitizer::error_sanitizer))
         .with_state(state.clone());
 
-    // Global rate limiting keyed by CF extracted IP instead of Peer IP
-    // Apply only in production to avoid hitting limits during development
-    let app = if settings.debug {
-        app
-    } else {
-        // Cloudflare middleware must run before rate limiting to set CF info
-        let app = app.layer(from_fn(crate::middleware::cloudflare::cloudflare_middleware));
+    // Proxy/cloudflare info is extracted unconditionally. It is cheap, it gives
+    // the audit log a verified client address, and routes_verify.rs requires the
+    // CloudflareInfo extension to exist (without it those handlers 500).
+    let app = app.layer(from_fn(crate::middleware::cloudflare::cloudflare_middleware));
+
+    // security_s1 + p0_3: the global rate limiter is governed by its own flag and
+    // is on by default. It used to be gated on `debug`, so enabling debug logging
+    // silently disabled rate limiting. The key is now derived from the verified
+    // TCP peer, so this no longer depends on layer ordering.
+    let app = if settings.rate_limit_enabled {
         let rate_limiter_conf = tower_governor::governor::GovernorConfigBuilder::default()
             .per_second(20)
             .burst_size(40)
-            .key_extractor(crate::middleware::rate_limit::CloudflareKeyExtractor)
+            .key_extractor(crate::middleware::rate_limit::ClientIpKeyExtractor)
             .finish()
             .expect("rate limiter config is valid");
         app.layer(tower_governor::GovernorLayer { config: std::sync::Arc::new(rate_limiter_conf) })
+    } else {
+        info!("Global rate limiting disabled via RATE_LIMIT_ENABLED=false");
+        app
     };
 
 

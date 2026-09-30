@@ -66,48 +66,66 @@ fn cidr_contains_v6(ip: Ipv6Addr, network: &str, bits: u8) -> bool {
     (ip_u & mask) == (net_u & mask)
 }
 
-fn is_cloudflare_peer(peer: IpAddr) -> bool {
+pub fn is_cloudflare_peer(peer: IpAddr) -> bool {
     match peer {
         IpAddr::V4(ip) => CF_IPV4_RANGES.iter().any(|(net, bits)| cidr_contains_v4(ip, net, *bits)),
         IpAddr::V6(ip) => CF_IPV6_RANGES.iter().any(|(net, bits)| cidr_contains_v6(ip, net, *bits)),
     }
 }
 
-/// Helper function to extract real client IP from Cloudflare or standard proxy headers.
-/// Only call this when the peer address is a trusted Cloudflare edge.
-pub fn extract_client_ip(headers: &HeaderMap, peer_ip: Option<IpAddr>) -> String {
-    // 1. Prioritize Cloudflare's direct client IP header
-    if let Some(cf_ip) = headers.get("cf-connecting-ip").and_then(|v| v.to_str().ok()) {
-        let trimmed = cf_ip.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
-        }
-    }
+/// Resolves the real client IP for logging and rate limiting.
+///
+/// Trust is decided **here**, not by the caller, so the function cannot be
+/// misused: forwarding headers are honoured only when the TCP peer is itself a
+/// Cloudflare edge address. Any other peer is reported as-is, and its
+/// `CF-Connecting-IP` / `X-Real-IP` / `X-Forwarded-For` headers are ignored.
+///
+/// security_s1: previously this read the headers unconditionally, so
+/// `rate_limit.rs` (called with `peer_ip: None`) let any client mint a fresh
+/// rate-limit bucket per request and forge its IP in the audit log.
+///
+/// When the peer address is unknown (`None`) we cannot establish trust, so we
+/// return a single shared sentinel rather than an attacker-controlled key.
+///
+/// Note: deployments behind a non-Cloudflare proxy must add that proxy's ranges
+/// to `CF_IPV4_RANGES` / `CF_IPV6_RANGES`, otherwise every client collapses onto
+/// the proxy's address.
+pub fn resolve_client_ip(headers: &HeaderMap, peer_ip: Option<IpAddr>) -> String {
+    let trusted_edge = peer_ip.map(is_cloudflare_peer).unwrap_or(false);
 
-    // 2. Fall back to X-Real-IP
-    if let Some(real_ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
-        let trimmed = real_ip.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
+    if trusted_edge {
+        if let Some(cf_ip) = headers.get("cf-connecting-ip").and_then(|v| v.to_str().ok()) {
+            if !cf_ip.trim().is_empty() {
+                return cf_ip.trim().to_string();
+            }
         }
-    }
-
-    // 3. Fall back to X-Forwarded-For (first IP in chain)
-    if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
-        if let Some(first_ip) = xff.split(',').next() {
-            let trimmed = first_ip.trim();
-            if !trimmed.is_empty() {
-                return trimmed.to_string();
+        if let Some(real_ip) = headers.get("x-real-ip").and_then(|v| v.to_str().ok()) {
+            if !real_ip.trim().is_empty() {
+                return real_ip.trim().to_string();
+            }
+        }
+        if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
+            if let Some(first) = xff.split(',').next() {
+                if !first.trim().is_empty() {
+                    return first.trim().to_string();
+                }
             }
         }
     }
 
-    // 4. Fall back to Socket Peer Address
-    if let Some(ip) = peer_ip {
-        return ip.to_string();
+    match peer_ip {
+        Some(ip) => ip.to_string(),
+        // Unverifiable peer: one shared bucket rather than a forgeable key.
+        None => "unresolved".to_string(),
     }
+}
 
-    "127.0.0.1".to_string()
+/// The TCP peer address of the connection, if the server was built with
+/// `into_make_service_with_connect_info`.
+pub fn peer_ip_of<B>(req: &Request<B>) -> Option<IpAddr> {
+    req.extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ci| ci.0.ip())
 }
 
 /// Middleware that inspects Cloudflare edge headers and attaches `CloudflareInfo` extension to the request.
@@ -127,13 +145,8 @@ pub async fn cloudflare_middleware(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    let peer_ip = req
-        .extensions()
-        .get::<ConnectInfo<SocketAddr>>()
-        .map(|ci| ci.0.ip());
+    let peer_ip = peer_ip_of(&req);
 
-    // HIGH-07: only trust Cloudflare headers if the connection actually came from
-    // a Cloudflare edge. Otherwise fall back to the real peer address.
     let trusted_edge = peer_ip.map(is_cloudflare_peer).unwrap_or(false);
     let is_behind_cf = trusted_edge && (ray_id.is_some() || headers.contains_key("cf-connecting-ip"));
 
@@ -157,11 +170,7 @@ pub async fn cloudflare_middleware(
         peer_ip.map(|_| "https".to_string()).unwrap_or_else(|| "http".to_string())
     };
 
-    let client_ip = if trusted_edge {
-        extract_client_ip(req.headers(), peer_ip)
-    } else {
-        peer_ip.map(|p| p.to_string()).unwrap_or_else(|| "127.0.0.1".to_string())
-    };
+    let client_ip = resolve_client_ip(req.headers(), peer_ip);
 
     let cf_info = CloudflareInfo {
         client_ip,
