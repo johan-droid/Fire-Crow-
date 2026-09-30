@@ -17,7 +17,10 @@ pub struct AuthenticatedUser {
 #[axum::async_trait]
 impl axum::extract::FromRequestParts<Arc<crate::AppState>> for AuthenticatedUser {
     type Rejection = AppError;
-    async fn from_request_parts(parts: &mut Parts, state: &Arc<crate::AppState>) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &Arc<crate::AppState>,
+    ) -> Result<Self, Self::Rejection> {
         let token_opt = parts
             .headers
             .get(axum::http::header::AUTHORIZATION)
@@ -63,8 +66,9 @@ impl axum::extract::FromRequestParts<Arc<crate::AppState>> for AuthenticatedUser
                 None
             });
 
-        let token = token_opt.ok_or_else(|| AppError::Unauthorized("Missing authentication token".into()))?;
-        
+        let token = token_opt
+            .ok_or_else(|| AppError::Unauthorized("Missing authentication token".into()))?;
+
         let claims = validate_token_with_anti_replay(
             &token,
             &state.settings().secret_key,
@@ -120,7 +124,10 @@ const ADMIN_PERMISSIONS: &[&str] = &[
 #[axum::async_trait]
 impl axum::extract::FromRequestParts<Arc<crate::AppState>> for AdminUser {
     type Rejection = AppError;
-    async fn from_request_parts(parts: &mut Parts, state: &Arc<crate::AppState>) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &Arc<crate::AppState>,
+    ) -> Result<Self, Self::Rejection> {
         let user = AuthenticatedUser::from_request_parts(parts, state).await?;
 
         let is_admin: bool = sqlx::query_scalar(
@@ -138,9 +145,10 @@ impl axum::extract::FromRequestParts<Arc<crate::AppState>> for AdminUser {
         .map_err(AppError::Database)?;
 
         if !is_admin {
-            return Err(AppError::Forbidden("Administrator privileges required".into()));
+            return Err(AppError::Forbidden(
+                "Administrator privileges required".into(),
+            ));
         }
         Ok(AdminUser(user))
     }
 }
-

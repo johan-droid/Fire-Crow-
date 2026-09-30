@@ -1,6 +1,10 @@
-use axum::{Json, Router, extract::State, routing::{get, post}};
-use std::sync::Arc;
 use crate::error::Result;
+use axum::{
+    extract::State,
+    routing::{get, post},
+    Json, Router,
+};
+use std::sync::Arc;
 
 pub fn router() -> Router<Arc<crate::AppState>> {
     Router::new()
@@ -13,14 +17,31 @@ pub async fn get_vapid_public_key(_state: State<Arc<crate::AppState>>) -> Json<s
     Json(serde_json::json!({"public_key": ""}))
 }
 
-pub async fn subscribe_user(State(state): State<Arc<crate::AppState>>, user: crate::middleware::auth::AuthenticatedUser, Json(payload): Json<serde_json::Value>) -> Result<Json<serde_json::Value>> {
-    let endpoint = payload.get("endpoint").and_then(|v| v.as_str()).unwrap_or("");
+pub async fn subscribe_user(
+    State(state): State<Arc<crate::AppState>>,
+    user: crate::middleware::auth::AuthenticatedUser,
+    Json(payload): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>> {
+    let endpoint = payload
+        .get("endpoint")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let p256dh = payload.get("p256dh").and_then(|v| v.as_str()).unwrap_or("");
     let auth = payload.get("auth").and_then(|v| v.as_str()).unwrap_or("");
-    crate::services::push_notify::PushService::subscribe(state.pool(), &user.user_id, endpoint, p256dh, auth).await?;
+    crate::services::push_notify::PushService::subscribe(
+        state.pool(),
+        &user.user_id,
+        endpoint,
+        p256dh,
+        auth,
+    )
+    .await?;
     Ok(Json(serde_json::json!({"status": "subscribed"})))
 }
 
-pub async fn unsubscribe_user(_state: State<Arc<crate::AppState>>, _user: crate::middleware::auth::AuthenticatedUser) -> Json<serde_json::Value> {
+pub async fn unsubscribe_user(
+    _state: State<Arc<crate::AppState>>,
+    _user: crate::middleware::auth::AuthenticatedUser,
+) -> Json<serde_json::Value> {
     Json(serde_json::json!({"status": "unsubscribed"}))
 }

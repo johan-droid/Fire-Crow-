@@ -188,54 +188,150 @@ pub struct Settings {
     pub terms_version: String,
 }
 
-fn default_port() -> u16 { 8000 }
-fn default_host() -> String { "0.0.0.0".into() }
-fn default_pool_size() -> u32 { 10 }
-fn default_pool_timeout() -> u32 { 30 }
-fn default_pool_recycle() -> u32 { 3600 }
-fn default_true() -> bool { true }
-fn default_rate_limit() -> String { "100/hour".into() }
-fn default_backend_base_url() -> String { "http://localhost:8000".into() }
-fn default_login_failure_window() -> i64 { 10 }
-fn default_login_failure_limit() -> i32 { 5 }
-fn default_jwt_expire() -> i64 { 60 * 24 }
-fn default_auth_cookie_name() -> String { "fc_access_token".into() }
-fn default_samesite_strict() -> String { "strict".into() }
-fn default_mfa_enforce() -> bool { true }
-fn default_mfa_issuer() -> String { "Fire Crow".into() }
-fn default_mfa_max_attempts() -> i32 { 5 }
-fn default_mfa_recovery_codes() -> i32 { 8 }
-fn default_sso_scopes() -> String { "openid email profile".into() }
-fn default_smtp_port() -> u16 { 587 }
-fn default_gemini_fallback() -> String { "gemini-1.5-pro".into() }
-fn default_gemini_max_attempts() -> i32 { 3 }
-fn default_gemini_timeout() -> i64 { 30 }
-fn default_gemini_max_findings() -> i32 { 50 }
-fn default_gemini_max_prompt_chars() -> i32 { 100_000 }
-fn default_gemini_daily_limit() -> i32 { 1000 }
-fn default_gemini_min_seconds() -> i64 { 1 }
-fn default_max_active_jobs() -> i32 { 2 }
-fn default_broker_timeout() -> f64 { 0.5 }
-fn default_sse_poll_interval() -> f64 { 0.5 }
-fn default_sse_heartbeat() -> f64 { 15.0 }
-fn default_report_ttl() -> i64 { 900 }
-fn default_max_scan_duration() -> i32 { 1800 }
-fn default_budget_usd() -> f64 { 1.0 }
-fn default_scanner_timeout() -> i32 { 300 }
-fn default_scanner_output_max() -> i32 { 20000 }
-fn default_api_discovery_limit() -> i32 { 30 }
-fn default_housekeeping_interval() -> i64 { 3600 }
-fn default_max_request_body() -> i64 { 10 * 1024 * 1024 }
-fn default_max_json_body() -> i64 { 2 * 1024 * 1024 }
-fn default_report_max_pages() -> i32 { 30 }
-fn default_report_max_findings() -> i32 { 50 }
-fn default_report_max_evidence() -> i32 { 1200 }
-fn default_report_max_remediation() -> i32 { 1200 }
-fn default_scoring_critical() -> f64 { 9.8 }
-fn default_scoring_high() -> f64 { 8.5 }
-fn default_scoring_medium() -> f64 { 5.5 }
-fn default_scoring_low() -> f64 { 2.5 }
-fn default_scoring_info() -> f64 { 0.0 }
+fn default_port() -> u16 {
+    8000
+}
+fn default_host() -> String {
+    "0.0.0.0".into()
+}
+fn default_pool_size() -> u32 {
+    10
+}
+fn default_pool_timeout() -> u32 {
+    30
+}
+fn default_pool_recycle() -> u32 {
+    3600
+}
+fn default_true() -> bool {
+    true
+}
+fn default_rate_limit() -> String {
+    "100/hour".into()
+}
+fn default_backend_base_url() -> String {
+    "http://localhost:8000".into()
+}
+fn default_login_failure_window() -> i64 {
+    10
+}
+fn default_login_failure_limit() -> i32 {
+    5
+}
+fn default_jwt_expire() -> i64 {
+    60 * 24
+}
+fn default_auth_cookie_name() -> String {
+    "fc_access_token".into()
+}
+fn default_samesite_strict() -> String {
+    "strict".into()
+}
+fn default_mfa_enforce() -> bool {
+    true
+}
+fn default_mfa_issuer() -> String {
+    "Fire Crow".into()
+}
+fn default_mfa_max_attempts() -> i32 {
+    5
+}
+fn default_mfa_recovery_codes() -> i32 {
+    8
+}
+fn default_sso_scopes() -> String {
+    "openid email profile".into()
+}
+fn default_smtp_port() -> u16 {
+    587
+}
+fn default_gemini_fallback() -> String {
+    "gemini-1.5-pro".into()
+}
+fn default_gemini_max_attempts() -> i32 {
+    3
+}
+fn default_gemini_timeout() -> i64 {
+    30
+}
+fn default_gemini_max_findings() -> i32 {
+    50
+}
+fn default_gemini_max_prompt_chars() -> i32 {
+    100_000
+}
+fn default_gemini_daily_limit() -> i32 {
+    1000
+}
+fn default_gemini_min_seconds() -> i64 {
+    1
+}
+fn default_max_active_jobs() -> i32 {
+    2
+}
+fn default_broker_timeout() -> f64 {
+    0.5
+}
+fn default_sse_poll_interval() -> f64 {
+    0.5
+}
+fn default_sse_heartbeat() -> f64 {
+    15.0
+}
+fn default_report_ttl() -> i64 {
+    900
+}
+fn default_max_scan_duration() -> i32 {
+    1800
+}
+fn default_budget_usd() -> f64 {
+    1.0
+}
+fn default_scanner_timeout() -> i32 {
+    300
+}
+fn default_scanner_output_max() -> i32 {
+    20000
+}
+fn default_api_discovery_limit() -> i32 {
+    30
+}
+fn default_housekeeping_interval() -> i64 {
+    3600
+}
+fn default_max_request_body() -> i64 {
+    10 * 1024 * 1024
+}
+fn default_max_json_body() -> i64 {
+    2 * 1024 * 1024
+}
+fn default_report_max_pages() -> i32 {
+    30
+}
+fn default_report_max_findings() -> i32 {
+    50
+}
+fn default_report_max_evidence() -> i32 {
+    1200
+}
+fn default_report_max_remediation() -> i32 {
+    1200
+}
+fn default_scoring_critical() -> f64 {
+    9.8
+}
+fn default_scoring_high() -> f64 {
+    8.5
+}
+fn default_scoring_medium() -> f64 {
+    5.5
+}
+fn default_scoring_low() -> f64 {
+    2.5
+}
+fn default_scoring_info() -> f64 {
+    0.0
+}
 
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
@@ -261,7 +357,10 @@ impl Settings {
     fn validate(settings: &mut Self) -> Result<(), ConfigError> {
         let insecure_dev_values = [
             "dev_secret_key_change_in_production_1234567890",
-            "change_me", "changeme", "secret", "development",
+            "change_me",
+            "changeme",
+            "secret",
+            "development",
             "local_dev_secret_key_change_me_1234567890",
             "local_dev_encryption_key_change_me_1234567890",
             // Was substituted as a development fallback before security_p0_3.
@@ -276,27 +375,35 @@ impl Settings {
         // startup failure rather than a silently substituted constant.
         if settings.secret_key.trim().is_empty() {
             return Err(ConfigError::Message(
-                "SECRET_KEY is required. Generate one with: openssl rand -base64 48".into()));
+                "SECRET_KEY is required. Generate one with: openssl rand -base64 48".into(),
+            ));
         }
         if insecure_dev_values.contains(&settings.secret_key.as_str()) {
             return Err(ConfigError::Message(
                 "SECRET_KEY is set to a known development or previously-committed value. \
-                 Treat it as compromised and rotate it.".into()));
+                 Treat it as compromised and rotate it."
+                    .into(),
+            ));
         }
         if settings.secret_key.len() < 32 {
-            return Err(ConfigError::Message("SECRET_KEY must be at least 32 characters.".into()));
+            return Err(ConfigError::Message(
+                "SECRET_KEY must be at least 32 characters.".into(),
+            ));
         }
 
         if settings.encryption_key.trim().is_empty() {
             return Err(ConfigError::Message(
-                "ENCRYPTION_KEY is required. Generate one with: openssl rand -base64 48".into()));
+                "ENCRYPTION_KEY is required. Generate one with: openssl rand -base64 48".into(),
+            ));
         }
         if insecure_dev_values.contains(&settings.encryption_key.as_str())
             || settings.encryption_key.len() < 32
         {
             return Err(ConfigError::Message(
                 "ENCRYPTION_KEY must be at least 32 characters and not a known development \
-                 or previously-committed value.".into()));
+                 or previously-committed value."
+                    .into(),
+            ));
         }
 
         // CRIT-02: SECRET_KEY and ENCRYPTION_KEY must never be identical.
@@ -340,7 +447,12 @@ impl Settings {
 
 pub fn ensure_workspace_dirs(_settings: &Settings) -> std::io::Result<()> {
     let base = std::path::PathBuf::from(WORKSPACE_DIR);
-    for dir in ["workspace/reports", "workspace/temp", "workspace/storage", "workspace/scans"] {
+    for dir in [
+        "workspace/reports",
+        "workspace/temp",
+        "workspace/storage",
+        "workspace/scans",
+    ] {
         std::fs::create_dir_all(base.join(dir))?;
     }
     Ok(())
@@ -358,7 +470,11 @@ where
     }
     match Option::<VecOrString>::deserialize(deserializer)? {
         Some(VecOrString::Vec(v)) => Ok(v),
-        Some(VecOrString::String(s)) => Ok(s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()),
+        Some(VecOrString::String(s)) => Ok(s
+            .split(',')
+            .map(|x| x.trim().to_string())
+            .filter(|x| !x.is_empty())
+            .collect()),
         None => Ok(Vec::new()),
     }
 }

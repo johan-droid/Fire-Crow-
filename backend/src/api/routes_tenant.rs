@@ -1,9 +1,13 @@
-use axum::{Json, Router, extract::{Path, State}, routing::{get, post}};
-use std::sync::Arc;
 use crate::error::{AppError, Result};
 use crate::models::{CreatePaymentRequest, PaymentRecord, Tenant};
 use crate::services::payment_service::PaymentService;
 use crate::services::tenant_service::{TenantService, TenantUpdate};
+use axum::{
+    extract::{Path, State},
+    routing::{get, post},
+    Json, Router,
+};
+use std::sync::Arc;
 
 pub fn router() -> Router<Arc<crate::AppState>> {
     Router::new()
@@ -62,14 +66,38 @@ pub async fn update_tenant(
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<Tenant>> {
     let updates = TenantUpdate {
-        name: payload.get("name").and_then(|v| v.as_str()).map(String::from),
-        domain: payload.get("domain").and_then(|v| v.as_str()).map(String::from),
-        plan: payload.get("plan").and_then(|v| v.as_str()).map(String::from),
-        usecase: payload.get("usecase").and_then(|v| v.as_str()).map(String::from),
-        industry_type: payload.get("industry_type").and_then(|v| v.as_str()).map(String::from),
-        billing_email: payload.get("billing_email").and_then(|v| v.as_str()).map(String::from),
-        max_users: payload.get("max_users").and_then(|v| v.as_i64()).map(|v| v as i32),
-        max_storage_gb: payload.get("max_storage_gb").and_then(|v| v.as_i64()).map(|v| v as i32),
+        name: payload
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        domain: payload
+            .get("domain")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        plan: payload
+            .get("plan")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        usecase: payload
+            .get("usecase")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        industry_type: payload
+            .get("industry_type")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        billing_email: payload
+            .get("billing_email")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        max_users: payload
+            .get("max_users")
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32),
+        max_storage_gb: payload
+            .get("max_storage_gb")
+            .and_then(|v| v.as_i64())
+            .map(|v| v as i32),
     };
 
     TenantService::update(state.pool(), &id, &updates)

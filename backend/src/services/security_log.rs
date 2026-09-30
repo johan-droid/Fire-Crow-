@@ -4,8 +4,12 @@ use chrono::Utc;
 use sha2::Digest;
 
 pub async fn record_security_event(
-    pool: &sqlx::PgPool, user_id: Option<&str>, tenant_id: Option<&str>,
-    action: &str, details: Option<&str>, ip_hash: Option<&str>,
+    pool: &sqlx::PgPool,
+    user_id: Option<&str>,
+    tenant_id: Option<&str>,
+    action: &str,
+    details: Option<&str>,
+    ip_hash: Option<&str>,
 ) -> Result<()> {
     let id = uuid::Uuid::new_v4().to_string();
     let details_json = details.map(|d| redact_text(d, 2048));
@@ -16,7 +20,10 @@ pub async fn record_security_event(
 }
 
 pub async fn record_user_activity(
-    pool: &sqlx::PgPool, user_id: &str, action: &str, details: Option<&str>,
+    pool: &sqlx::PgPool,
+    user_id: &str,
+    action: &str,
+    details: Option<&str>,
 ) -> Result<()> {
     let id = uuid::Uuid::new_v4().to_string();
     sqlx::query("INSERT INTO user_activity_events (id, user_id, action, details_json, created_at) VALUES ($1, $2, $3, $4, $5)")
@@ -25,5 +32,9 @@ pub async fn record_user_activity(
     Ok(())
 }
 
-pub fn hash_ip(ip: &str) -> String { format!("{:x}", sha2::Sha256::digest(ip.as_bytes())) }
-pub fn hash_user_agent(ua: &str) -> String { format!("{:x}", sha2::Sha256::digest(ua.as_bytes())) }
+pub fn hash_ip(ip: &str) -> String {
+    format!("{:x}", sha2::Sha256::digest(ip.as_bytes()))
+}
+pub fn hash_user_agent(ua: &str) -> String {
+    format!("{:x}", sha2::Sha256::digest(ua.as_bytes()))
+}

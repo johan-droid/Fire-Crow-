@@ -1,14 +1,18 @@
-use axum::{Json, Router, extract::{Path, State}, routing::{get, post}};
-use axum::http::HeaderMap;
-use axum::body::Bytes;
-use std::sync::Arc;
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
-use subtle::ConstantTimeEq;
 use crate::error::{AppError, Result};
 use crate::services::dodo_payment_service::{
     DodoCheckoutSessionRequest, DodoCheckoutSessionResponse, DodoPaymentService, DodoWebhookEvent,
 };
+use axum::body::Bytes;
+use axum::http::HeaderMap;
+use axum::{
+    extract::{Path, State},
+    routing::{get, post},
+    Json, Router,
+};
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
+use std::sync::Arc;
+use subtle::ConstantTimeEq;
 
 pub fn router() -> Router<Arc<crate::AppState>> {
     Router::new()
@@ -24,7 +28,9 @@ pub async fn create_checkout(
 ) -> Result<Json<DodoCheckoutSessionResponse>> {
     // P0-2: The audit engine is currently a stub, returning canned results.
     // Billing is disabled until a real analysis engine is implemented.
-    return Err(AppError::Unavailable("Service temporarily unavailable while audit engine is being upgraded.".into()));
+    return Err(AppError::Unavailable(
+        "Service temporarily unavailable while audit engine is being upgraded.".into(),
+    ));
 }
 
 pub async fn handle_webhook(
@@ -43,16 +49,24 @@ pub async fn handle_webhook(
         return Err(AppError::Internal("Webhook secret not configured".into()));
     }
 
-    let mut mac = HmacSha256::new_from_slice(secret).map_err(|_| AppError::Internal("Invalid HMAC key".into()))?;
+    let mut mac = HmacSha256::new_from_slice(secret)
+        .map_err(|_| AppError::Internal("Invalid HMAC key".into()))?;
     mac.update(&body);
     let expected_sig = hex::encode(mac.finalize().into_bytes());
 
-    if expected_sig.as_bytes().ct_eq(signature.as_bytes()).unwrap_u8() == 0 {
+    if expected_sig
+        .as_bytes()
+        .ct_eq(signature.as_bytes())
+        .unwrap_u8()
+        == 0
+    {
         return Err(AppError::Unauthorized("Invalid signature".into()));
     }
 
-    let payload: DodoWebhookEvent = serde_json::from_slice(&body).map_err(|_| AppError::BadRequest("Invalid payload".into()))?;
-    let record = DodoPaymentService::process_webhook(state.pool(), &state.settings, payload).await?;
+    let payload: DodoWebhookEvent = serde_json::from_slice(&body)
+        .map_err(|_| AppError::BadRequest("Invalid payload".into()))?;
+    let record =
+        DodoPaymentService::process_webhook(state.pool(), &state.settings, payload).await?;
     Ok(Json(serde_json::json!({
         "status": "success",
         "payment_id": record.id,
@@ -67,7 +81,7 @@ pub async fn verify_payment(
     user: crate::middleware::auth::AuthenticatedUser,
 ) -> Result<Json<serde_json::Value>> {
     let record = sqlx::query_as::<_, crate::models::PaymentRecord>(
-        "SELECT * FROM payment_records WHERE id = $1 AND user_id = $2"
+        "SELECT * FROM payment_records WHERE id = $1 AND user_id = $2",
     )
     .bind(&payment_id)
     .bind(&user.user_id)

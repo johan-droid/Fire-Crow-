@@ -23,19 +23,32 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 impl CsrfStore {
-    pub fn new() -> Self { Self { tokens: Arc::new(RwLock::new(Vec::new())) } }
+    pub fn new() -> Self {
+        Self {
+            tokens: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
     pub async fn generate_token(&self) -> String {
-        let token: String = rand::thread_rng().sample_iter(&rand::distributions::Alphanumeric).take(32).map(char::from).collect();
+        let token: String = rand::thread_rng()
+            .sample_iter(&rand::distributions::Alphanumeric)
+            .take(32)
+            .map(char::from)
+            .collect();
         let mut tokens = self.tokens.write().await;
         tokens.push(token.clone());
         let len = tokens.len();
-        if len > 1000 { tokens.drain(0..len - 1000); }
+        if len > 1000 {
+            tokens.drain(0..len - 1000);
+        }
         token
     }
     pub async fn validate(&self, token: &str) -> bool {
         let token_clone = token.to_string();
         let mut tokens = self.tokens.write().await;
-        if let Some(pos) = tokens.iter().position(|t| constant_time_eq(t.as_bytes(), token.as_bytes())) {
+        if let Some(pos) = tokens
+            .iter()
+            .position(|t| constant_time_eq(t.as_bytes(), token.as_bytes()))
+        {
             tokens.remove(pos);
             true
         } else {
@@ -44,7 +57,14 @@ impl CsrfStore {
     }
     pub fn set_cookie_header(&self, token: &str, secure: bool) -> String {
         let secure_flag = if secure { "Secure; " } else { "" };
-        format!("{}={}; Path=/; HttpOnly=true; {}SameSite=Strict; Max-Age=3600", CSRF_COOKIE_NAME, token, secure_flag)
+        format!(
+            "{}={}; Path=/; HttpOnly=true; {}SameSite=Strict; Max-Age=3600",
+            CSRF_COOKIE_NAME, token, secure_flag
+        )
     }
 }
-impl Default for CsrfStore { fn default() -> Self { Self::new() } }
+impl Default for CsrfStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}

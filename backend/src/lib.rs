@@ -2,19 +2,19 @@
 //! Fire Crow Backend — Agentic Security Intelligence Platform
 //! Complete Rust rewrite of the Python FastAPI backend.
 
+pub mod agents;
+pub mod api;
 pub mod config;
 pub mod error;
-pub mod models;
-pub mod schemas;
-pub mod middleware;
-pub mod services;
-pub mod agents;
-pub mod orchestrator;
-pub mod workers;
-pub mod utils;
 pub mod graph;
+pub mod middleware;
+pub mod models;
+pub mod orchestrator;
+pub mod schemas;
+pub mod services;
 pub mod state;
-pub mod api;
+pub mod utils;
+pub mod workers;
 
 pub use config::Settings;
 pub use error::{AppError, Result};

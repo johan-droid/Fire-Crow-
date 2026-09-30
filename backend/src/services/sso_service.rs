@@ -13,8 +13,11 @@ impl SsoService {
     /// but `AuthenticatedUser`, while the write path was correctly
     /// `AdminUser`-gated.
     pub async fn list_providers(pool: &sqlx::PgPool) -> Result<Vec<SsoProvider>> {
-        let providers = sqlx::query_as::<_, SsoProvider>("SELECT * FROM sso_providers ORDER BY name")
-            .fetch_all(pool).await.map_err(AppError::Database)?;
+        let providers =
+            sqlx::query_as::<_, SsoProvider>("SELECT * FROM sso_providers ORDER BY name")
+                .fetch_all(pool)
+                .await
+                .map_err(AppError::Database)?;
         Ok(providers
             .into_iter()
             .map(|mut p| {
@@ -25,7 +28,11 @@ impl SsoService {
             .collect())
     }
 
-    pub async fn create_provider(pool: &sqlx::PgPool, crypto: &Arc<CryptoManager>, mut provider: SsoProvider) -> Result<SsoProvider> {
+    pub async fn create_provider(
+        pool: &sqlx::PgPool,
+        crypto: &Arc<CryptoManager>,
+        mut provider: SsoProvider,
+    ) -> Result<SsoProvider> {
         if let Some(secret) = &provider.client_secret {
             if !secret.is_empty() && !secret.starts_with("ENC[") {
                 provider.client_secret = Some(crypto.encrypt_secret(secret)?);
@@ -42,10 +49,16 @@ impl SsoService {
     }
 
     /// Read path. Never decrypts. security_p0_4.
-    pub async fn get_provider(pool: &sqlx::PgPool, provider_id: &str) -> Result<Option<SsoProvider>> {
-        let provider = sqlx::query_as::<_, SsoProvider>("SELECT * FROM sso_providers WHERE id = $1")
-            .bind(provider_id)
-            .fetch_optional(pool).await.map_err(AppError::Database)?;
+    pub async fn get_provider(
+        pool: &sqlx::PgPool,
+        provider_id: &str,
+    ) -> Result<Option<SsoProvider>> {
+        let provider =
+            sqlx::query_as::<_, SsoProvider>("SELECT * FROM sso_providers WHERE id = $1")
+                .bind(provider_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(AppError::Database)?;
         Ok(provider.map(|mut p| {
             p.client_secret_set = Some(p.client_secret.is_some());
             p.client_secret = None;
@@ -53,7 +66,12 @@ impl SsoService {
         }))
     }
 
-    pub async fn update_provider(pool: &sqlx::PgPool, crypto: &Arc<CryptoManager>, provider_id: &str, updates: &SsoProviderUpdate) -> Result<Option<SsoProvider>> {
+    pub async fn update_provider(
+        pool: &sqlx::PgPool,
+        crypto: &Arc<CryptoManager>,
+        provider_id: &str,
+        updates: &SsoProviderUpdate,
+    ) -> Result<Option<SsoProvider>> {
         let mut secret_to_store = updates.client_secret.clone();
         if let Some(secret) = &secret_to_store {
             if !secret.is_empty() && !secret.starts_with("ENC[") {
@@ -79,7 +97,9 @@ impl SsoService {
     pub async fn delete_provider(pool: &sqlx::PgPool, provider_id: &str) -> Result<bool> {
         let result = sqlx::query("DELETE FROM sso_providers WHERE id = $1")
             .bind(provider_id)
-            .execute(pool).await.map_err(AppError::Database)?;
+            .execute(pool)
+            .await
+            .map_err(AppError::Database)?;
         Ok(result.rows_affected() > 0)
     }
 }

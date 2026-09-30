@@ -9,26 +9,43 @@ use crate::utils::generate_uuid;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 
-
 pub async fn execute_audit_job(
-    pool: &PgPool, job_id: &str, user_id: &str, repo_url: &str, repo_branch: &str,
-    custom_email: Option<&str>, _unused_graph: Option<()>,
+    pool: &PgPool,
+    job_id: &str,
+    user_id: &str,
+    repo_url: &str,
+    repo_branch: &str,
+    custom_email: Option<&str>,
+    _unused_graph: Option<()>,
 ) -> Result<AuditState> {
     let mut state = AuditState {
-        job_id: job_id.into(), user_id: user_id.into(), repo_url: repo_url.into(), repo_branch: repo_branch.into(),
-        custom_email: custom_email.unwrap_or("").into(), created_at: Utc::now(),
-        status: crate::models::JobStatus::Running, current_phase: "intake".into(), ..Default::default()
+        job_id: job_id.into(),
+        user_id: user_id.into(),
+        repo_url: repo_url.into(),
+        repo_branch: repo_branch.into(),
+        custom_email: custom_email.unwrap_or("").into(),
+        created_at: Utc::now(),
+        status: crate::models::JobStatus::Running,
+        current_phase: "intake".into(),
+        ..Default::default()
     };
 
     // Ensure job is marked as running in database (idempotent safety).
     // Never resurrect a job that already reached a terminal state.
-    let _ = sqlx::query("UPDATE audit_jobs SET status=$1 WHERE id=$2 AND status IN ('queued', 'running')")
-        .bind(crate::models::JobStatus::Running)
-        .bind(job_id)
-        .execute(pool)
-        .await;
+    let _ = sqlx::query(
+        "UPDATE audit_jobs SET status=$1 WHERE id=$2 AND status IN ('queued', 'running')",
+    )
+    .bind(crate::models::JobStatus::Running)
+    .bind(job_id)
+    .execute(pool)
+    .await;
 
-    tracing::info!("[orchestrator] Starting job {} for repo {} at {}", job_id, repo_url, Utc::now().to_rfc3339());
+    tracing::info!(
+        "[orchestrator] Starting job {} for repo {} at {}",
+        job_id,
+        repo_url,
+        Utc::now().to_rfc3339()
+    );
 
     // State machine outcome tracking. Failure and cancellation are distinct
     // terminal outcomes — never conflate them.
@@ -47,10 +64,21 @@ pub async fn execute_audit_job(
                     log_phase_started(pool, job_id, $phase).await?;
                     let result = $body.await;
                     match result {
-                        Ok(_) => log_phase_completed(pool, job_id, $phase, "completed", started, None).await?,
+                        Ok(_) => {
+                            log_phase_completed(pool, job_id, $phase, "completed", started, None)
+                                .await?
+                        }
                         Err(e) => {
                             let msg = e.to_string();
-                            log_phase_completed(pool, job_id, $phase, "failed", started, Some(msg.clone())).await?;
+                            log_phase_completed(
+                                pool,
+                                job_id,
+                                $phase,
+                                "failed",
+                                started,
+                                Some(msg.clone()),
+                            )
+                            .await?;
                             record_error(&mut state, $phase, &msg);
                             failure = Some(($phase.to_string(), msg));
                         }
@@ -81,17 +109,30 @@ pub async fn execute_audit_job(
             let started = Utc::now();
             state.current_phase = "ai_analysis".into();
             log_phase_started(pool, job_id, "ai_analysis").await?;
-            state.scored_findings = [state.static_findings.clone(), state.dynamic_findings.clone()].concat();
+            state.scored_findings = [
+                state.static_findings.clone(),
+                state.dynamic_findings.clone(),
+            ]
+            .concat();
 
             let ai_result = match run_ai_analyzer(&mut state).await {
                 Err(e) => Err(("ai_analysis".to_string(), e.to_string())),
-                Ok(_) => cross_validate_findings(&mut state).await
+                Ok(_) => cross_validate_findings(&mut state)
+                    .await
                     .map_err(|e| ("cross_validation".to_string(), e.to_string())),
             };
 
             match ai_result {
                 Err((phase, msg)) => {
-                    log_phase_completed(pool, job_id, "ai_analysis", "failed", started, Some(msg.clone())).await?;
+                    log_phase_completed(
+                        pool,
+                        job_id,
+                        "ai_analysis",
+                        "failed",
+                        started,
+                        Some(msg.clone()),
+                    )
+                    .await?;
                     record_error(&mut state, &phase, &msg);
                     failure = Some((phase, msg));
                 }
@@ -124,7 +165,8 @@ pub async fn execute_audit_job(
                         .execute(pool)
                         .await;
                     }
-                    log_phase_completed(pool, job_id, "ai_analysis", "completed", started, None).await?;
+                    log_phase_completed(pool, job_id, "ai_analysis", "completed", started, None)
+                        .await?;
                 }
             }
         }
@@ -132,13 +174,16 @@ pub async fn execute_audit_job(
 
     // Phase 4: Remediation
     run_phase!("remediation", async {
-        state.remediation_tasks = crate::services::remediation_planner::remediation_planner_body(&state.validated_findings);
+        state.remediation_tasks = crate::services::remediation_planner::remediation_planner_body(
+            &state.validated_findings,
+        );
         Ok::<(), AppError>(())
     });
 
     // Phase 5: Attack Graph
     run_phase!("attack_graph", async {
-        let attack_graph_val = crate::services::attack_graph::attack_graph_body(&state.validated_findings);
+        let attack_graph_val =
+            crate::services::attack_graph::attack_graph_body(&state.validated_findings);
         if let (Some(nodes), Some(edges)) = (
             attack_graph_val.get("nodes").and_then(|v| v.as_array()),
             attack_graph_val.get("edges").and_then(|v| v.as_array()),
@@ -183,9 +228,20 @@ pub async fn execute_audit_job(
             }.await;
 
             match report_result {
-                Ok(_) => log_phase_completed(pool, job_id, "reporting", "completed", started, None).await?,
+                Ok(_) => {
+                    log_phase_completed(pool, job_id, "reporting", "completed", started, None)
+                        .await?
+                }
                 Err(msg) => {
-                    log_phase_completed(pool, job_id, "reporting", "failed", started, Some(msg.clone())).await?;
+                    log_phase_completed(
+                        pool,
+                        job_id,
+                        "reporting",
+                        "failed",
+                        started,
+                        Some(msg.clone()),
+                    )
+                    .await?;
                     record_error(&mut state, "reporting", &msg);
                     failure = Some(("reporting".to_string(), msg));
                 }
@@ -215,7 +271,12 @@ pub async fn execute_audit_job(
     match final_status {
         crate::models::JobStatus::Failed => {
             let (phase, msg) = failure.as_ref().expect("failure set for Failed status");
-            tracing::error!("[orchestrator] Job {} failed during {}: {}", job_id, phase, msg);
+            tracing::error!(
+                "[orchestrator] Job {} failed during {}: {}",
+                job_id,
+                phase,
+                msg
+            );
             state.status = crate::models::JobStatus::Failed;
             state.current_phase = format!("failed:{}", phase);
             sqlx::query("UPDATE audit_jobs SET status=$1, finished_at=$2, error_message=$3 WHERE id=$4 AND status IN ('queued','running')")
@@ -254,7 +315,12 @@ pub async fn execute_audit_job(
         }
     }
 
-    tracing::info!("[orchestrator] Job {} finalized with status {:?} and score {:?}", job_id, state.status, state.security_score);
+    tracing::info!(
+        "[orchestrator] Job {} finalized with status {:?} and score {:?}",
+        job_id,
+        state.status,
+        state.security_score
+    );
     Ok(state)
 }
 
@@ -269,7 +335,11 @@ async fn is_cancelled(pool: &PgPool, job_id: &str) -> Result<bool> {
 
 fn compute_security_score(state: &mut AuditState) {
     let all = &state.validated_findings;
-    if all.is_empty() { state.security_score = Some(10.0); state.risk_summary = serde_json::json!({"score": 10.0, "risk_level": "low"}); return; }
+    if all.is_empty() {
+        state.security_score = Some(10.0);
+        state.risk_summary = serde_json::json!({"score": 10.0, "risk_level": "low"});
+        return;
+    }
     let mut score: f64 = 10.0;
     for f in all {
         score -= match f.severity {
@@ -282,14 +352,29 @@ fn compute_security_score(state: &mut AuditState) {
     }
     score = score.max(0.0).min(10.0);
     state.security_score = Some((score * 10.0).round() / 10.0);
-    let risk_level = if score >= 8.0 { "low" } else if score >= 5.0 { "medium" } else if score >= 3.0 { "high" } else { "critical" };
+    let risk_level = if score >= 8.0 {
+        "low"
+    } else if score >= 5.0 {
+        "medium"
+    } else if score >= 3.0 {
+        "high"
+    } else {
+        "critical"
+    };
     state.risk_summary = serde_json::json!({"score": state.security_score, "risk_level": risk_level, "total_findings": all.len()});
 }
 
 fn extract_repo_owner(url: &str) -> String {
     let cleaned = url.trim_end_matches('/').trim_end_matches(".git");
     if cleaned.contains("git@") {
-        cleaned.split(':').last().unwrap_or("").split('/').next().unwrap_or("").into()
+        cleaned
+            .split(':')
+            .last()
+            .unwrap_or("")
+            .split('/')
+            .next()
+            .unwrap_or("")
+            .into()
     } else {
         cleaned.split('/').nth_back(1).unwrap_or("").into()
     }
@@ -300,10 +385,17 @@ fn extract_repo_name(url: &str) -> String {
     cleaned.split('/').next_back().unwrap_or("repo").into()
 }
 fn record_error(state: &mut AuditState, phase: &str, error: &str) {
-    state.errors.push(serde_json::json!({"phase": phase, "error": error, "timestamp": Utc::now().to_rfc3339()}));
+    state.errors.push(
+        serde_json::json!({"phase": phase, "error": error, "timestamp": Utc::now().to_rfc3339()}),
+    );
 }
 async fn get_job(pool: &PgPool, job_id: &str) -> Result<AuditJob> {
-    sqlx::query_as::<_, AuditJob>("SELECT * FROM audit_jobs WHERE id=$1").bind(job_id).fetch_optional(pool).await.map_err(AppError::Database)?.ok_or_else(|| AppError::NotFound("Job not found".into()))
+    sqlx::query_as::<_, AuditJob>("SELECT * FROM audit_jobs WHERE id=$1")
+        .bind(job_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or_else(|| AppError::NotFound("Job not found".into()))
 }
 async fn log_phase_started(pool: &PgPool, job_id: &str, phase: &str) -> Result<()> {
     let id = generate_uuid();
@@ -311,7 +403,14 @@ async fn log_phase_started(pool: &PgPool, job_id: &str, phase: &str) -> Result<(
         .bind(id).bind(job_id).bind(phase).bind(Utc::now().naive_utc()).execute(pool).await;
     Ok(())
 }
-async fn log_phase_completed(pool: &PgPool, job_id: &str, phase: &str, status: &str, started_at: DateTime<Utc>, error_message: Option<String>) -> Result<()> {
+async fn log_phase_completed(
+    pool: &PgPool,
+    job_id: &str,
+    phase: &str,
+    status: &str,
+    started_at: DateTime<Utc>,
+    error_message: Option<String>,
+) -> Result<()> {
     let ended_at = Utc::now();
     let duration = (ended_at - started_at).num_milliseconds() as f64 / 1000.0;
     let _ = sqlx::query("UPDATE phase_ledger SET status=$1, ended_at=$2, duration_sec=$3, error_message=$4 WHERE id IN (SELECT id FROM phase_ledger WHERE job_id=$5 AND phase_name=$6 AND status='started' ORDER BY started_at DESC LIMIT 1)")

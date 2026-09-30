@@ -1,10 +1,14 @@
-use axum::{Json, Router, Extension, extract::{Path, State}, routing::{get, post, delete}};
-use std::sync::Arc;
 use crate::error::{AppError, Result};
+use crate::middleware::cloudflare::CloudflareInfo;
 use crate::models::DomainVerification;
 use crate::services::domain_verify::DomainVerifyService;
 use crate::services::turnstile::TurnstileService;
-use crate::middleware::cloudflare::CloudflareInfo;
+use axum::{
+    extract::{Path, State},
+    routing::{delete, get, post},
+    Extension, Json, Router,
+};
+use std::sync::Arc;
 
 pub fn router() -> Router<Arc<crate::AppState>> {
     Router::new()
@@ -20,7 +24,9 @@ pub async fn list_domains(
     State(state): State<Arc<crate::AppState>>,
     user: crate::middleware::auth::AuthenticatedUser,
 ) -> Result<Json<Vec<DomainVerification>>> {
-    DomainVerifyService::list(state.pool(), &user.user_id).await.map(Json)
+    DomainVerifyService::list(state.pool(), &user.user_id)
+        .await
+        .map(Json)
 }
 
 pub async fn initiate_domain(
@@ -28,8 +34,13 @@ pub async fn initiate_domain(
     user: crate::middleware::auth::AuthenticatedUser,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<DomainVerification>> {
-    let domain = payload.get("domain").and_then(|v| v.as_str()).ok_or_else(|| AppError::BadRequest("Missing domain".into()))?;
-    DomainVerifyService::initiate(state.pool(), state.crypto(), &user.user_id, domain).await.map(Json)
+    let domain = payload
+        .get("domain")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::BadRequest("Missing domain".into()))?;
+    DomainVerifyService::initiate(state.pool(), state.crypto(), &user.user_id, domain)
+        .await
+        .map(Json)
 }
 
 pub async fn check_domain(
@@ -38,8 +49,13 @@ pub async fn check_domain(
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<DomainVerification>> {
-    let method = payload.get("method").and_then(|v| v.as_str()).unwrap_or("dns");
-    DomainVerifyService::check(state.pool(), state.crypto(), &id, &user.user_id, method).await.map(Json)
+    let method = payload
+        .get("method")
+        .and_then(|v| v.as_str())
+        .unwrap_or("dns");
+    DomainVerifyService::check(state.pool(), state.crypto(), &id, &user.user_id, method)
+        .await
+        .map(Json)
 }
 
 pub async fn delete_domain(
@@ -65,7 +81,9 @@ pub async fn check_turnstile(
         state.settings().cf_turnstile_secret_key.clone(),
         state.settings().cf_turnstile_enabled,
     );
-    let resp = turnstile.verify_token(token, Some(&cf_info.client_ip)).await?;
+    let resp = turnstile
+        .verify_token(token, Some(&cf_info.client_ip))
+        .await?;
     Ok(Json(serde_json::json!({
         "success": resp.success,
         "hostname": resp.hostname,

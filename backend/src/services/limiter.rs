@@ -8,5 +8,8 @@ pub fn parse_rate_limit(s: &str) -> (u32, std::time::Duration) {
         "day" => std::time::Duration::from_secs(86400),
         _ => std::time::Duration::from_secs(3600),
     });
-    (count, period.unwrap_or(std::time::Duration::from_secs(3600)))
+    (
+        count,
+        period.unwrap_or(std::time::Duration::from_secs(3600)),
+    )
 }

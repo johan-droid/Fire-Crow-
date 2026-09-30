@@ -1,8 +1,8 @@
 use axum::{
-    Router,
     extract::{Path, State},
     response::sse::{Event, KeepAlive, Sse},
     routing::get,
+    Router,
 };
 use futures::stream::Stream;
 use std::{convert::Infallible, sync::Arc, time::Duration};

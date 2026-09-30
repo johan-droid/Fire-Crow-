@@ -49,7 +49,10 @@ impl PrivacyAuditService {
         .map_err(AppError::Database)
     }
 
-    pub async fn list_user_logs(pool: &sqlx::PgPool, user_id: &str) -> Result<Vec<PrivacyAuditLog>> {
+    pub async fn list_user_logs(
+        pool: &sqlx::PgPool,
+        user_id: &str,
+    ) -> Result<Vec<PrivacyAuditLog>> {
         sqlx::query_as::<_, PrivacyAuditLog>(
             "SELECT * FROM privacy_audit_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT 100"
         )

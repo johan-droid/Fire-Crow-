@@ -55,9 +55,12 @@ impl PaymentService {
         Ok(record)
     }
 
-    pub async fn list_user_payments(pool: &sqlx::PgPool, user_id: &str) -> Result<Vec<PaymentRecord>> {
+    pub async fn list_user_payments(
+        pool: &sqlx::PgPool,
+        user_id: &str,
+    ) -> Result<Vec<PaymentRecord>> {
         sqlx::query_as::<_, PaymentRecord>(
-            "SELECT * FROM payment_records WHERE user_id = $1 ORDER BY created_at DESC"
+            "SELECT * FROM payment_records WHERE user_id = $1 ORDER BY created_at DESC",
         )
         .bind(user_id)
         .fetch_all(pool)
@@ -65,9 +68,12 @@ impl PaymentService {
         .map_err(AppError::Database)
     }
 
-    pub async fn list_tenant_payments(pool: &sqlx::PgPool, tenant_id: &str) -> Result<Vec<PaymentRecord>> {
+    pub async fn list_tenant_payments(
+        pool: &sqlx::PgPool,
+        tenant_id: &str,
+    ) -> Result<Vec<PaymentRecord>> {
         sqlx::query_as::<_, PaymentRecord>(
-            "SELECT * FROM payment_records WHERE tenant_id = $1 ORDER BY created_at DESC"
+            "SELECT * FROM payment_records WHERE tenant_id = $1 ORDER BY created_at DESC",
         )
         .bind(tenant_id)
         .fetch_all(pool)

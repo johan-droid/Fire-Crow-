@@ -22,8 +22,12 @@ impl TenantService {
     }
 
     pub async fn create(pool: &sqlx::PgPool, tenant: Tenant) -> Result<Tenant> {
-        let usecase = tenant.usecase.unwrap_or_else(|| "security_audit".to_string());
-        let industry = tenant.industry_type.unwrap_or_else(|| "technology".to_string());
+        let usecase = tenant
+            .usecase
+            .unwrap_or_else(|| "security_audit".to_string());
+        let industry = tenant
+            .industry_type
+            .unwrap_or_else(|| "technology".to_string());
         let balance = tenant.credit_balance.unwrap_or(0.0);
 
         sqlx::query_as::<_, Tenant>(
@@ -65,7 +69,11 @@ impl TenantService {
             .map_err(AppError::Database)
     }
 
-    pub async fn update(pool: &sqlx::PgPool, id: &str, updates: &TenantUpdate) -> Result<Option<Tenant>> {
+    pub async fn update(
+        pool: &sqlx::PgPool,
+        id: &str,
+        updates: &TenantUpdate,
+    ) -> Result<Option<Tenant>> {
         sqlx::query(
             "UPDATE tenants SET 
                 name = COALESCE($1, name), 
@@ -76,7 +84,7 @@ impl TenantService {
                 billing_email = COALESCE($6, billing_email),
                 max_users = COALESCE($7, max_users), 
                 max_storage_gb = COALESCE($8, max_storage_gb) 
-             WHERE id = $9"
+             WHERE id = $9",
         )
         .bind(updates.name.as_ref())
         .bind(updates.domain.as_ref())

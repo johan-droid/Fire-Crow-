@@ -9,7 +9,10 @@ use crate::schemas::audit_state::AuditState;
 
 /// Recon phase: discovers repository tech stack and structure
 pub async fn run_recon(state: &mut AuditState) -> Result<()> {
-    tracing::info!("[recon] Running repository reconnaissance for {}", state.repo_url);
+    tracing::info!(
+        "[recon] Running repository reconnaissance for {}",
+        state.repo_url
+    );
     state.tech_stack = vec![
         "TypeScript".into(),
         "Rust".into(),

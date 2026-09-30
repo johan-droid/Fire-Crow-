@@ -19,8 +19,12 @@ pub struct EmailReportRequest {
     pub email: Option<String>,
 }
 
-fn default_branch() -> Option<String> { Some("main".into()) }
-fn default_auth_scope() -> Option<String> { Some("authorized_representative".into()) }
+fn default_branch() -> Option<String> {
+    Some("main".into())
+}
+fn default_auth_scope() -> Option<String> {
+    Some("authorized_representative".into())
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobResponse {
@@ -44,15 +48,21 @@ pub struct JobResponse {
 impl From<crate::models::AuditJob> for JobResponse {
     fn from(job: crate::models::AuditJob) -> Self {
         Self {
-            id: job.id, user_id: job.user_id, repo_url: job.repo_url, repo_branch: job.repo_branch,
+            id: job.id,
+            user_id: job.user_id,
+            repo_url: job.repo_url,
+            repo_branch: job.repo_branch,
             status: job.status,
             created_at: job.created_at.and_utc(),
             finished_at: job.finished_at.map(|dt| dt.and_utc()),
             cancel_requested: job.cancel_requested,
             cancel_requested_at: job.cancel_requested_at.map(|dt| dt.and_utc()),
-            report_pdf_url: job.report_pdf_url, error_message: job.error_message,
-            security_score: job.security_score, email_delivered: false,
-            github_issues_raised: false, github_pr_created: false,
+            report_pdf_url: job.report_pdf_url,
+            error_message: job.error_message,
+            security_score: job.security_score,
+            email_delivered: false,
+            github_issues_raised: false,
+            github_pr_created: false,
         }
     }
 }
@@ -73,9 +83,15 @@ pub struct FindingResponse {
 impl From<FindingModel> for FindingResponse {
     fn from(f: FindingModel) -> Self {
         Self {
-            id: f.id, agent_source: f.agent_source, title: f.title, description: f.description,
-            severity: f.severity, cvss_score: f.cvss_score, cvss_vector: f.cvss_vector,
-            evidence: f.evidence, remediation: f.remediation,
+            id: f.id,
+            agent_source: f.agent_source,
+            title: f.title,
+            description: f.description,
+            severity: f.severity,
+            cvss_score: f.cvss_score,
+            cvss_vector: f.cvss_vector,
+            evidence: f.evidence,
+            remediation: f.remediation,
         }
     }
 }

@@ -1,8 +1,8 @@
 //! Audit job, finding, artifact, agent log, phase ledger, and report models.
 
+use crate::models::{JobStatus, Severity};
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
-use crate::models::{JobStatus, Severity};
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct AuditJob {

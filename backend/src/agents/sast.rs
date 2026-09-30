@@ -3,7 +3,10 @@ use crate::models::Severity;
 use crate::schemas::audit_state::{AuditState, Finding};
 
 pub async fn run_sast(state: &mut AuditState) -> Result<()> {
-    tracing::info!("[sast] Running static security analysis on {}", state.repo_url);
+    tracing::info!(
+        "[sast] Running static security analysis on {}",
+        state.repo_url
+    );
 
     let f1 = Finding {
         id: uuid::Uuid::new_v4().to_string(),
@@ -56,7 +59,9 @@ pub async fn run_sast(state: &mut AuditState) -> Result<()> {
         cvss_vector: Some("CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:M/I:N/A:N".into()),
         cvss_score: Some(5.3),
         evidence: Some("CorsLayer::new().allow_origin(Any)".into()),
-        remediation: Some("Restrict allowed CORS origins strictly to trusted domain hostnames.".into()),
+        remediation: Some(
+            "Restrict allowed CORS origins strictly to trusted domain hostnames.".into(),
+        ),
         cwe_id: Some("CWE-942".into()),
         owasp_category: Some("A05:2021-Security Misconfiguration".into()),
         confidence: Some("high".into()),

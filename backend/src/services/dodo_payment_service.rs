@@ -36,7 +36,9 @@ pub struct DodoPaymentService;
 
 impl DodoPaymentService {
     fn get_base_url(settings: &Settings) -> &'static str {
-        if settings.dodo_payments_environment == "live_mode" || settings.dodo_payments_environment == "live" {
+        if settings.dodo_payments_environment == "live_mode"
+            || settings.dodo_payments_environment == "live"
+        {
             "https://live.dodopayments.com"
         } else {
             "https://test.dodopayments.com"

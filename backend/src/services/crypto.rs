@@ -29,7 +29,9 @@ impl CryptoManager {
     }
 
     pub fn encrypt_secret(&self, plaintext: &str) -> Result<String> {
-        if plaintext.is_empty() { return Ok(plaintext.into()); }
+        if plaintext.is_empty() {
+            return Ok(plaintext.into());
+        }
         let cipher = Aes256Gcm::new_from_slice(&self.key).context("invalid AES-256 key")?;
         let mut nonce = [0u8; 12];
         OsRng.fill_bytes(&mut nonce);
@@ -60,6 +62,10 @@ impl CryptoManager {
 }
 
 pub fn crypto_manager(secret_key: &str, encryption_key: &str) -> Result<Arc<CryptoManager>> {
-    let key = if encryption_key.is_empty() { secret_key } else { encryption_key };
+    let key = if encryption_key.is_empty() {
+        secret_key
+    } else {
+        encryption_key
+    };
     Ok(Arc::new(CryptoManager::new(key)?))
 }

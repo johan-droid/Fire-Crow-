@@ -29,7 +29,9 @@ pub struct DomainCheckRequest {
     pub method: String,
 }
 
-fn default_method() -> String { "dns".into() }
+fn default_method() -> String {
+    "dns".into()
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DomainCheckResponse {

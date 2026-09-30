@@ -82,7 +82,9 @@ impl AppError {
             | AppError::TokenRevoked
             | AppError::AccountLocked => StatusCode::UNAUTHORIZED,
             AppError::MfaRequired | AppError::MfaVerificationFailed => StatusCode::FORBIDDEN,
-            AppError::Database(_) | AppError::MigrationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::Database(_) | AppError::MigrationError(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
             AppError::GraphDatabase(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::StorageError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             AppError::RedisError(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -158,22 +160,31 @@ impl IntoResponse for AppError {
 }
 
 impl From<anyhow::Error> for AppError {
-    fn from(err: anyhow::Error) -> Self { AppError::Internal(err.to_string()) }
+    fn from(err: anyhow::Error) -> Self {
+        AppError::Internal(err.to_string())
+    }
 }
 
 impl From<serde_json::Error> for AppError {
-    fn from(err: serde_json::Error) -> Self { AppError::Internal(format!("JSON error: {err}")) }
+    fn from(err: serde_json::Error) -> Self {
+        AppError::Internal(format!("JSON error: {err}"))
+    }
 }
 
 impl From<reqwest::Error> for AppError {
-    fn from(err: reqwest::Error) -> Self { AppError::HttpClientError(err.to_string()) }
+    fn from(err: reqwest::Error) -> Self {
+        AppError::HttpClientError(err.to_string())
+    }
 }
 
 impl From<redis::RedisError> for AppError {
-    fn from(err: redis::RedisError) -> Self { AppError::RedisError(err.to_string()) }
+    fn from(err: redis::RedisError) -> Self {
+        AppError::RedisError(err.to_string())
+    }
 }
 
 impl From<lettre::error::Error> for AppError {
-    fn from(err: lettre::error::Error) -> Self { AppError::EmailError(err.to_string()) }
+    fn from(err: lettre::error::Error) -> Self {
+        AppError::EmailError(err.to_string())
+    }
 }
-

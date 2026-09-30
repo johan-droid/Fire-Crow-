@@ -1,13 +1,22 @@
-use axum::{Json, Router, extract::{Path, State}, routing::get};
-use std::sync::Arc;
 use crate::error::{AppError, Result};
 use crate::models::SsoProvider;
-use crate::services::sso_service::{SsoService, SsoProviderUpdate};
+use crate::services::sso_service::{SsoProviderUpdate, SsoService};
+use axum::{
+    extract::{Path, State},
+    routing::get,
+    Json, Router,
+};
+use std::sync::Arc;
 
 pub fn router() -> Router<Arc<crate::AppState>> {
     Router::new()
         .route("/providers", get(list_providers).post(create_provider))
-        .route("/providers/:id", get(get_provider).put(update_provider).delete(delete_provider))
+        .route(
+            "/providers/:id",
+            get(get_provider)
+                .put(update_provider)
+                .delete(delete_provider),
+        )
 }
 
 pub async fn list_providers(
@@ -25,7 +34,9 @@ pub async fn create_provider(
     if provider.id.is_empty() {
         provider.id = uuid::Uuid::new_v4().to_string();
     }
-    SsoService::create_provider(state.pool(), state.crypto(), provider).await.map(Json)
+    SsoService::create_provider(state.pool(), state.crypto(), provider)
+        .await
+        .map(Json)
 }
 
 pub async fn get_provider(
@@ -46,20 +57,56 @@ pub async fn update_provider(
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<SsoProvider>> {
     let updates = SsoProviderUpdate {
-        name: payload.get("name").and_then(|v| v.as_str()).map(String::from),
-        issuer_url: payload.get("issuer_url").and_then(|v| v.as_str()).map(String::from),
-        client_id: payload.get("client_id").and_then(|v| v.as_str()).map(String::from),
-        client_secret: payload.get("client_secret").and_then(|v| v.as_str()).map(String::from),
-        authorization_url: payload.get("authorization_url").and_then(|v| v.as_str()).map(String::from),
-        token_url: payload.get("token_url").and_then(|v| v.as_str()).map(String::from),
-        userinfo_url: payload.get("userinfo_url").and_then(|v| v.as_str()).map(String::from),
-        jwks_url: payload.get("jwks_url").and_then(|v| v.as_str()).map(String::from),
-        certificate: payload.get("certificate").and_then(|v| v.as_str()).map(String::from),
-        attribute_mapping: payload.get("attribute_mapping").and_then(|v| v.as_str()).map(String::from),
-        domains: payload.get("domains").and_then(|v| v.as_str()).map(String::from),
+        name: payload
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        issuer_url: payload
+            .get("issuer_url")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        client_id: payload
+            .get("client_id")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        client_secret: payload
+            .get("client_secret")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        authorization_url: payload
+            .get("authorization_url")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        token_url: payload
+            .get("token_url")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        userinfo_url: payload
+            .get("userinfo_url")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        jwks_url: payload
+            .get("jwks_url")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        certificate: payload
+            .get("certificate")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        attribute_mapping: payload
+            .get("attribute_mapping")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        domains: payload
+            .get("domains")
+            .and_then(|v| v.as_str())
+            .map(String::from),
         enforce_mfa: payload.get("enforce_mfa").and_then(|v| v.as_bool()),
         auto_provision: payload.get("auto_provision").and_then(|v| v.as_bool()),
-        default_role_id: payload.get("default_role_id").and_then(|v| v.as_str()).map(String::from),
+        default_role_id: payload
+            .get("default_role_id")
+            .and_then(|v| v.as_str())
+            .map(String::from),
     };
 
     SsoService::update_provider(state.pool(), state.crypto(), &id, &updates)
@@ -80,4 +127,3 @@ pub async fn delete_provider(
         Err(AppError::NotFound("SSO Provider not found".into()))
     }
 }
-

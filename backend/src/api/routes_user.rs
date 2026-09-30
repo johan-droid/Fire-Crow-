@@ -1,6 +1,10 @@
-use axum::{Json, Router, extract::State, routing::{get, delete}};
-use std::sync::Arc;
 use crate::error::{AppError, Result};
+use axum::{
+    extract::State,
+    routing::{delete, get},
+    Json, Router,
+};
+use std::sync::Arc;
 
 pub fn router() -> Router<Arc<crate::AppState>> {
     Router::new()
@@ -9,13 +13,29 @@ pub fn router() -> Router<Arc<crate::AppState>> {
         .route("/repos", get(list_github_repos))
 }
 
-pub async fn export_user_data(State(state): State<Arc<crate::AppState>>, user: crate::middleware::auth::AuthenticatedUser) -> Result<Json<serde_json::Value>> {
-    let activities = crate::services::user_activity::list_user_activities(state.pool(), &user.user_id, 1000).await?;
-    Ok(Json(serde_json::json!({"user_id": user.user_id, "username": user.username, "activities": activities})))
+pub async fn export_user_data(
+    State(state): State<Arc<crate::AppState>>,
+    user: crate::middleware::auth::AuthenticatedUser,
+) -> Result<Json<serde_json::Value>> {
+    let activities =
+        crate::services::user_activity::list_user_activities(state.pool(), &user.user_id, 1000)
+            .await?;
+    Ok(Json(
+        serde_json::json!({"user_id": user.user_id, "username": user.username, "activities": activities}),
+    ))
 }
 
-pub async fn delete_user(State(state): State<Arc<crate::AppState>>, user: crate::middleware::auth::AuthenticatedUser) -> Result<Json<serde_json::Value>> {
-    sqlx::query("UPDATE users SET is_active=false, email=NULL, username='deleted_'||id WHERE id=$1").bind(user.user_id).execute(state.pool()).await.map_err(AppError::Database)?;
+pub async fn delete_user(
+    State(state): State<Arc<crate::AppState>>,
+    user: crate::middleware::auth::AuthenticatedUser,
+) -> Result<Json<serde_json::Value>> {
+    sqlx::query(
+        "UPDATE users SET is_active=false, email=NULL, username='deleted_'||id WHERE id=$1",
+    )
+    .bind(user.user_id)
+    .execute(state.pool())
+    .await
+    .map_err(AppError::Database)?;
     Ok(Json(serde_json::json!({"status": "deleted"})))
 }
 
@@ -31,7 +51,10 @@ pub async fn list_github_repos(
 
     let token = if let Some(ref encrypted_token) = db_user.github_access_token {
         if !encrypted_token.is_empty() {
-            state.crypto().decrypt_secret(encrypted_token).unwrap_or_else(|_| state.settings().github_token.clone())
+            state
+                .crypto()
+                .decrypt_secret(encrypted_token)
+                .unwrap_or_else(|_| state.settings().github_token.clone())
         } else {
             state.settings().github_token.clone()
         }
@@ -75,22 +98,28 @@ pub async fn list_github_repos(
     };
 
     let repos_json: Vec<serde_json::Value> = response.json().await.map_err(|e| {
-        AppError::Internal(format!("Failed to parse GitHub repositories response: {}", e))
+        AppError::Internal(format!(
+            "Failed to parse GitHub repositories response: {}",
+            e
+        ))
     })?;
 
-    let repositories: Vec<serde_json::Value> = repos_json.into_iter().map(|repo| {
-        serde_json::json!({
-            "id": repo["id"],
-            "name": repo["name"],
-            "full_name": repo["full_name"],
-            "clone_url": repo["clone_url"],
-            "html_url": repo["html_url"],
-            "private": repo["private"],
-            "description": repo["description"],
-            "default_branch": repo["default_branch"].as_str().unwrap_or("main"),
-            "updated_at": repo["updated_at"]
+    let repositories: Vec<serde_json::Value> = repos_json
+        .into_iter()
+        .map(|repo| {
+            serde_json::json!({
+                "id": repo["id"],
+                "name": repo["name"],
+                "full_name": repo["full_name"],
+                "clone_url": repo["clone_url"],
+                "html_url": repo["html_url"],
+                "private": repo["private"],
+                "description": repo["description"],
+                "default_branch": repo["default_branch"].as_str().unwrap_or("main"),
+                "updated_at": repo["updated_at"]
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(Json(serde_json::json!({
         "status": "ok",
@@ -98,4 +127,3 @@ pub async fn list_github_repos(
         "repositories": repositories
     })))
 }
-

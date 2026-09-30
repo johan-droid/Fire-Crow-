@@ -2,6 +2,7 @@
 //! Redacts all security keys, secrets, passwords, tokens, and authorization headers,
 //! while printing clean, unbuffered, color-coded HTTP traffic logs for AI flaw analysis.
 
+use crate::middleware::cloudflare::{peer_ip_of, resolve_client_ip};
 use axum::{
     body::{to_bytes, Body},
     extract::Request,
@@ -10,7 +11,6 @@ use axum::{
 };
 use std::time::Instant;
 use tracing::info;
-use crate::middleware::cloudflare::{peer_ip_of, resolve_client_ip};
 
 /// Recursively redacts sensitive keys in JSON payloads
 pub fn redact_json_value(val: &mut serde_json::Value) {
@@ -85,10 +85,10 @@ pub fn redact_uri_for_log(uri: &str) -> String {
             out.push('&');
         }
         match pair.split_once('=') {
-            Some((k, _)) if SENSITIVE_QUERY_KEYS
-                .iter()
-                .any(|sensitive| sensitive.eq_ignore_ascii_case(k))
-            =>
+            Some((k, _))
+                if SENSITIVE_QUERY_KEYS
+                    .iter()
+                    .any(|sensitive| sensitive.eq_ignore_ascii_case(k)) =>
             {
                 out.push_str(k);
                 out.push_str("=[REDACTED]");
@@ -123,8 +123,16 @@ static TEXT_REDACT_PATTERNS: std::sync::OnceLock<Vec<regex::Regex>> = std::sync:
 fn text_redact_patterns() -> &'static [regex::Regex] {
     TEXT_REDACT_PATTERNS.get_or_init(|| {
         [
-            "password", "secret", "token", "authorization", "bearer", "cookie",
-            "api_key", "gemini_api_key", "encryption_key", "secret_key",
+            "password",
+            "secret",
+            "token",
+            "authorization",
+            "bearer",
+            "cookie",
+            "api_key",
+            "gemini_api_key",
+            "encryption_key",
+            "secret_key",
         ]
         .iter()
         .filter_map(|key| regex::Regex::new(&format!(r"(?i)({}\s*[:=]\s*)[^\s&,}}]+", key)).ok())
@@ -166,7 +174,10 @@ pub async fn http_audit_logger(
 
     // 1. Inspect Request Body
     let (parts, body) = req.into_parts();
-    let (req_bytes, req_body) = if method == axum::http::Method::GET || method == axum::http::Method::HEAD || method == axum::http::Method::OPTIONS {
+    let (req_bytes, req_body) = if method == axum::http::Method::GET
+        || method == axum::http::Method::HEAD
+        || method == axum::http::Method::OPTIONS
+    {
         (Vec::new(), body)
     } else {
         match to_bytes(body, 2 * 1024 * 1024).await {
@@ -176,7 +187,7 @@ pub async fn http_audit_logger(
     };
 
     let req_payload_summary = safe_payload_snippet(&req_bytes, 800);
-    
+
     info!(target: "http_audit", "[HTTP REQ] {} {} | Client: {} | Payload: {}", method, uri, client_ip, req_payload_summary);
 
     // Reconstruct Request

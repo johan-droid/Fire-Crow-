@@ -37,11 +37,17 @@ impl TurnstileService {
             .unwrap_or_default();
 
         Self {
-            client, secret_key, enabled,
+            client,
+            secret_key,
+            enabled,
         }
     }
 
-    pub async fn verify_token(&self, token: &str, remote_ip: Option<&str>) -> Result<TurnstileVerifyResponse> {
+    pub async fn verify_token(
+        &self,
+        token: &str,
+        remote_ip: Option<&str>,
+    ) -> Result<TurnstileVerifyResponse> {
         if !self.enabled || self.secret_key.is_empty() {
             return Ok(TurnstileVerifyResponse {
                 success: true,

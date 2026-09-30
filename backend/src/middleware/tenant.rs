@@ -1,7 +1,7 @@
+use crate::middleware::auth::AuthenticatedUser;
 use axum::extract::Request;
 use axum::middleware::Next;
 use axum::response::Response;
-use crate::middleware::auth::AuthenticatedUser;
 
 #[derive(Debug, Clone, Default)]
 pub struct TenantContext {
@@ -10,10 +10,7 @@ pub struct TenantContext {
     pub is_admin: bool,
 }
 
-pub async fn tenant_middleware(
-    mut req: Request,
-    next: Next,
-) -> Response {
+pub async fn tenant_middleware(mut req: Request, next: Next) -> Response {
     let tenant_context = extract_tenant_context(&req);
     req.extensions_mut().insert(tenant_context);
     next.run(req).await
@@ -32,10 +29,7 @@ fn extract_tenant_context(req: &Request) -> TenantContext {
 }
 
 /// Middleware layer that enforces tenant presence. Use with `axum::middleware::from_fn`.
-pub async fn require_tenant(
-    mut req: Request,
-    next: Next,
-) -> Response {
+pub async fn require_tenant(mut req: Request, next: Next) -> Response {
     let tenant_context = extract_tenant_context(&req);
     if tenant_context.tenant_id.is_none() {
         return axum::http::Response::builder()

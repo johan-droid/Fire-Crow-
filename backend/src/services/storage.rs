@@ -31,7 +31,11 @@ impl S3StorageBackend {
         bucket: &str,
         region: &str,
     ) -> Result<Self> {
-        let reg_str = if region.is_empty() { "auto".to_string() } else { region.to_string() };
+        let reg_str = if region.is_empty() {
+            "auto".to_string()
+        } else {
+            region.to_string()
+        };
         let credentials = Credentials::new(access_key, secret_key, None, None, "r2_provider");
         let mut builder = ConfigBuilder::new()
             .credentials_provider(credentials)
@@ -58,7 +62,12 @@ impl S3StorageBackend {
 #[async_trait]
 impl StorageBackend for S3StorageBackend {
     async fn upload(&self, data: Vec<u8>, key: &str, content_type: &str) -> Result<String> {
-        tracing::info!("Cloudflare R2 / S3 uploading object: bucket={}, key={}, size={}", self.bucket, key, data.len());
+        tracing::info!(
+            "Cloudflare R2 / S3 uploading object: bucket={}, key={}, size={}",
+            self.bucket,
+            key,
+            data.len()
+        );
         let body = ByteStream::from(data);
         self.client
             .put_object()
@@ -74,7 +83,11 @@ impl StorageBackend for S3StorageBackend {
     }
 
     async fn download(&self, key: &str) -> Result<Vec<u8>> {
-        tracing::info!("Cloudflare R2 / S3 downloading object: bucket={}, key={}", self.bucket, key);
+        tracing::info!(
+            "Cloudflare R2 / S3 downloading object: bucket={}, key={}",
+            self.bucket,
+            key
+        );
         let output = self
             .client
             .get_object()
@@ -84,17 +97,19 @@ impl StorageBackend for S3StorageBackend {
             .await
             .map_err(|e| AppError::StorageError(format!("Cloudflare R2 download error: {}", e)))?;
 
-        let data = output
-            .body
-            .collect()
-            .await
-            .map_err(|e| AppError::StorageError(format!("Failed reading R2 response body: {}", e)))?;
+        let data = output.body.collect().await.map_err(|e| {
+            AppError::StorageError(format!("Failed reading R2 response body: {}", e))
+        })?;
 
         Ok(data.into_bytes().to_vec())
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
-        tracing::info!("Cloudflare R2 / S3 deleting object: bucket={}, key={}", self.bucket, key);
+        tracing::info!(
+            "Cloudflare R2 / S3 deleting object: bucket={}, key={}",
+            self.bucket,
+            key
+        );
         self.client
             .delete_object()
             .bucket(&self.bucket)
@@ -106,9 +121,13 @@ impl StorageBackend for S3StorageBackend {
     }
 
     async fn presigned_url(&self, key: &str, expires_secs: i64) -> Result<String> {
-        let expires = aws_sdk_s3::presigning::PresigningConfig::expires_in(std::time::Duration::from_secs(expires_secs as u64))
-            .map_err(|e| AppError::StorageError(format!("Invalid expiration: {}", e)))?;
-        let presigned = self.client.get_object()
+        let expires = aws_sdk_s3::presigning::PresigningConfig::expires_in(
+            std::time::Duration::from_secs(expires_secs as u64),
+        )
+        .map_err(|e| AppError::StorageError(format!("Invalid expiration: {}", e)))?;
+        let presigned = self
+            .client
+            .get_object()
             .bucket(&self.bucket)
             .key(key)
             .presigned(expires)
@@ -133,25 +152,36 @@ impl LocalStorageBackend {
 #[async_trait]
 impl StorageBackend for LocalStorageBackend {
     async fn upload(&self, data: Vec<u8>, key: &str, _content_type: &str) -> Result<String> {
-        if key.contains("..") || key.starts_with('/') { return Err(AppError::Forbidden("Invalid key".into())); }
+        if key.contains("..") || key.starts_with('/') {
+            return Err(AppError::Forbidden("Invalid key".into()));
+        }
         let path = self.base_dir.join(key);
-        if let Some(parent) = path.parent() { std::fs::create_dir_all(parent).ok(); }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
         std::fs::write(&path, data).map_err(|e| AppError::StorageError(format!("{e}")))?;
         Ok(key.to_string())
     }
 
     async fn download(&self, key: &str) -> Result<Vec<u8>> {
-        if key.contains("..") || key.starts_with('/') { return Err(AppError::Forbidden("Invalid key".into())); }
+        if key.contains("..") || key.starts_with('/') {
+            return Err(AppError::Forbidden("Invalid key".into()));
+        }
         std::fs::read(self.base_dir.join(key)).map_err(|e| AppError::StorageError(format!("{e}")))
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
-        if key.contains("..") || key.starts_with('/') { return Err(AppError::Forbidden("Invalid key".into())); }
-        std::fs::remove_file(self.base_dir.join(key)).map_err(|e| AppError::StorageError(format!("{e}")))
+        if key.contains("..") || key.starts_with('/') {
+            return Err(AppError::Forbidden("Invalid key".into()));
+        }
+        std::fs::remove_file(self.base_dir.join(key))
+            .map_err(|e| AppError::StorageError(format!("{e}")))
     }
 
     async fn presigned_url(&self, key: &str, _expires_secs: i64) -> Result<String> {
-        if key.contains("..") || key.starts_with('/') { return Err(AppError::Forbidden("Invalid key".into())); }
+        if key.contains("..") || key.starts_with('/') {
+            return Err(AppError::Forbidden("Invalid key".into()));
+        }
         Ok(format!("file:///{}", self.base_dir.join(key).display()))
     }
 }
@@ -172,7 +202,9 @@ impl StorageService {
         region: &str,
     ) -> Self {
         let s3_backend = if endpoint.is_some() && !access_key.is_empty() {
-            S3StorageBackend::new(endpoint, access_key, secret_key, bucket, region).await.ok()
+            S3StorageBackend::new(endpoint, access_key, secret_key, bucket, region)
+                .await
+                .ok()
         } else {
             None
         };
@@ -193,7 +225,9 @@ impl StorageService {
         use sha2::{Digest, Sha256};
         let key = format!("artifacts/{}/{}/{}", job_id, artifact_type, file_name);
         let sha256 = format!("{:x}", Sha256::digest(&data));
-        let content_type = MimeGuess::from_path(file_name).first_or_octet_stream().to_string();
+        let content_type = MimeGuess::from_path(file_name)
+            .first_or_octet_stream()
+            .to_string();
         if let Some(s3) = &self.s3_backend {
             s3.upload(data, &key, &content_type).await?;
         } else {

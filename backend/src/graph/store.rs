@@ -22,7 +22,10 @@ impl GraphStore {
     ) -> Result<()> {
         for node in nodes {
             let label = node.get("label").and_then(|v| v.as_str()).unwrap_or("");
-            let node_type = node.get("type").and_then(|v| v.as_str()).unwrap_or("vulnerability");
+            let node_type = node
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("vulnerability");
             let severity = node.get("severity").and_then(|v| v.as_str()).unwrap_or("");
             let node_id = node.get("id").and_then(|v| v.as_str()).unwrap_or("");
             let id = generate_uuid();
@@ -49,7 +52,10 @@ impl GraphStore {
         for edge in edges {
             let source = edge.get("source").and_then(|v| v.as_str()).unwrap_or("");
             let target = edge.get("target").and_then(|v| v.as_str()).unwrap_or("");
-            let label = edge.get("label").and_then(|v| v.as_str()).unwrap_or("chained");
+            let label = edge
+                .get("label")
+                .and_then(|v| v.as_str())
+                .unwrap_or("chained");
             let id = generate_uuid();
 
             sqlx::query(
@@ -74,7 +80,7 @@ impl GraphStore {
 
     pub async fn fetch_attack_graph(pool: &PgPool, job_id: &str) -> Result<serde_json::Value> {
         let node_rows = sqlx::query(
-            "SELECT node_id, label, severity, node_type FROM attack_graph_nodes WHERE job_id = $1"
+            "SELECT node_id, label, severity, node_type FROM attack_graph_nodes WHERE job_id = $1",
         )
         .bind(job_id)
         .fetch_all(pool)

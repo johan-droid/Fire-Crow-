@@ -20,7 +20,9 @@ pub async fn error_sanitizer(
         if !debug {
             let (parts, body) = response.into_parts();
 
-            let safe_detail = match StatusCode::from_u16(parts.status.as_u16()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR) {
+            let safe_detail = match StatusCode::from_u16(parts.status.as_u16())
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+            {
                 StatusCode::INTERNAL_SERVER_ERROR => "Internal server error".to_string(),
                 StatusCode::BAD_GATEWAY => "Bad gateway".to_string(),
                 StatusCode::SERVICE_UNAVAILABLE => "Service unavailable".to_string(),

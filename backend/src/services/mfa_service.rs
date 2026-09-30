@@ -40,7 +40,8 @@ impl MfaService {
                 .collect();
             codes.push(code);
         }
-        let code_hashes: Vec<String> = codes.iter()
+        let code_hashes: Vec<String> = codes
+            .iter()
             .map(|code| MfaService::hash_recovery_code(code))
             .collect();
         (codes, code_hashes)

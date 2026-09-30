@@ -1,10 +1,13 @@
-use axum::{Json, Router, extract::State, routing::get};
+use axum::{extract::State, routing::get, Json, Router};
 use std::sync::Arc;
 
 pub fn router() -> Router<Arc<crate::AppState>> {
     Router::new().route("/", get(get_leaderboard))
 }
 
-pub async fn get_leaderboard(State(_state): State<Arc<crate::AppState>>, _user: crate::middleware::auth::AuthenticatedUser) -> Json<serde_json::Value> {
+pub async fn get_leaderboard(
+    State(_state): State<Arc<crate::AppState>>,
+    _user: crate::middleware::auth::AuthenticatedUser,
+) -> Json<serde_json::Value> {
     Json(serde_json::json!({"entries": []}))
 }

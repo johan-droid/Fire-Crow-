@@ -1,8 +1,8 @@
-use std::sync::Arc;
 use crate::config::Settings;
 use crate::services::crypto::CryptoManager;
 use crate::services::csrf::CsrfStore;
 use crate::services::storage::StorageService;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -23,13 +23,32 @@ impl AppState {
         redis: Option<Arc<redis::aio::MultiplexedConnection>>,
         csrf: Arc<CsrfStore>,
     ) -> Self {
-        Self { settings, pool, storage, crypto, redis, csrf }
+        Self {
+            settings,
+            pool,
+            storage,
+            crypto,
+            redis,
+            csrf,
+        }
     }
 
-    pub fn settings(&self) -> &Settings { &self.settings }
-    pub fn pool(&self) -> &sqlx::PgPool { &self.pool }
-    pub fn storage(&self) -> &StorageService { &self.storage }
-    pub fn crypto(&self) -> &Arc<CryptoManager> { &self.crypto }
-    pub fn redis(&self) -> Option<&redis::aio::MultiplexedConnection> { self.redis.as_deref() }
-    pub fn csrf(&self) -> &CsrfStore { &self.csrf }
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+    pub fn pool(&self) -> &sqlx::PgPool {
+        &self.pool
+    }
+    pub fn storage(&self) -> &StorageService {
+        &self.storage
+    }
+    pub fn crypto(&self) -> &Arc<CryptoManager> {
+        &self.crypto
+    }
+    pub fn redis(&self) -> Option<&redis::aio::MultiplexedConnection> {
+        self.redis.as_deref()
+    }
+    pub fn csrf(&self) -> &CsrfStore {
+        &self.csrf
+    }
 }

@@ -32,8 +32,8 @@ use services::auth;
 use services::csrf::CsrfStore;
 use services::storage::StorageService;
 use services::telemetry::init_registry;
-use workers::WorkerPool;
 use sqlx::postgres::PgPoolOptions;
+use workers::WorkerPool;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -41,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info,firecrow_backend=info,tower_http=info"))
+                .unwrap_or_else(|_| EnvFilter::new("info,firecrow_backend=info,tower_http=info")),
         )
         .init();
     info!("Fire Crow Backend starting...");
@@ -55,7 +55,11 @@ async fn main() -> anyhow::Result<()> {
 
     info!(
         "Environment: {} | Debug: {}",
-        if settings.debug { "development" } else { "production" },
+        if settings.debug {
+            "development"
+        } else {
+            "production"
+        },
         settings.debug
     );
 
@@ -92,7 +96,11 @@ async fn main() -> anyhow::Result<()> {
     init_registry();
 
     // Initialize storage
-    let r2_endpoint = if settings.r2_endpoint_url.is_empty() { None } else { Some(settings.r2_endpoint_url.clone()) };
+    let r2_endpoint = if settings.r2_endpoint_url.is_empty() {
+        None
+    } else {
+        Some(settings.r2_endpoint_url.clone())
+    };
     let storage = Arc::new(
         StorageService::new(
             r2_endpoint,
@@ -111,18 +119,16 @@ async fn main() -> anyhow::Result<()> {
     // Initialize Redis
     let redis_conn = if !settings.redis_url.is_empty() {
         match redis::Client::open(settings.redis_url.as_str()) {
-            Ok(client) => {
-                match client.get_multiplexed_async_connection().await {
-                    Ok(conn) => {
-                        info!("Redis connected");
-                        Some(Arc::new(conn))
-                    }
-                    Err(e) => {
-                        tracing::warn!("Redis connection failed: {} — continuing without cache", e);
-                        None
-                    }
+            Ok(client) => match client.get_multiplexed_async_connection().await {
+                Ok(conn) => {
+                    info!("Redis connected");
+                    Some(Arc::new(conn))
                 }
-            }
+                Err(e) => {
+                    tracing::warn!("Redis connection failed: {} — continuing without cache", e);
+                    None
+                }
+            },
             Err(e) => {
                 tracing::warn!("Redis client creation failed: {}", e);
                 None
@@ -148,11 +154,15 @@ async fn main() -> anyhow::Result<()> {
     });
 
     // Build router
-    use axum::middleware::{from_fn, from_fn_with_state};
     use crate::middleware::request_id::request_id_middleware;
+    use axum::middleware::{from_fn, from_fn_with_state};
 
     let api_v1 = axum::Router::new()
-        .nest("/auth", crate::api::routes_auth::router().layer(crate::middleware::rate_limit::rate_limiter("5/minute")))
+        .nest(
+            "/auth",
+            crate::api::routes_auth::router()
+                .layer(crate::middleware::rate_limit::rate_limiter("5/minute")),
+        )
         .nest("/audit", crate::api::routes_audit::router())
         .nest("/system", crate::api::routes_system::router())
         .nest("/storage", crate::api::routes_storage::router())
@@ -160,18 +170,26 @@ async fn main() -> anyhow::Result<()> {
         .nest("/leaderboard", crate::api::routes_leaderboard::router())
         .nest("/push", crate::api::routes_push::router())
         .nest("/user", crate::api::routes_user::router())
-        .nest("/mfa", crate::api::routes_mfa::router().layer(crate::middleware::rate_limit::rate_limiter("5/minute")))
+        .nest(
+            "/mfa",
+            crate::api::routes_mfa::router()
+                .layer(crate::middleware::rate_limit::rate_limiter("5/minute")),
+        )
         .nest("/sso", crate::api::routes_sso::router())
         .nest("/pam", crate::api::routes_pam::router())
         .nest("/iam", crate::api::routes_iam::router())
         .nest("/tenant", crate::api::routes_tenant::router())
         .nest("/verify", crate::api::routes_verify::router())
-        .nest("/payments/dodo", crate::api::routes_dodo::router().layer(crate::middleware::rate_limit::rate_limiter("30/minute")))
+        .nest(
+            "/payments/dodo",
+            crate::api::routes_dodo::router()
+                .layer(crate::middleware::rate_limit::rate_limiter("30/minute")),
+        )
         .nest("/dashboard", crate::api::routes_dashboard::router())
         .nest("/sse", crate::api::routes_sse::router());
 
-    let frontend_dir = std::env::var("FRONTEND_DIST_DIR")
-        .unwrap_or_else(|_| "../frontend/dist".to_string());
+    let frontend_dir =
+        std::env::var("FRONTEND_DIST_DIR").unwrap_or_else(|_| "../frontend/dist".to_string());
 
     let app = axum::Router::new()
         .nest("/api/v1", api_v1)
@@ -179,12 +197,14 @@ async fn main() -> anyhow::Result<()> {
 
     let app = if std::path::Path::new(&frontend_dir).exists() {
         info!("Serving static files from {}", frontend_dir);
-        app.fallback_service(
-            tower_http::services::ServeDir::new(&frontend_dir)
-                .fallback(tower_http::services::ServeFile::new(format!("{}/index.html", frontend_dir)))
-        )
+        app.fallback_service(tower_http::services::ServeDir::new(&frontend_dir).fallback(
+            tower_http::services::ServeFile::new(format!("{}/index.html", frontend_dir)),
+        ))
     } else {
-        tracing::warn!("Static files directory {} not found, static file serving is disabled", frontend_dir);
+        tracing::warn!(
+            "Static files directory {} not found, static file serving is disabled",
+            frontend_dir
+        );
         app
     };
 
@@ -196,23 +216,30 @@ async fn main() -> anyhow::Result<()> {
     let app = app
         .layer(cors_layer(&settings))
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
-            settings.max_request_body_bytes as usize
+            settings.max_request_body_bytes as usize,
         ))
         .layer(tower_http::timeout::TimeoutLayer::new(
-            std::time::Duration::from_secs(30)
+            std::time::Duration::from_secs(30),
         ))
-        .layer(from_fn(crate::middleware::security_headers::security_headers_middleware))
+        .layer(from_fn(
+            crate::middleware::security_headers::security_headers_middleware,
+        ))
         .layer(from_fn(crate::middleware::http_logger::http_audit_logger))
         .layer(tower_http::catch_panic::CatchPanicLayer::new())
         .layer(from_fn(request_id_middleware))
         .layer(from_fn(body_size_limit_middleware))
-        .layer(from_fn_with_state(state.clone(), crate::middleware::error_sanitizer::error_sanitizer))
+        .layer(from_fn_with_state(
+            state.clone(),
+            crate::middleware::error_sanitizer::error_sanitizer,
+        ))
         .with_state(state.clone());
 
     // Proxy/cloudflare info is extracted unconditionally. It is cheap, it gives
     // the audit log a verified client address, and routes_verify.rs requires the
     // CloudflareInfo extension to exist (without it those handlers 500).
-    let app = app.layer(from_fn(crate::middleware::cloudflare::cloudflare_middleware));
+    let app = app.layer(from_fn(
+        crate::middleware::cloudflare::cloudflare_middleware,
+    ));
 
     // security_s1 + p0_3: the global rate limiter is governed by its own flag and
     // is on by default. It used to be gated on `debug`, so enabling debug logging
@@ -225,16 +252,20 @@ async fn main() -> anyhow::Result<()> {
             .key_extractor(crate::middleware::rate_limit::ClientIpKeyExtractor)
             .finish()
             .expect("rate limiter config is valid");
-        app.layer(tower_governor::GovernorLayer { config: std::sync::Arc::new(rate_limiter_conf) })
+        app.layer(tower_governor::GovernorLayer {
+            config: std::sync::Arc::new(rate_limiter_conf),
+        })
     } else {
         info!("Global rate limiting disabled via RATE_LIMIT_ENABLED=false");
         app
     };
 
-
     // Add CSRF protection when enabled.
     let app = if settings.csrf_enabled {
-        app.layer(from_fn_with_state(state.clone(), crate::middleware::csrf::csrf_middleware))
+        app.layer(from_fn_with_state(
+            state.clone(),
+            crate::middleware::csrf::csrf_middleware,
+        ))
     } else {
         app
     };
@@ -247,13 +278,16 @@ async fn main() -> anyhow::Result<()> {
     let worker_pool = WorkerPool::new(state.pool().clone(), settings.clone());
     worker_pool.start(2).await;
 
-    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-        .with_graceful_shutdown(async move {
-            tokio::signal::ctrl_c().await.ok();
-            info!("Shutdown signal received");
-            worker_pool.stop().await;
-        })
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move {
+        tokio::signal::ctrl_c().await.ok();
+        info!("Shutdown signal received");
+        worker_pool.stop().await;
+    })
+    .await?;
 
     info!("Server stopped");
     Ok(())
