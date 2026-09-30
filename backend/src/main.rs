@@ -10,6 +10,7 @@ use tracing::{error, info};
 
 mod agents;
 mod api;
+mod app;
 mod config;
 mod error;
 mod graph;
@@ -96,26 +97,6 @@ async fn main() -> anyhow::Result<()> {
     init_registry();
 
     // Initialize storage
-    let r2_endpoint = if settings.r2_endpoint_url.is_empty() {
-        None
-    } else {
-        Some(settings.r2_endpoint_url.clone())
-    };
-    let storage = Arc::new(
-        StorageService::new(
-            r2_endpoint,
-            &settings.r2_access_key_id,
-            &settings.r2_secret_access_key,
-            &settings.r2_bucket_name,
-            format!("{}/workspace/storage", config::WORKSPACE_DIR),
-            "auto",
-        )
-        .await,
-    );
-
-    // Initialize crypto
-    let crypto = services::crypto::crypto_manager(&settings.secret_key, &settings.encryption_key)?;
-
     // Initialize Redis
     let redis_conn = if !settings.redis_url.is_empty() {
         match redis::Client::open(settings.redis_url.as_str()) {
@@ -143,132 +124,9 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("Graph store connectivity check failed: {}", e);
     }
 
-    // Build application state
-    let state = Arc::new(AppState {
-        settings: Arc::new(settings.clone()),
-        pool,
-        storage,
-        crypto,
-        redis: redis_conn,
-        csrf: Arc::new(CsrfStore::new()),
-    });
+    let state = crate::app::build_state(settings.clone(), pool, redis_conn).await?;
 
-    // Build router
-    use crate::middleware::request_id::request_id_middleware;
-    use axum::middleware::{from_fn, from_fn_with_state};
-
-    let api_v1 = axum::Router::new()
-        .nest(
-            "/auth",
-            crate::api::routes_auth::router()
-                .layer(crate::middleware::rate_limit::rate_limiter("5/minute")),
-        )
-        .nest("/audit", crate::api::routes_audit::router())
-        .nest("/system", crate::api::routes_system::router())
-        .nest("/storage", crate::api::routes_storage::router())
-        .nest("/chat", crate::api::routes_chat::router())
-        .nest("/leaderboard", crate::api::routes_leaderboard::router())
-        .nest("/push", crate::api::routes_push::router())
-        .nest("/user", crate::api::routes_user::router())
-        .nest(
-            "/mfa",
-            crate::api::routes_mfa::router()
-                .layer(crate::middleware::rate_limit::rate_limiter("5/minute")),
-        )
-        .nest("/sso", crate::api::routes_sso::router())
-        .nest("/pam", crate::api::routes_pam::router())
-        .nest("/iam", crate::api::routes_iam::router())
-        .nest("/tenant", crate::api::routes_tenant::router())
-        .nest("/verify", crate::api::routes_verify::router())
-        .nest(
-            "/payments/dodo",
-            crate::api::routes_dodo::router()
-                .layer(crate::middleware::rate_limit::rate_limiter("30/minute")),
-        )
-        .nest("/dashboard", crate::api::routes_dashboard::router())
-        .nest("/sse", crate::api::routes_sse::router());
-
-    let frontend_dir =
-        std::env::var("FRONTEND_DIST_DIR").unwrap_or_else(|_| "../frontend/dist".to_string());
-
-    let app = axum::Router::new()
-        .nest("/api/v1", api_v1)
-        .merge(crate::api::routes_health::router());
-
-    let app = if std::path::Path::new(&frontend_dir).exists() {
-        info!("Serving static files from {}", frontend_dir);
-        app.fallback_service(tower_http::services::ServeDir::new(&frontend_dir).fallback(
-            tower_http::services::ServeFile::new(format!("{}/index.html", frontend_dir)),
-        ))
-    } else {
-        tracing::warn!(
-            "Static files directory {} not found, static file serving is disabled",
-            frontend_dir
-        );
-        app
-    };
-
-    // NOTE: in axum the LAST `.layer()` is the OUTERMOST, so this list reads
-    // bottom-up. `CatchPanicLayer` must sit OUTSIDE `http_audit_logger`, otherwise
-    // a panic inside the logger (e.g. a bad byte-index string slice on an
-    // attacker-controlled body) escapes and, under `panic = "abort"`, kills the
-    // process. security_p0_1.
-    let app = app
-        .layer(cors_layer(&settings))
-        .layer(tower_http::limit::RequestBodyLimitLayer::new(
-            settings.max_request_body_bytes as usize,
-        ))
-        .layer(tower_http::timeout::TimeoutLayer::new(
-            std::time::Duration::from_secs(30),
-        ))
-        .layer(from_fn(
-            crate::middleware::security_headers::security_headers_middleware,
-        ))
-        .layer(from_fn(crate::middleware::http_logger::http_audit_logger))
-        .layer(tower_http::catch_panic::CatchPanicLayer::new())
-        .layer(from_fn(request_id_middleware))
-        .layer(from_fn(body_size_limit_middleware))
-        .layer(from_fn_with_state(
-            state.clone(),
-            crate::middleware::error_sanitizer::error_sanitizer,
-        ))
-        .with_state(state.clone());
-
-    // Proxy/cloudflare info is extracted unconditionally. It is cheap, it gives
-    // the audit log a verified client address, and routes_verify.rs requires the
-    // CloudflareInfo extension to exist (without it those handlers 500).
-    let app = app.layer(from_fn(
-        crate::middleware::cloudflare::cloudflare_middleware,
-    ));
-
-    // security_s1 + p0_3: the global rate limiter is governed by its own flag and
-    // is on by default. It used to be gated on `debug`, so enabling debug logging
-    // silently disabled rate limiting. The key is now derived from the verified
-    // TCP peer, so this no longer depends on layer ordering.
-    let app = if settings.rate_limit_enabled {
-        let rate_limiter_conf = tower_governor::governor::GovernorConfigBuilder::default()
-            .per_second(20)
-            .burst_size(40)
-            .key_extractor(crate::middleware::rate_limit::ClientIpKeyExtractor)
-            .finish()
-            .expect("rate limiter config is valid");
-        app.layer(tower_governor::GovernorLayer {
-            config: std::sync::Arc::new(rate_limiter_conf),
-        })
-    } else {
-        info!("Global rate limiting disabled via RATE_LIMIT_ENABLED=false");
-        app
-    };
-
-    // Add CSRF protection when enabled.
-    let app = if settings.csrf_enabled {
-        app.layer(from_fn_with_state(
-            state.clone(),
-            crate::middleware::csrf::csrf_middleware,
-        ))
-    } else {
-        app
-    };
+    let app = crate::app::build_app(state.clone(), true);
 
     let addr = SocketAddr::new(settings.host.parse()?, settings.port);
     info!("Server listening on http://{}", addr);
@@ -291,35 +149,4 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Server stopped");
     Ok(())
-}
-
-async fn body_size_limit_middleware(
-    req: axum::extract::Request,
-    next: axum::middleware::Next,
-) -> Result<axum::response::Response, axum::http::StatusCode> {
-    let content_type = req
-        .headers()
-        .get(axum::http::header::CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-
-    let body_limit = if content_type.contains("application/json") {
-        2 * 1024 * 1024
-    } else {
-        10 * 1024 * 1024
-    };
-
-    let content_length = req
-        .headers()
-        .get(axum::http::header::CONTENT_LENGTH)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<usize>().ok());
-
-    if let Some(len) = content_length {
-        if len > body_limit {
-            return Err(axum::http::StatusCode::PAYLOAD_TOO_LARGE);
-        }
-    }
-
-    Ok(next.run(req).await)
 }
