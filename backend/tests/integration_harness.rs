@@ -160,28 +160,26 @@ async fn infra_seeded_user_can_authenticate(pool: sqlx::PgPool) {
     assert_eq!(body["user_id"], user.id);
 }
 
-/// Internal database errors must not reach the client. The `no column found`
-/// class of error is exactly what the schema reconciliation work will trigger,
-/// so it is the right regression anchor.
+/// Internal database errors must not reach the client.
+///
+/// The error is triggered by removing a table inside this test's own database, so
+/// the assertion does not depend on any particular schema defect persisting. An
+/// earlier version of this test used `/iam/policies`, whose `FromRow` model needed
+/// columns no migration created; Phase 4 fixed that, and the test correctly failed
+/// because the 500 it asserted was gone. Anchoring on a bug made it fragile.
 #[sqlx::test(migrations = "./migrations")]
 async fn infra_internal_database_errors_are_not_leaked(pool: sqlx::PgPool) {
     let app = test_app(pool.clone()).await;
     let user = support::seed_user(&pool, "errleak").await;
 
-    // A row MUST exist: an empty table returns 200 [] without ever decoding, so
-    // without this the test would pass against a completely broken model. That is
-    // the trap documented in the Phase 0 audit.
-    sqlx::query(
-        "INSERT INTO iam_policies (id, name, priority, policy_json, created_at)
-         VALUES ($1,'probe',0,'{}',NOW())",
-    )
-    .bind(uuid::Uuid::new_v4().to_string())
-    .execute(&pool)
-    .await
-    .expect("seed a policy row so the model must decode it");
+    // Force the handler's query to fail at runtime. CASCADE is required because
+    // role_permissions currently holds a foreign key onto iam_policies; this is a
+    // throwaway per-test database, so dropping dependents is harmless.
+    sqlx::query("DROP TABLE iam_policies CASCADE")
+        .execute(&pool)
+        .await
+        .expect("drop the table to force a database error");
 
-    // iam_policies exists, but IamPolicy's FromRow needs columns the migrations
-    // never create, so this handler must 500 *sanitised* - not 200.
     let res = app
         .get("/api/v1/iam/policies")
         .add_header("authorization", user.auth_header())
@@ -192,6 +190,7 @@ async fn infra_internal_database_errors_are_not_leaked(pool: sqlx::PgPool) {
         status.is_server_error(),
         "expected a server error, got {status}"
     );
+
     let body: serde_json::Value = res.json();
     let detail = body["detail"].as_str().unwrap_or_default();
 
@@ -202,10 +201,11 @@ async fn infra_internal_database_errors_are_not_leaked(pool: sqlx::PgPool) {
     for leak_marker in [
         "no column found",
         "relation \"",
+        "does not exist",
+        "iam_policies",
         "sqlx",
         "postgres",
         "SELECT",
-        "iam_policies",
     ] {
         assert!(
             !detail.contains(leak_marker),

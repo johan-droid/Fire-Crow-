@@ -25,116 +25,13 @@ use std::collections::{BTreeMap, BTreeSet};
 /// them, at which point this constant becomes empty and the test above it
 /// becomes the permanent gate.
 const KNOWN_MISSING: &[(&str, &str, &[&str], &str)] = &[
-    (
-        "SsoProvider",
-        "sso_providers",
-        &[
-            "attribute_mapping",
-            "authorization_url",
-            "auto_provision",
-            "certificate",
-            "default_role_id",
-            "domains",
-            "enforce_mfa",
-            "jwks_url",
-            "token_url",
-            "userinfo_url",
-        ],
-        "migrations create only 7 of the columns the SSO model decodes. Note that \
-         client_secret_set, added by security_p0_4, is not a column at all and is \
-         excluded from comparison; it must be marked #[sqlx(skip)] in Phase 4 or \
-         the struct can never decode.",
-    ),
-    (
-        "ArtifactObject",
-        "audit_artifacts",
-        &[
-            "artifact_type",
-            "file_name",
-            "legal_hold",
-            "mime_type",
-            "organization_id",
-            "sensitivity_level",
-            "sha256",
-            "size_bytes",
-            "storage_key",
-        ],
-        "the table has no owner column at all, so /storage/* could never enforce \
-         object-level authorization even once decoding worked",
-    ),
-    (
-        "PrivilegedAccessRequest",
-        "pam_requests",
-        &[
-            "approver_id",
-            "deny_reason",
-            "ends_at",
-            "permission",
-            "requested_duration_minutes",
-            "role_name",
-            "started_at",
-            "ticket_ref",
-        ],
-        "the PAM approval workflow cannot be represented by the current table",
-    ),
-    (
-        "DomainVerification",
-        "domain_verifications",
-        &[
-            "dns_txt_name",
-            "dns_txt_value",
-            "html_meta_content",
-            "html_meta_name",
-            "verified_at",
-            "well_known_content",
-            "well_known_path",
-        ],
-        "only the token-based verification method is modelled; the DNS, \
-         well-known and HTML-meta methods the service implements are not",
-    ),
-    (
-        "IamPolicy",
-        "iam_policies",
-        &[
-            "actions",
-            "conditions",
-            "description",
-            "effect",
-            "resources",
-        ],
-        "the policy document body has no columns, so no policy can express a rule",
-    ),
-    (
-        "Tenant",
-        "tenants",
-        &["domain", "is_active", "max_storage_gb", "max_users", "plan"],
-        "tenant lifecycle and quota fields are absent",
-    ),
-    (
-        "PrivilegedAccessGrant",
-        "pam_grants",
-        &["granted_by", "revoked_at", "revoked_by"],
-        "revocation cannot be recorded",
-    ),
+    // Phase 4 emptied this list. Any new entry must carry a root cause; the gate
+    // above fails on undocumented drift, so this cannot grow silently.
 ];
 
 /// Tables that application code writes but no migration creates.
 const KNOWN_PHANTOM_TABLES: &[(&str, &str, &str)] = &[
-    (
-        "pam_audit",
-        "src/services/pam_service.rs",
-        "every PAM grant revocation INSERTs here and therefore fails",
-    ),
-    (
-        "mfa_audit_logs",
-        "src/services/mfa_service.rs",
-        "MFA audit writes fail",
-    ),
-    (
-        "service_accounts",
-        "src/services/iam_service.rs",
-        "service-account create/revoke fail",
-    ),
+    // Phase 4 created pam_audit, mfa_audit_logs and service_accounts.
 ];
 
 /// Extract `pub field: Type` names from every `FromRow` struct in `source`.
@@ -545,12 +442,10 @@ async fn schema_known_missing_inventory_is_exact(pool: sqlx::PgPool) {
 
 /// The documented debt must be fully paid off.
 ///
-/// This is ignored on purpose while it documents outstanding work: the gate above
-/// passes because every current mismatch is *recorded*, and this test is the
-/// explicit statement that recording is not the same as fixing. Phase 4 removes
-/// the `#[ignore]` once `KNOWN_MISSING` and `KNOWN_PHANTOM_TABLES` are empty.
+/// The recorded debt must stay empty. The gate above only fails on *undocumented*
+/// drift, so this is what stops a mismatch from being quietly filed away as
+/// "pre-existing" instead of fixed.
 #[test]
-#[ignore = "Phase 4: schema reconciliation not yet done"]
 fn schema_all_documented_mismatches_are_resolved() {
     assert!(
         KNOWN_MISSING.is_empty(),

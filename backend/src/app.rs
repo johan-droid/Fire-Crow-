@@ -77,6 +77,13 @@ pub fn api_router() -> Router<Arc<AppState>> {
         .nest("/sso", crate::api::routes_sso::router())
         .nest("/pam", crate::api::routes_pam::router())
         .nest("/iam", crate::api::routes_iam::router())
+        // KNOWN ROUTING INCONSISTENCY (deferred to the API phase): `/tenant` is
+        // the only collection mounted at a bare root path. `nest("/tenant",
+        // route("/"))` resolves `/api/v1/tenant` and returns 404 for
+        // `/api/v1/tenant/`. Nesting the router twice is not a fix - it collides
+        // on `GET /tenant/:id`. The correct remedy is a trailing-slash
+        // normalisation layer, which is a global routing behaviour change and so
+        // does not belong in the schema-reconciliation phase.
         .nest("/tenant", crate::api::routes_tenant::router())
         .nest("/verify", crate::api::routes_verify::router())
         .nest(

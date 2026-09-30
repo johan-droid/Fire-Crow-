@@ -14,6 +14,12 @@ pub struct SsoProvider {
     #[serde(skip_serializing)]
     pub client_secret: Option<String>,
     /// Lets a UI show whether a secret is configured without disclosing it.
+    ///
+    /// `sqlx(skip)` because this is a response-only flag, not a column. Without it
+    /// `FromRow` tries to read it from the table and every SSO read fails with
+    /// "no column found for name: client_secret_set". The service sets it after
+    /// loading the row.
+    #[sqlx(skip)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_secret_set: Option<bool>,
     pub authorization_url: Option<String>,

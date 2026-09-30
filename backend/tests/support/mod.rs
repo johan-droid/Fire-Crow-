@@ -140,6 +140,39 @@ pub async fn seed_user(pool: &PgPool, prefix: &str) -> SeededUser {
     user
 }
 
+/// Insert a tenant, attach a fresh user to it, and return both.
+///
+/// `users.tenant_id` is mirrored into the JWT at mint time, and handlers such as
+/// `GET /tenant/` read the tenant from the token rather than the database. A test
+/// that attaches a tenant after minting a token would therefore see `tenant_id`
+/// of `""` and a misleading 404, so the user must be created with the tenant
+/// already set.
+pub async fn seed_tenant_with_user(pool: &PgPool, prefix: &str) -> (String, SeededUser) {
+    let tenant_id = seed_tenant(pool, prefix).await;
+    let suffix = unique(prefix);
+    let user = SeededUser {
+        id: uuid::Uuid::new_v4().to_string(),
+        username: suffix.clone(),
+        email: format!("{suffix}@firecrow.test"),
+        password: "Test-Correct-Horse-Battery-9!".into(),
+        tenant_id: tenant_id.clone(),
+    };
+    sqlx::query(
+        "INSERT INTO users
+           (id, username, email, password_hash, is_active, credit_balance, tenant_id, created_at)
+         VALUES ($1,$2,$3,$4,true,0.0,$5,NOW())",
+    )
+    .bind(&user.id)
+    .bind(&user.username)
+    .bind(&user.email)
+    .bind(firecrow_backend::services::auth::hash_password(&user.password).expect("hash"))
+    .bind(&tenant_id)
+    .execute(pool)
+    .await
+    .expect("seed tenant user");
+    (tenant_id, user)
+}
+
 /// Insert a tenant and return its id.
 pub async fn seed_tenant(pool: &PgPool, prefix: &str) -> String {
     let slug = unique(prefix);
