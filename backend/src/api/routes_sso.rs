@@ -14,7 +14,7 @@ pub async fn list_providers(
     State(state): State<Arc<crate::AppState>>,
     _user: crate::middleware::auth::AuthenticatedUser,
 ) -> Result<Json<Vec<SsoProvider>>> {
-    SsoService::list_providers(state.pool(), state.crypto()).await.map(Json)
+    SsoService::list_providers(state.pool()).await.map(Json)
 }
 
 pub async fn create_provider(
@@ -33,7 +33,7 @@ pub async fn get_provider(
     _user: crate::middleware::auth::AuthenticatedUser,
     Path(id): Path<String>,
 ) -> Result<Json<SsoProvider>> {
-    SsoService::get_provider(state.pool(), state.crypto(), &id)
+    SsoService::get_provider(state.pool(), &id)
         .await?
         .map(Json)
         .ok_or_else(|| AppError::NotFound("SSO Provider not found".into()))

@@ -7,19 +7,22 @@ use std::sync::Arc;
 pub struct SsoService;
 
 impl SsoService {
-    pub async fn list_providers(pool: &sqlx::PgPool, crypto: &Arc<CryptoManager>) -> Result<Vec<SsoProvider>> {
+    /// Read path. `client_secret` is not decrypted here and, per
+    /// `models/sso.rs`, is never serialized. security_p0_4: this previously
+    /// decrypted every secret and returned it in the response, behind nothing
+    /// but `AuthenticatedUser`, while the write path was correctly
+    /// `AdminUser`-gated.
+    pub async fn list_providers(pool: &sqlx::PgPool) -> Result<Vec<SsoProvider>> {
         let providers = sqlx::query_as::<_, SsoProvider>("SELECT * FROM sso_providers ORDER BY name")
             .fetch_all(pool).await.map_err(AppError::Database)?;
-        let mut result = Vec::with_capacity(providers.len());
-        for mut p in providers {
-            if let Some(secret) = &p.client_secret {
-                if let Ok(decrypted) = crypto.decrypt_secret(secret) {
-                    p.client_secret = Some(decrypted);
-                }
-            }
-            result.push(p);
-        }
-        Ok(result)
+        Ok(providers
+            .into_iter()
+            .map(|mut p| {
+                p.client_secret_set = Some(p.client_secret.is_some());
+                p.client_secret = None;
+                p
+            })
+            .collect())
     }
 
     pub async fn create_provider(pool: &sqlx::PgPool, crypto: &Arc<CryptoManager>, mut provider: SsoProvider) -> Result<SsoProvider> {
@@ -38,18 +41,16 @@ impl SsoService {
         .fetch_one(pool).await.map_err(AppError::Database)
     }
 
-    pub async fn get_provider(pool: &sqlx::PgPool, crypto: &Arc<CryptoManager>, provider_id: &str) -> Result<Option<SsoProvider>> {
-        let mut provider = sqlx::query_as::<_, SsoProvider>("SELECT * FROM sso_providers WHERE id = $1")
+    /// Read path. Never decrypts. security_p0_4.
+    pub async fn get_provider(pool: &sqlx::PgPool, provider_id: &str) -> Result<Option<SsoProvider>> {
+        let provider = sqlx::query_as::<_, SsoProvider>("SELECT * FROM sso_providers WHERE id = $1")
             .bind(provider_id)
             .fetch_optional(pool).await.map_err(AppError::Database)?;
-        if let Some(p) = &mut provider {
-            if let Some(secret) = &p.client_secret {
-                if let Ok(decrypted) = crypto.decrypt_secret(secret) {
-                    p.client_secret = Some(decrypted);
-                }
-            }
-        }
-        Ok(provider)
+        Ok(provider.map(|mut p| {
+            p.client_secret_set = Some(p.client_secret.is_some());
+            p.client_secret = None;
+            p
+        }))
     }
 
     pub async fn update_provider(pool: &sqlx::PgPool, crypto: &Arc<CryptoManager>, provider_id: &str, updates: &SsoProviderUpdate) -> Result<Option<SsoProvider>> {
@@ -72,7 +73,7 @@ impl SsoService {
         .bind(updates.certificate.as_ref()).bind(updates.attribute_mapping.as_ref()).bind(updates.domains.as_ref())
         .bind(updates.enforce_mfa).bind(updates.auto_provision).bind(updates.default_role_id.as_ref()).bind(provider_id)
         .execute(pool).await.map_err(AppError::Database)?;
-        Self::get_provider(pool, crypto, provider_id).await
+        Self::get_provider(pool, provider_id).await
     }
 
     pub async fn delete_provider(pool: &sqlx::PgPool, provider_id: &str) -> Result<bool> {

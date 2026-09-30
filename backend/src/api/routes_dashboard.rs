@@ -54,7 +54,7 @@ async fn dashboard_summary(
     // Run all 8 fetches concurrently.  Failures for non-critical sections
     // degrade to empty lists so the dashboard still renders.
     let jobs_fut = fetch_jobs(&pool, &user_id);
-    let sso_fut = crate::services::sso_service::SsoService::list_providers(&pool, &crypto);
+    let sso_fut = crate::services::sso_service::SsoService::list_providers(&pool);
     let pam_req_fut = crate::services::pam_service::PamService::list_requests(&pool, Some(&user_id));
     let pam_grant_fut = crate::services::pam_service::PamService::list_grants(&pool, Some(&user_id));
     let iam_fut = crate::services::iam_service::IamService::list_policies(&pool);
