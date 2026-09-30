@@ -386,7 +386,7 @@ pub async fn github_callback(
         .bind(&github_id_str)
         .fetch_optional(state.pool()).await;
 
-    let mut db_user = match db_user_opt {
+    let db_user = match db_user_opt {
         Ok(u) => u,
         Err(e) => {
             error!("DB error looking up github_id: {}", e);
@@ -394,31 +394,32 @@ pub async fn github_callback(
         }
     };
 
-    if db_user.is_none() {
-        if let Some(email) = &gh_user.email {
-            db_user = match sqlx::query_as::<_, crate::models::User>(
-                "SELECT * FROM users WHERE email = $1")
-                .bind(email)
-                .fetch_optional(state.pool()).await {
-                Ok(u) => u,
-                Err(e) => {
-                    error!("DB error looking up email: {}", e);
-                    None
-                }
-            };
-        }
-    }
+    // security_p0_5: there is deliberately NO email-based account lookup here.
+    // An email address returned by an OAuth provider is not proof of ownership:
+    // GitHub permits unverified addresses on non-protected domains, so matching on
+    // it let anyone who registered a victim's address on GitHub bind their token
+    // to the victim's row and receive a session for it. Identity is now keyed on
+    // the immutable provider subject (`github_id`) alone. Linking a GitHub
+    // identity to an existing FireCrow account must happen from inside an
+    // authenticated session, which does not exist yet - see the follow-up note
+    // in the commit message.
 
     let user = if let Some(mut existing) = db_user {
         let encrypted = match state.crypto().encrypt_secret(&token_data.access_token) {
             Ok(e) => e,
             Err(e) => return (jar, error_redirect(&format!("Token encryption failed: {e}"))),
         };
-        let _ = sqlx::query("UPDATE users SET github_id = $1, github_access_token = $2 WHERE id = $3")
+        if let Err(e) = sqlx::query("UPDATE users SET github_id = $1, github_access_token = $2 WHERE id = $3")
             .bind(&github_id_str)
             .bind(&encrypted)
             .bind(&existing.id)
-            .execute(state.pool()).await;
+            .execute(state.pool()).await {
+            // security_p0_5: this used to be `let _ = ...`, so a failed write
+            // still produced a session. The account would be authenticated with
+            // an OAuth token the server never stored.
+            error!("Failed to persist GitHub identity for user {}: {}", existing.id, e);
+            return (jar, error_redirect("Could not link this GitHub account. Please try again."));
+        }
         existing.github_id = Some(github_id_str);
         existing.github_access_token = Some(token_data.access_token);
         existing
@@ -436,7 +437,18 @@ pub async fn github_callback(
             .bind(&github_id_str).bind(&encrypted).bind(now)
             .execute(state.pool()).await {
             Ok(_) => {},
-            Err(e) => return (jar, error_redirect(&format!("Failed to create user: {e}"))),
+            Err(e) => {
+                // `users.email` is UNIQUE. Without the email-match fallback above,
+                // an address already in use means someone else holds the account,
+                // so say so rather than leaking the constraint name.
+                if gh_user.email.is_some() {
+                    error!("GitHub signup collided with an existing email: {}", e);
+                    return (jar, error_redirect(
+                        "An account already exists for this email address. Sign in with your password instead.",
+                    ));
+                }
+                return (jar, error_redirect("Could not create an account. Please try again."));
+            }
         };
         match sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = $1")
             .bind(&new_id).fetch_one(state.pool()).await {

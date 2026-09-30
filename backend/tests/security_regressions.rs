@@ -188,3 +188,156 @@ fn security_p0_1b_logger_redaction_is_case_insensitive_and_preserves_shape() {
         "/p?b=2&token=[REDACTED]"
     );
 }
+
+// ---------------------------------------------------------------------------
+// P0-4: SSO client secrets must never be serialized to a client
+// ---------------------------------------------------------------------------
+
+#[test]
+fn security_p0_4_sso_provider_never_serializes_client_secret() {
+    use firecrow_backend::models::SsoProvider;
+
+    let provider = SsoProvider {
+        id: "p1".into(),
+        name: "Okta".into(),
+        provider_type: "oidc".into(),
+        issuer_url: Some("https://acme.okta.com".into()),
+        client_id: Some("0oa1clientid".into()),
+        client_secret: Some("ENC[super-secret-blob]".into()),
+        authorization_url: None,
+        token_url: None,
+        userinfo_url: None,
+        jwks_url: None,
+        certificate: None,
+        attribute_mapping: None,
+        domains: None,
+        enforce_mfa: false,
+        auto_provision: false,
+        default_role_id: None,
+        created_at: chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap(),
+        client_secret_set: Some(true),
+    };
+
+    let json = serde_json::to_string(&provider).expect("serialize");
+
+    assert!(
+        !json.contains("client_secret\":"),
+        "client_secret key must be absent from the wire format: {json}"
+    );
+    assert!(
+        !json.contains("super-secret-blob"),
+        "secret material leaked into the response: {json}"
+    );
+    // A UI still needs to know whether a secret is configured.
+    assert!(
+        json.contains("\"client_secret_set\":true"),
+        "expected a non-disclosing configured flag: {json}"
+    );
+    // Non-secret fields are unaffected.
+    assert!(json.contains("0oa1clientid"));
+}
+
+#[test]
+fn security_p0_4_sso_provider_still_accepts_a_secret_on_write() {
+    use firecrow_backend::models::SsoProvider;
+
+    // The field must remain deserializable, or admins could not create providers.
+    let parsed: SsoProvider = serde_json::from_value(serde_json::json!({
+        "id": "p1",
+        "name": "Okta",
+        "provider_type": "oidc",
+        "client_secret": "plaintext-on-write",
+        "enforce_mfa": false,
+        "auto_provision": false,
+        "created_at": "1970-01-01T00:00:00",
+    }))
+    .expect("a secret must still be accepted as input");
+
+    assert_eq!(parsed.client_secret.as_deref(), Some("plaintext-on-write"));
+}
+
+#[test]
+fn security_p0_4_sso_read_paths_do_not_decrypt() {
+    // Structural guard: the read helpers must not reference the crypto manager.
+    // A regression here would reintroduce plaintext secrets into responses.
+    let svc = include_str!("../src/services/sso_service.rs");
+
+    for fname in ["list_providers", "get_provider"] {
+        let body = svc
+            .split(&format!("fn {fname}"))
+            .nth(1)
+            .unwrap_or_else(|| panic!("{fname} not found"))
+            // Bound the slice to this function's next sibling.
+            .split("    pub async fn ")
+            .next()
+            .unwrap();
+        assert!(
+            !body.contains("decrypt_secret"),
+            "{fname} must not decrypt client_secret (security_p0_4):\n{body}"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// P0-5: OAuth identity must be keyed on the provider subject, not on email
+// ---------------------------------------------------------------------------
+
+#[test]
+fn security_p0_5_no_email_account_linking() {
+    // There is no database harness yet, so this is a structural regression test:
+    // it fails if the email-match lookup is reintroduced into the OAuth callback.
+    let src = include_str!("../src/api/routes_auth.rs");
+    let callback = src
+        .split("pub async fn github_callback")
+        .nth(1)
+        .expect("github_callback must exist");
+
+    assert!(
+        !callback.contains("SELECT * FROM users WHERE email"),
+        "github_callback must not look accounts up by email (security_p0_5)"
+    );
+    assert!(
+        callback.contains("security_p0_5"),
+        "expected the rationale comment to stay next to the identity lookup"
+    );
+}
+
+#[test]
+fn security_p0_5_github_identity_is_looked_up_by_provider_subject() {
+    let src = include_str!("../src/api/routes_auth.rs");
+    let callback = src
+        .split("pub async fn github_callback")
+        .nth(1)
+        .expect("github_callback must exist");
+
+    assert!(
+        callback.contains("github_id = $1") || callback.contains("github_id=$1"),
+        "github_callback must resolve identity by the immutable provider id (security_p0_5)"
+    );
+}
+
+#[test]
+fn security_p0_5_identity_write_failures_are_not_swallowed() {
+    let src = include_str!("../src/api/routes_auth.rs");
+    let callback = src
+        .split("pub async fn github_callback")
+        .nth(1)
+        .expect("github_callback must exist");
+
+    // The token-persist UPDATE was `let _ = ...`, so a failed write still minted a
+    // session for an account whose OAuth token was never stored.
+    let mut saw_swallowed_update = false;
+    for line in callback.lines() {
+        let l = line.trim();
+        if l.starts_with("let _ = sqlx::query(\"UPDATE users SET github_id") {
+            saw_swallowed_update = true;
+        }
+    }
+    assert!(
+        !saw_swallowed_update,
+        "the GitHub identity write must not be discarded (security_p0_5)"
+    );
+}
