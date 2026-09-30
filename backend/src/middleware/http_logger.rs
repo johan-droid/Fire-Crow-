@@ -39,10 +39,8 @@ pub fn redact_json_value(val: &mut serde_json::Value) {
                 redact_json_value(item);
             }
         }
-        serde_json::Value::String(s) => {
-            if s.starts_with("Bearer ") || s.starts_with("eyJ") {
-                *s = "[REDACTED_JWT_TOKEN]".to_string();
-            }
+        serde_json::Value::String(s) if (s.starts_with("Bearer ") || s.starts_with("eyJ")) => {
+            *s = "[REDACTED_JWT_TOKEN]".to_string();
         }
         _ => {}
     }

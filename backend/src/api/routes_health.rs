@@ -21,11 +21,14 @@ pub async fn health_deep(State(state): State<Arc<crate::AppState>>) -> impl Into
 }
 
 pub async fn health_ready(State(state): State<Arc<crate::AppState>>) -> impl IntoResponse {
+    // A readiness probe that never fails is not a readiness probe: it tells a load
+    // balancer to keep routing to an instance that cannot reach its database.
+    // (audit R-10; clippy flagged the identical branches)
     let db_ok = sqlx::query("SELECT 1").execute(state.pool()).await.is_ok();
     let status = if db_ok {
         StatusCode::OK
     } else {
-        StatusCode::OK
+        StatusCode::SERVICE_UNAVAILABLE
     };
 
     (

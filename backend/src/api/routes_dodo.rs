@@ -28,9 +28,9 @@ pub async fn create_checkout(
 ) -> Result<Json<DodoCheckoutSessionResponse>> {
     // P0-2: The audit engine is currently a stub, returning canned results.
     // Billing is disabled until a real analysis engine is implemented.
-    return Err(AppError::Unavailable(
+    Err(AppError::Unavailable(
         "Service temporarily unavailable while audit engine is being upgraded.".into(),
-    ));
+    ))
 }
 
 pub async fn handle_webhook(

@@ -34,9 +34,8 @@ impl axum::extract::FromRequestParts<Arc<crate::AppState>> for AuthenticatedUser
                     .and_then(|cookie_str| {
                         let cookie_name = &state.settings().auth_cookie_name;
                         cookie_str.split(';').find_map(|pair| {
-                            let mut parts = pair.trim().splitn(2, '=');
-                            let key = parts.next()?;
-                            let val = parts.next()?;
+                            let (key, val) = pair.trim().split_once('=')?;
+
                             if key == cookie_name.as_str() {
                                 Some(val.to_string())
                             } else {

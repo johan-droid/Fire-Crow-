@@ -5,11 +5,14 @@ use prometheus_client::metrics::histogram::{exponential_buckets, Histogram};
 use prometheus_client::registry::Registry;
 use std::sync::{Arc, RwLock};
 
+/// Labels carried by every HTTP metric: (method, route).
+pub type MetricLabels = Vec<(String, String)>;
+
 lazy_static::lazy_static! {
     pub static ref REGISTRY: Arc<RwLock<Registry>> = Arc::new(RwLock::new(Registry::default()));
-    pub static ref HTTP_REQUESTS: Arc<RwLock<Family<Vec<(String, String)>, Gauge>>> =
+    pub static ref HTTP_REQUESTS: Arc<RwLock<Family<MetricLabels, Gauge>>> =
         Arc::new(RwLock::new(Family::default()));
-    pub static ref HTTP_DURATION: Arc<RwLock<Family<Vec<(String, String)>, Histogram>>> =
+    pub static ref HTTP_DURATION: Arc<RwLock<Family<MetricLabels, Histogram>>> =
         Arc::new(RwLock::new(Family::new_with_constructor(|| {
             Histogram::new(exponential_buckets(0.001, 2.0, 15))
         })));

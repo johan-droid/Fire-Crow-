@@ -88,10 +88,10 @@ pub fn password_needs_rehash(hash: &str) -> bool {
     let current_t = 3;
     let current_p = 1; // Note: Argon2::default() uses parallelism=1
                        // If any parameter is less than current, recommend rehash
-    let needs_rehash = m.map_or(true, |val| val < current_m)
-        || t.map_or(true, |val| val < current_t)
-        || p.map_or(true, |val| val < current_p);
-    needs_rehash
+
+    m.is_none_or(|val| val < current_m)
+        || t.is_none_or(|val| val < current_t)
+        || p.is_none_or(|val| val < current_p)
 }
 
 pub async fn check_login_lockout(

@@ -350,7 +350,7 @@ fn compute_security_score(state: &mut AuditState) {
             crate::models::Severity::Info => 0.1,
         };
     }
-    score = score.max(0.0).min(10.0);
+    score = score.clamp(0.0, 10.0);
     state.security_score = Some((score * 10.0).round() / 10.0);
     let risk_level = if score >= 8.0 {
         "low"
@@ -369,7 +369,7 @@ fn extract_repo_owner(url: &str) -> String {
     if cleaned.contains("git@") {
         cleaned
             .split(':')
-            .last()
+            .next_back()
             .unwrap_or("")
             .split('/')
             .next()
