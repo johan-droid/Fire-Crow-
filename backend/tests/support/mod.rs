@@ -66,6 +66,25 @@ pub fn test_settings() -> Settings {
     .expect("test settings must deserialize")
 }
 
+/// Settings with the global rate limiter ON.
+///
+/// Derived from [`test_settings`] by flipping one flag rather than repeating the
+/// whole literal, so it cannot drift from the fixture.
+pub fn test_settings_rate_limited() -> Settings {
+    Settings {
+        rate_limit_enabled: true,
+        ..test_settings()
+    }
+}
+
+/// The full application router with rate limiting enabled.
+pub async fn test_app_rate_limited(pool: PgPool) -> TestServer {
+    let state = build_state(test_settings_rate_limited(), pool, None)
+        .await
+        .expect("state must build for tests");
+    TestServer::new(build_app(state, false)).expect("test server")
+}
+
 /// The full application router against a per-test database, with no static-file
 /// fallback so unknown paths 404 instead of returning `index.html`.
 pub async fn test_app(pool: PgPool) -> TestServer {

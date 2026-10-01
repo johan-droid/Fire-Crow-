@@ -139,7 +139,41 @@ pub fn build_app(state: Arc<AppState>, serve_frontend: bool) -> Router {
         ))
         .layer(from_fn(
             crate::middleware::security_headers::security_headers_middleware,
-        ))
+        ));
+
+    // security_s1 + p0_3 + phase_9: the global rate limiter must sit INSIDE
+    // `http_audit_logger`.
+    //
+    // security_s1 + p0_3: it is governed by its own flag and is on by default. It
+    // used to be gated on `debug`, so enabling debug logging silently disabled
+    // rate limiting.
+    //
+    // It used to be applied last, which made it the outermost layer, so it
+    // rejected a request with 429 *before* the audit logger ran and the
+    // rejection produced no audit record at all: a burst of blocked traffic was
+    // invisible. Moving it inwards makes the existing logger observe the 429, so
+    // no second logging path is introduced.
+    //
+    // The key is the verified TCP peer, not an extension, so keying does not
+    // depend on this ordering. The consequence is that `body_size_limit` now runs
+    // first, so an oversized request from an over-limit client is answered 413
+    // rather than 429 — both are rejections, and neither is silently admitted.
+    let app = if settings.rate_limit_enabled {
+        let rate_limiter_conf = tower_governor::governor::GovernorConfigBuilder::default()
+            .per_second(20)
+            .burst_size(40)
+            .key_extractor(crate::middleware::rate_limit::ClientIpKeyExtractor)
+            .finish()
+            .expect("rate limiter config is valid");
+        app.layer(tower_governor::GovernorLayer {
+            config: Arc::new(rate_limiter_conf),
+        })
+    } else {
+        info!("Global rate limiting disabled via RATE_LIMIT_ENABLED=false");
+        app
+    };
+
+    let app = app
         .layer(from_fn(crate::middleware::http_logger::http_audit_logger))
         .layer(tower_http::catch_panic::CatchPanicLayer::new())
         .layer(from_fn(
@@ -158,25 +192,6 @@ pub fn build_app(state: Arc<AppState>, serve_frontend: bool) -> Router {
     let app = app.layer(from_fn(
         crate::middleware::cloudflare::cloudflare_middleware,
     ));
-
-    // security_s1 + p0_3: the global rate limiter is governed by its own flag and
-    // is on by default. It used to be gated on `debug`, so enabling debug logging
-    // silently disabled rate limiting. The key is derived from the verified TCP
-    // peer, so this does not depend on layer ordering.
-    let app = if settings.rate_limit_enabled {
-        let rate_limiter_conf = tower_governor::governor::GovernorConfigBuilder::default()
-            .per_second(20)
-            .burst_size(40)
-            .key_extractor(crate::middleware::rate_limit::ClientIpKeyExtractor)
-            .finish()
-            .expect("rate limiter config is valid");
-        app.layer(tower_governor::GovernorLayer {
-            config: Arc::new(rate_limiter_conf),
-        })
-    } else {
-        info!("Global rate limiting disabled via RATE_LIMIT_ENABLED=false");
-        app
-    };
 
     if settings.csrf_enabled {
         app.layer(from_fn_with_state(
