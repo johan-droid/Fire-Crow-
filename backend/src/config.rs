@@ -20,6 +20,19 @@ pub struct Settings {
     /// enabling debug logging can never disable rate limiting. security_p0_3.
     #[serde(default = "default_true")]
     pub rate_limit_enabled: bool,
+    /// HMAC signing key for JWTs and encrypted-at-rest secrets.
+    ///
+    /// security_p0_3 / phase7: this field deliberately carries `#[serde(default)]`
+    /// so that an *absent* SECRET_KEY deserializes to an empty string and is then
+    /// rejected by `validate()` with an actionable message naming the environment
+    /// variable. Without the default, deserialization failed first with serde's
+    /// "missing field" error naming the Rust field rather than the environment
+    /// variable, with no guidance. The encryption_key field below already worked
+    /// this way; this brings SECRET_KEY in line with it.
+    ///
+    /// The default changes nothing about the outcome: both paths fail closed, and
+    /// both refuse to start the process.
+    #[serde(default)]
     pub secret_key: String,
     #[serde(default)]
     pub encryption_key: String,
