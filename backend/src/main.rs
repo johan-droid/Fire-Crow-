@@ -72,9 +72,16 @@ async fn main() -> anyhow::Result<()> {
         .replace("?channel_binding=require&", "?")
         .replace("?channel_binding=require", "");
 
+    // security: a malformed DATABASE_URL previously fell back to
+    // PgConnectOptions::default(), which silently pointed the pool at the local
+    // default socket instead of failing. That turned a configuration mistake into
+    // a confusing runtime error, or worse, a connection to the wrong database.
+    // The error deliberately omits the URL so no credential can reach the log.
     let connect_options = std::str::FromStr::from_str(&clean_database_url)
         .map(|opts: sqlx::postgres::PgConnectOptions| opts.statement_cache_capacity(0))
-        .unwrap_or_default();
+        .map_err(|e| {
+            anyhow::anyhow!("DATABASE_URL is not a valid PostgreSQL connection URL: {e}")
+        })?;
 
     let pool = PgPoolOptions::new()
         .max_connections(settings.database_pool_size)
@@ -83,15 +90,6 @@ async fn main() -> anyhow::Result<()> {
         .idle_timeout(std::time::Duration::from_secs(600))
         .max_lifetime(std::time::Duration::from_secs(1800))
         .connect_lazy_with(connect_options);
-
-    let pool_migrator = pool.clone();
-    tokio::spawn(async move {
-        info!("Running database migrations...");
-        match sqlx::migrate!("./migrations").run(&pool_migrator).await {
-            Ok(_) => info!("Database migrations applied successfully"),
-            Err(e) => error!("Database migrations error: {}", e),
-        }
-    });
 
     // Initialize metrics
     init_registry();
@@ -119,10 +117,30 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    // Verify graph store (Neon Postgres)
-    if let Err(e) = GraphStore::verify_connectivity(&pool).await {
-        tracing::warn!("Graph store connectivity check failed: {}", e);
-    }
+    // ---- REQUIRED dependency gates -----------------------------------------
+    // Startup order is now: configuration -> database reachable -> schema
+    // migrated -> HTTP listener. Previously the migration ran in a detached
+    // tokio::spawn whose failure was only logged, and the listener was bound
+    // before it finished. The process therefore came up "healthy" while serving
+    // requests against an incomplete or unmigrated schema, and /health only
+    // runs `SELECT 1` so it reported the database as connected regardless.
+
+    // 1. Database must actually be reachable before anything depends on it.
+    GraphStore::verify_connectivity(&pool).await.map_err(|e| {
+        error!("Database unreachable at startup: {}", e);
+        anyhow::anyhow!("cannot reach PostgreSQL using DATABASE_URL: {}", e)
+    })?;
+
+    // 2. Schema must be fully migrated. Awaited, not detached, and fatal.
+    info!("Running database migrations...");
+    sqlx::migrate!("./migrations")
+        .run(&pool)
+        .await
+        .map_err(|e| {
+            error!("Database migrations failed: {}", e);
+            anyhow::anyhow!("database migration failed, refusing to start: {}", e)
+        })?;
+    info!("Database migrations applied successfully");
 
     let state = crate::app::build_state(settings.clone(), pool, redis_conn).await?;
 

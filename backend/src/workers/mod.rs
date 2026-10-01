@@ -254,12 +254,21 @@ impl WorkerPool {
             }
         }
     }
-    async fn housekeeping_loop(
-        pool: sqlx::PgPool,
-        _settings: Settings,
-        running: Arc<RwLock<bool>>,
-    ) {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+    async fn housekeeping_loop(pool: sqlx::PgPool, settings: Settings, running: Arc<RwLock<bool>>) {
+        // housekeeping_interval_seconds is authoritative. It previously arrived
+        // here as `_settings` and was ignored in favour of a hardcoded 3600,
+        // while `default_housekeeping_interval()` independently returned the same
+        // value, so the setting looked configurable but silently was not.
+        //
+        // `Settings::validate` rejects non-positive values, because
+        // `tokio::time::interval` panics on a zero duration and this task is
+        // spawned without supervision, so that panic would go unseen.
+        let period = settings.housekeeping_interval_seconds.max(1) as u64;
+        tracing::info!(
+            "Housekeeping loop interval: {}s (from housekeeping_interval_seconds)",
+            period
+        );
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(period));
         loop {
             interval.tick().await;
             {

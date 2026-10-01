@@ -406,6 +406,17 @@ impl Settings {
             ));
         }
 
+        // A non-positive housekeeping interval would make
+        // `tokio::time::interval` panic. The housekeeping task is spawned
+        // without supervision, so that panic would be silent. Reject it at
+        // startup instead of crashing a background task later.
+        if settings.housekeeping_interval_seconds <= 0 {
+            return Err(ConfigError::Message(format!(
+                "housekeeping_interval_seconds must be greater than 0, got {}",
+                settings.housekeeping_interval_seconds
+            )));
+        }
+
         // CRIT-02: SECRET_KEY and ENCRYPTION_KEY must never be identical.
         // Reusing one key for JWT signing AND data encryption collapses the
         // security boundary — compromising one key compromises both.
