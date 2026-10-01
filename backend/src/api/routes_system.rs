@@ -28,9 +28,15 @@ pub async fn system_status(
         serde_json::json!({"status": "ok", "database": db_connected}),
     ))
 }
+/// Database-wide row counts for every public table.
+///
+/// security_s2 (was S-3): gated on `AuthenticatedUser`, so any registered user
+/// could enumerate the size of every table in the database, including
+/// `users`, `token_revocations`, `service_accounts` and `login_failures`.
+/// Now `AdminUser`, matching every other privileged read in the codebase.
 pub async fn database_stats(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    _admin: crate::middleware::auth::AdminUser,
 ) -> Result<Json<serde_json::Value>> {
     let tables: Vec<String> = sqlx::query_scalar("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name")
         .fetch_all(&state.pool).await.unwrap_or_default();
@@ -46,9 +52,21 @@ pub async fn database_stats(
         serde_json::json!({"tables": table_counts, "total_tables": tables.len()}),
     ))
 }
+
+/// Trigger the housekeeping sweep.
+///
+/// security_s2 (was S-2): gated on `AuthenticatedUser`, so any registered user
+/// could run mass `UPDATE user_sessions` / `DELETE login_failures` /
+/// `DELETE auth_exchange_codes`. Deleting `login_failures` rows erases the
+/// login-lockout counters, which is a security control in its own right.
+///
+/// The sweep is time-bounded (`expires_at < now()`, `attempted_at < now - 30d`)
+/// and accepts no request input, so scope is fixed. It is also already run
+/// automatically by `WorkerPool::housekeeping_loop`, so this endpoint is a manual
+/// re-run rather than the only path to these mutations.
 pub async fn trigger_housekeeping(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    _admin: crate::middleware::auth::AdminUser,
 ) -> Result<Json<serde_json::Value>> {
     let stats = crate::services::housekeeping::HousekeepingService::run(state.pool()).await?;
     Ok(Json(

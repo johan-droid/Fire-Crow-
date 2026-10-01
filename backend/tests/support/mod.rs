@@ -206,37 +206,39 @@ pub async fn seed_job(pool: &PgPool, user_id: &str, status: &str) -> String {
 
 /// Make `user` satisfy the `AdminUser` predicate.
 ///
-/// This mirrors the *current* production shape: `role_permissions.role_id` is a
-/// bare column with a foreign key to `iam_policies`, and `AdminUser` joins
-/// `users.role_id = role_permissions.role_id`. Phase 5 introduces a real `roles`
-/// table and rewrites this helper; the HTTP tests that use it will then cover the
-/// corrected model without being rewritten.
+/// Follows the approved one-shot bootstrap in `documentation/IAM_BOOTSTRAP.md`:
+/// create a role, grant it a permission from `ADMIN_PERMISSIONS`, then point the
+/// user at that role.
+///
+/// This was the pre-Phase-5B-1 shape, which inserted an `iam_policies` row as the
+/// foreign-key target. Phase 5B-1 repointed `role_permissions.role_id` at `roles`,
+/// and Phase 8 caught the stale helper when its tests failed to grant admin.
 pub async fn grant_admin(pool: &PgPool, user: &SeededUser) {
-    // The FK on role_permissions.role_id points at iam_policies, so a permission
-    // row can only exist for a policy id that actually exists.
-    let policy_id = uuid::Uuid::new_v4().to_string();
+    let role_id = format!("test-admin-{}", uuid::Uuid::new_v4());
+
     sqlx::query(
-        "INSERT INTO iam_policies (id, name, priority, policy_json, created_at)
-         VALUES ($1,'admin-bootstrap',0,'{}',NOW())",
+        "INSERT INTO roles (id, name, description, created_at)
+         VALUES ($1, $2, 'test fixture administrator role', NOW())",
     )
-    .bind(&policy_id)
+    .bind(&role_id)
+    .bind(format!("role-{role_id}"))
     .execute(pool)
     .await
-    .expect("seed policy row (FK target for role_permissions)");
+    .expect("create role (FK target for role_permissions)");
 
     sqlx::query("UPDATE users SET role_id = $1 WHERE id = $2")
-        .bind(&policy_id)
+        .bind(&role_id)
         .bind(&user.id)
         .execute(pool)
         .await
         .expect("set role_id");
 
     sqlx::query(
-        "INSERT INTO role_permissions (id, role_id, permission, created_at)
-         VALUES ($1,$2,'admin',NOW())",
+        "INSERT INTO role_permissions (id, role_id, permission, resource_pattern, created_at)
+         VALUES ($1,$2,'admin','*',NOW())",
     )
     .bind(uuid::Uuid::new_v4().to_string())
-    .bind(&policy_id)
+    .bind(&role_id)
     .execute(pool)
     .await
     .expect("grant admin");
