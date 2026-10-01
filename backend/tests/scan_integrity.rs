@@ -87,7 +87,10 @@ fn engine_unavailable_survives_serialization() {
         JobStatus::Cancelled,
     ] {
         let j = serde_json::to_string(&other).unwrap();
-        assert_ne!(j, json, "{other:?} must not serialize like EngineUnavailable");
+        assert_ne!(
+            j, json,
+            "{other:?} must not serialize like EngineUnavailable"
+        );
     }
 }
 

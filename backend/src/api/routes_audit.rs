@@ -241,9 +241,7 @@ pub fn validate_github_repo_url(url: &str) -> Result<String> {
     let rest = trimmed
         .strip_prefix("https://github.com/")
         .ok_or_else(|| {
-            AppError::BadRequest(
-                "repo_url must be an https://github.com/{owner}/{repo} URL".into(),
-            )
+            AppError::BadRequest("repo_url must be an https://github.com/{owner}/{repo} URL".into())
         })?
         .trim_end_matches('/');
 
@@ -257,7 +255,10 @@ pub fn validate_github_repo_url(url: &str) -> Result<String> {
         ));
     }
 
-    Ok(format!("https://github.com/{}/{}", segments[0], segments[1]))
+    Ok(format!(
+        "https://github.com/{}/{}",
+        segments[0], segments[1]
+    ))
 }
 pub async fn get_job_insight(
     State(state): State<Arc<crate::AppState>>,

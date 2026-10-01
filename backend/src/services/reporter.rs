@@ -79,7 +79,10 @@ impl ReportGenerator {
                     Some(line) => format!("{}:{}", path, line),
                     None => path.clone(),
                 };
-                md.push_str(&format!("**Location:** `{}`\n\n", location.replace('`', "")));
+                md.push_str(&format!(
+                    "**Location:** `{}`\n\n",
+                    location.replace('`', "")
+                ));
             }
 
             if let Some(ref evidence) = finding.evidence {

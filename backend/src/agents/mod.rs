@@ -33,4 +33,3 @@ pub const ENGINE_UNAVAILABLE_REASON: &str =
 
 /// Short label for UI and log lines.
 pub const ENGINE_NAME: &str = "gitleaks";
-

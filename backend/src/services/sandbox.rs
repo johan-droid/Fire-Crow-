@@ -76,7 +76,8 @@ impl SandboxManager {
         // Never inherit an interactive/inherited stdin.
         cmd.stdin(std::process::Stdio::null());
 
-        match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), cmd.output()).await {
+        match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), cmd.output()).await
+        {
             Ok(Ok(output)) => {
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 let stderr = String::from_utf8_lossy(&output.stderr).to_string();

@@ -348,14 +348,13 @@ where
 /// an empty result would be the most misleading output this product could give.
 /// Read back persisted findings for a job, newest writes last.
 pub async fn load_findings(pool: &PgPool, job_id: &str) -> Result<Vec<Finding>> {
-    let rows: Vec<crate::models::FindingModel> =
-        sqlx::query_as::<_, crate::models::FindingModel>(
-            "SELECT * FROM findings WHERE job_id=$1 ORDER BY created_at ASC, id ASC",
-        )
-        .bind(job_id)
-        .fetch_all(pool)
-        .await
-        .map_err(AppError::Database)?;
+    let rows: Vec<crate::models::FindingModel> = sqlx::query_as::<_, crate::models::FindingModel>(
+        "SELECT * FROM findings WHERE job_id=$1 ORDER BY created_at ASC, id ASC",
+    )
+    .bind(job_id)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Database)?;
     Ok(rows
         .into_iter()
         .map(
@@ -435,15 +434,8 @@ pub fn score_scan(analysis_performed: bool, finding_count: usize) -> Option<f64>
 /// rows, otherwise freshly inserted) means rerunning this phase neither leaves
 /// stale rows behind nor appends duplicates. The returned count must equal
 /// `findings.len()` or the caller treats the phase as failed.
-pub async fn persist_findings(
-    pool: &PgPool,
-    job_id: &str,
-    findings: &[Finding],
-) -> Result<usize> {
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(AppError::Database)?;
+pub async fn persist_findings(pool: &PgPool, job_id: &str, findings: &[Finding]) -> Result<usize> {
+    let mut tx = pool.begin().await.map_err(AppError::Database)?;
     let mut stored = 0usize;
     for finding in findings {
         let now = Utc::now().naive_utc();

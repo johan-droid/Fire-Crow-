@@ -126,7 +126,6 @@ pub async fn run_secret_scan(source_dir: &Path, sandbox: &SandboxManager) -> Sca
     }
 }
 
-
 /// Parse gitleaks' JSON report.
 ///
 /// Accepts an empty body or `null` as "no findings" (gitleaks does this on some

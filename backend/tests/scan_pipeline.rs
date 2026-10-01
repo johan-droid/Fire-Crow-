@@ -543,14 +543,14 @@ async fn re_running_findings_persist_is_idempotent(pool: PgPool) {
     assert_eq!(stored, 1);
 
     let rows = load_findings(&pool, &job).await.expect("load findings");
-    assert_eq!(rows.len(), 1, "exactly the requested findings may be stored");
+    assert_eq!(
+        rows.len(),
+        1,
+        "exactly the requested findings may be stored"
+    );
     assert_eq!(rows[0].id, scanner_finding.id);
     assert_eq!(rows[0].file_path.as_deref(), Some("src/x.rs"));
     let line_number: Option<i32> = rows[0].line_number;
     assert_eq!(line_number, Some(1));
-    assert!(rows[0]
-        .evidence
-        .as_deref()
-        .unwrap()
-        .contains("[REDACTED]"));
+    assert!(rows[0].evidence.as_deref().unwrap().contains("[REDACTED]"));
 }

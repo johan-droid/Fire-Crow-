@@ -169,8 +169,11 @@ pub fn extract_tarball(gz: &[u8], dest: &Path) -> Result<()> {
         match typeflag {
             // GNU long name: the following entry's name is this payload.
             b'L' => {
-                pending_name =
-                    Some(String::from_utf8_lossy(body).trim_end_matches('\0').to_string());
+                pending_name = Some(
+                    String::from_utf8_lossy(body)
+                        .trim_end_matches('\0')
+                        .to_string(),
+                );
             }
             // PAX extended header: honour only `path=`.
             b'x' => {
