@@ -512,7 +512,14 @@ pub async fn github_callback(
     let base_url = state.settings().backend_base_url.trim_end_matches('/');
     let redirect_uri = format!("{}/api/v1/auth/github/callback", base_url);
 
-    let client = reqwest::Client::new();
+    // security_s_16: `Client::new()` has no timeout, so a stalled peer
+    // pins a connection from a small pool for as long as it likes. The
+    // unauthenticated GitHub endpoints were the worst case: ~40 stalled
+    // callbacks exhaust the pool.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
     let token_res = client
         .post("https://github.com/login/oauth/access_token")
         .header("Accept", "application/json")
@@ -789,13 +796,22 @@ pub async fn policy_context() -> Result<Json<serde_json::Value>> {
         serde_json::json!({"privacy_policy_version": "2026-06-06", "terms_version": "2026-06-06"}),
     ))
 }
+/// security_s_15: this endpoint was unauthenticated and unbounded, and passed
+/// `None` as the user id, so any anonymous caller could write an unbounded number
+/// of unattributable rows. There is no caller of this route anywhere in the
+/// frontend, so requiring authentication closes the hole without breaking a
+/// client. Every row is now attributable to the authenticated user.
 pub async fn create_policy_event(
     State(state): State<Arc<crate::AppState>>,
+    user: crate::middleware::auth::AuthenticatedUser,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<StatusCode> {
     crate::services::security_log::record_security_event(
         state.pool(),
-        None,
+        // (user_id, tenant_id) — the author, not the tenant. Passing this in the
+        // tenant slot silently left every row unattributable, which is the very
+        // defect security_s_15 describes.
+        Some(&user.user_id),
         None,
         "policy_event",
         Some(&payload.to_string()),

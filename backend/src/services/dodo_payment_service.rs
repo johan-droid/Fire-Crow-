@@ -56,7 +56,14 @@ impl DodoPaymentService {
 
         // Call Dodo Payments API if API key is present, or fallback to signed checkout URL
         let checkout_url = if !settings.dodo_payments_api_key.is_empty() {
-            let client = reqwest::Client::new();
+            // security_s_16: `Client::new()` has no timeout, so a stalled peer
+            // pins a connection from a small pool for as long as it likes. The
+            // unauthenticated GitHub endpoints were the worst case: ~40 stalled
+            // callbacks exhaust the pool.
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .unwrap_or_default();
             let payload = serde_json::json!({
                 "product_id": req.package_name,
                 "amount": req.amount,

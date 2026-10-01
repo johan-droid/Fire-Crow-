@@ -134,7 +134,7 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
   });
 
   // Auto purge tokens on 401 Unauthorized
-  if (res.status === 401 && endpoint !== '/auth/login' && endpoint !== '/auth/register' && endpoint !== '/auth/demo') {
+  if (res.status === 401 && endpoint !== '/auth/login' && endpoint !== '/auth/register') {
     localStorage.removeItem('access_token');
     document.cookie = 'access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
     document.cookie = 'refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
@@ -296,32 +296,6 @@ function App() {
 
   const [loginMode, setLoginMode] = useState<'github' | 'demo'>('github');
 
-  const handleDemoLogin = async () => {
-    setIsSubmitting(true);
-    setAuthFormError('');
-    try {
-      const res = await apiFetch('/auth/demo', { method: 'POST' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.access_token) {
-          localStorage.setItem('access_token', data.access_token);
-        }
-        setUser(data.user || { user_id: 'demo-1', username: 'github-developer', email: 'dev@github.com' });
-        await fetchDashboardData(false, { force: true });
-        await fetchUserRepos(true);
-        navigate('/console/overview');
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        setAuthFormError(errData.message || errData.error || 'Demo authentication failed.');
-      }
-    } catch (err: any) {
-      setAuthFormError(err.message || 'Network error during login.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-
 
   // Dedupe guard for concurrent dashboard fetches
   const dashboardInflightRef = useRef(false);
@@ -402,8 +376,11 @@ function App() {
     let alive = true;
     const probe = async () => {
       try {
-        const base = API_BASE.replace(/\/api\/v1$/, '');
-        const res = await fetch(`${base}/health/deep`);
+        // R-24: this used to strip the `/api/v1` prefix and request
+        // `${base}/health/deep`, which the backend never serves. Through the
+        // `_redirects` SPA fallback it received index.html with status 200, so
+        // the widget reported "database unreachable" permanently. Use API_BASE.
+        const res = await fetch(`${API_BASE}/health/deep`);
         if (!alive) return;
         setDeepHealth(res.ok ? await res.json() : { status: 'unhealthy', database: 'unavailable' });
       } catch {
@@ -917,10 +894,8 @@ function App() {
       <LoginPage
         onNavigateLanding={() => navigate('/')}
         onGitHubLogin={handleGitHubLogin}
-        onDemoLogin={handleDemoLogin}
         loginMode={loginMode}
         setLoginMode={setLoginMode}
-        isSubmitting={isSubmitting}
         error={error}
         authFormError={authFormError}
         clearErrors={() => { setError(''); setAuthFormError(''); }}

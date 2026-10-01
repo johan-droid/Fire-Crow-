@@ -70,7 +70,14 @@ pub async fn list_github_repos(
         })));
     }
 
-    let client = reqwest::Client::new();
+    // security_s_16: `Client::new()` has no timeout, so a stalled peer
+    // pins a connection from a small pool for as long as it likes. The
+    // unauthenticated GitHub endpoints were the worst case: ~40 stalled
+    // callbacks exhaust the pool.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .unwrap_or_default();
     let res = client.get("https://api.github.com/user/repos?sort=updated&per_page=100&affiliation=owner,collaborator,organization_member")
         .header("User-Agent", "Fire-Crow-Backend")
         .header("Accept", "application/vnd.github.v3+json")

@@ -11,10 +11,8 @@ const GitHubIcon = ({ size = 22 }: { size?: number }) => (
 interface LoginPageProps {
   onNavigateLanding: () => void;
   onGitHubLogin: () => void;
-  onDemoLogin: () => void;
   loginMode: 'github' | 'demo';
   setLoginMode: (mode: 'github' | 'demo') => void;
-  isSubmitting: boolean;
   error: string;
   authFormError: string;
   clearErrors: () => void;
@@ -24,10 +22,8 @@ interface LoginPageProps {
 export default function LoginPage({
   onNavigateLanding,
   onGitHubLogin,
-  onDemoLogin,
   loginMode,
   setLoginMode,
-  isSubmitting,
   error,
   authFormError,
   clearErrors,
@@ -95,12 +91,17 @@ export default function LoginPage({
           </>
         ) : (
           <div className="login-demo-section">
+            {/*
+              R-25: this button POSTed to `/auth/demo`, which has never existed
+              on the backend, so it could only ever fail. It has been removed
+              rather than pointed at a new endpoint, because exposing an
+              unauthenticated session-issuing route is a security decision, not a
+              bug fix. If demo mode is wanted it needs a deliberate design.
+            */}
             <p className="login-demo-desc">
-              Launch the security console instantly in demo mode to explore live repository audits, attack topology graphs, and SOC2 report exports without connecting GitHub OAuth.
+              Demo mode is currently unavailable. Contact your administrator for
+              access.
             </p>
-            <button onClick={onDemoLogin} disabled={isSubmitting} className="btn-apple-primary login-demo-btn" style={{ opacity: isSubmitting ? 0.6 : 1 }}>
-              {isSubmitting ? 'Authenticating Session...' : 'Sign in as Demo Developer →'}
-            </button>
           </div>
         )}
 
