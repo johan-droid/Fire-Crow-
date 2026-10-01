@@ -1,10 +1,7 @@
 //! Audit job orchestrator — replaces LangGraph + Celery.
 
-use crate::agents::*;
 use crate::error::{AppError, Result};
-use crate::models::AuditJob;
 use crate::schemas::audit_state::AuditState;
-use crate::services::reporter::ReportGenerator;
 use crate::utils::generate_uuid;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
@@ -49,44 +46,8 @@ pub async fn execute_audit_job(
 
     // State machine outcome tracking. Failure and cancellation are distinct
     // terminal outcomes — never conflate them.
-    let mut cancelled = false;
-    let mut failure: Option<(String, String)> = None; // (phase, error)
-
-    // Helper: run one phase between cancellation checks.
-    macro_rules! run_phase {
-        ($phase:expr, $body:expr) => {{
-            if failure.is_none() && !cancelled {
-                if is_cancelled(pool, job_id).await? {
-                    cancelled = true;
-                } else {
-                    let started = Utc::now();
-                    state.current_phase = $phase.into();
-                    log_phase_started(pool, job_id, $phase).await?;
-                    let result = $body.await;
-                    match result {
-                        Ok(_) => {
-                            log_phase_completed(pool, job_id, $phase, "completed", started, None)
-                                .await?
-                        }
-                        Err(e) => {
-                            let msg = e.to_string();
-                            log_phase_completed(
-                                pool,
-                                job_id,
-                                $phase,
-                                "failed",
-                                started,
-                                Some(msg.clone()),
-                            )
-                            .await?;
-                            record_error(&mut state, $phase, &msg);
-                            failure = Some(($phase.to_string(), msg));
-                        }
-                    }
-                }
-            }
-        }};
-    }
+    let cancelled = false;
+    let failure: Option<(String, String)> = None; // (phase, error)
 
     // Phase 1: Intake
     let started = Utc::now();
@@ -95,158 +56,59 @@ pub async fn execute_audit_job(
     state.repo_name = extract_repo_name(repo_url);
     log_phase_completed(pool, job_id, "intake", "completed", started, None).await?;
 
-    // Phase 2: Recon
-    run_phase!("recon", async { run_recon(&mut state).await });
-
-    // Phase 2b: Static Analysis
-    run_phase!("scanning", async { run_sast(&mut state).await });
-
-    // Phase 3: AI Analysis
-    if failure.is_none() && !cancelled {
-        if is_cancelled(pool, job_id).await? {
-            cancelled = true;
-        } else {
-            let started = Utc::now();
-            state.current_phase = "ai_analysis".into();
-            log_phase_started(pool, job_id, "ai_analysis").await?;
-            state.scored_findings = [
-                state.static_findings.clone(),
-                state.dynamic_findings.clone(),
-            ]
-            .concat();
-
-            let ai_result = match run_ai_analyzer(&mut state).await {
-                Err(e) => Err(("ai_analysis".to_string(), e.to_string())),
-                Ok(_) => cross_validate_findings(&mut state)
-                    .await
-                    .map_err(|e| ("cross_validation".to_string(), e.to_string())),
-            };
-
-            match ai_result {
-                Err((phase, msg)) => {
-                    log_phase_completed(
-                        pool,
-                        job_id,
-                        "ai_analysis",
-                        "failed",
-                        started,
-                        Some(msg.clone()),
-                    )
-                    .await?;
-                    record_error(&mut state, &phase, &msg);
-                    failure = Some((phase, msg));
-                }
-                Ok(_) => {
-                    for f in &state.validated_findings {
-                        let _ = sqlx::query(
-                            "INSERT INTO findings (id, job_id, agent_source, title, description, severity, cvss_vector, cvss_score, evidence, remediation, cwe_id, owasp_category, confidence, scanner_name, scanner_mode, file_path, line_number, route, metadata_json, created_at)
-                             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)"
-                        )
-                        .bind(&f.id)
-                        .bind(job_id)
-                        .bind(&f.agent_source)
-                        .bind(&f.title)
-                        .bind(&f.description)
-                        .bind(f.severity)
-                        .bind(&f.cvss_vector)
-                        .bind(f.cvss_score)
-                        .bind(&f.evidence)
-                        .bind(&f.remediation)
-                        .bind(&f.cwe_id)
-                        .bind(&f.owasp_category)
-                        .bind(&f.confidence)
-                        .bind(&f.scanner_name)
-                        .bind(&f.scanner_mode)
-                        .bind(&f.file_path)
-                        .bind(f.line_number)
-                        .bind(&f.route)
-                        .bind(&f.metadata_json)
-                        .bind(Utc::now().naive_utc())
-                        .execute(pool)
-                        .await;
-                    }
-                    log_phase_completed(pool, job_id, "ai_analysis", "completed", started, None)
-                        .await?;
-                }
-            }
-        }
-    }
-
-    // Phase 4: Remediation
-    run_phase!("remediation", async {
-        state.remediation_tasks = crate::services::remediation_planner::remediation_planner_body(
-            &state.validated_findings,
+    // ---------------------------------------------------------------------
+    // Analysis phases
+    //
+    // security_p0_c: every phase here used to run a fabricating stand-in. The
+    // SAST agent returned three hardcoded findings naming src/config.rs:42,
+    // src/db/queries.rs:118 and src/middleware/cors.rs:15 with CVSS 9.8/8.5/5.3
+    // for every repository, without opening a file; recon returned a fixed
+    // five-entry tech stack; the "AI" analyzer copied its input to its own
+    // output after a 400 ms sleep. Those functions have been deleted.
+    //
+    // No engine is installed, so there is no analysis phase to run. The job
+    // terminates as EngineUnavailable with zero findings and a NULL score, so it
+    // can never be mistaken for a clean result. Notably, a score derived from
+    // zero findings would be 10.0 "low risk" - the most misleading output this
+    // product could produce - which is why the score is left null instead.
+    //
+    // A real engine adds its phases in the `else` position below and is gated by
+    // the same constant.
+    // ---------------------------------------------------------------------
+    let engine_available = crate::agents::ENGINE_AVAILABLE;
+    if !engine_available {
+        tracing::warn!(
+            "[orchestrator] Job {}: {} (engine={})",
+            job_id,
+            crate::agents::ENGINE_UNAVAILABLE_REASON,
+            crate::agents::ENGINE_NAME
         );
-        Ok::<(), AppError>(())
-    });
-
-    // Phase 5: Attack Graph
-    run_phase!("attack_graph", async {
-        let attack_graph_val =
-            crate::services::attack_graph::attack_graph_body(&state.validated_findings);
-        if let (Some(nodes), Some(edges)) = (
-            attack_graph_val.get("nodes").and_then(|v| v.as_array()),
-            attack_graph_val.get("edges").and_then(|v| v.as_array()),
-        ) {
-            crate::graph::GraphStore::store_attack_graph(pool, job_id, nodes, edges).await?;
-        }
-        state.attack_graph = attack_graph_val;
-        Ok::<(), AppError>(())
-    });
-
-    // Phase 6: Scoring
-    run_phase!("scoring", async {
-        compute_security_score(&mut state);
-        Ok::<(), AppError>(())
-    });
-
-    // Phase 7: Reporting
-    if failure.is_none() && !cancelled {
-        if is_cancelled(pool, job_id).await? {
-            cancelled = true;
-        } else {
-            let started = Utc::now();
-            state.current_phase = "reporting".into();
-            log_phase_started(pool, job_id, "reporting").await?;
-
-            let report_result: std::result::Result<String, String> = async {
-                let job = get_job(pool, job_id).await.map_err(|e| e.to_string())?;
-                let markdown = ReportGenerator::generate_markdown(&job, &state.validated_findings, &state)
-                    .map_err(|e| e.to_string())?;
-                let report_id = generate_uuid();
-                sqlx::query("INSERT INTO audit_reports (id, job_id, markdown_content, created_at) VALUES ($1,$2,$3,$4)")
-                    .bind(&report_id).bind(job_id).bind(&markdown).bind(Utc::now().naive_utc())
-                    .execute(pool)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                sqlx::query("UPDATE audit_jobs SET report_id=$1 WHERE id=$2")
-                    .bind(&report_id).bind(job_id)
-                    .execute(pool)
-                    .await
-                    .map_err(|e| e.to_string())?;
-                Ok(report_id)
-            }.await;
-
-            match report_result {
-                Ok(_) => {
-                    log_phase_completed(pool, job_id, "reporting", "completed", started, None)
-                        .await?
-                }
-                Err(msg) => {
-                    log_phase_completed(
-                        pool,
-                        job_id,
-                        "reporting",
-                        "failed",
-                        started,
-                        Some(msg.clone()),
-                    )
-                    .await?;
-                    record_error(&mut state, "reporting", &msg);
-                    failure = Some(("reporting".to_string(), msg));
-                }
-            }
-        }
+        state.current_phase = "engine_unavailable".into();
+        // No finding rows, no scoring, no attack graph, no report.
+        state.static_findings.clear();
+        state.dynamic_findings.clear();
+        state.scored_findings.clear();
+        state.validated_findings.clear();
+        state.security_score = None;
+        state.risk_summary = serde_json::json!({
+            "score": null,
+            "risk_level": "unknown",
+            "total_findings": 0,
+            "analysis_performed": false,
+        });
+        log_phase_skipped(
+            pool,
+            job_id,
+            "engine_unavailable",
+            crate::agents::ENGINE_UNAVAILABLE_REASON,
+        )
+        .await?;
+    } else {
+        unreachable!(
+            "no vulnerability analysis engine is compiled into this build; \
+             {} reports ENGINE_AVAILABLE=true without providing one",
+            crate::agents::ENGINE_NAME
+        );
     }
 
     // Finalize. Writes are guarded on non-terminal statuses so we never
@@ -256,6 +118,10 @@ pub async fn execute_audit_job(
         crate::models::JobStatus::Failed
     } else if cancelled || is_cancelled(pool, job_id).await? {
         crate::models::JobStatus::Cancelled
+    } else if !engine_available {
+        // security_p0_c: an unavailable engine must never resolve to Completed.
+        // Completed means "an engine ran"; here nothing ran.
+        crate::models::JobStatus::EngineUnavailable
     } else {
         crate::models::JobStatus::Completed
     };
@@ -283,6 +149,22 @@ pub async fn execute_audit_job(
                 .bind(crate::models::JobStatus::Failed)
                 .bind(Utc::now().naive_utc())
                 .bind(format!("{} phase failed: {}", phase, msg))
+                .bind(job_id)
+                .execute(pool)
+                .await
+                .map_err(AppError::Database)?;
+        }
+        crate::models::JobStatus::EngineUnavailable => {
+            // Persist the truthful state: no findings were produced, no score was
+            // computed, and the reason is recorded for the operator.
+            state.status = crate::models::JobStatus::EngineUnavailable;
+            state.report_delivered = false;
+            state.current_phase = "engine_unavailable".into();
+            state.security_score = None;
+            sqlx::query("UPDATE audit_jobs SET status=$1, finished_at=$2, security_score=NULL, error_message=$3 WHERE id=$4 AND status IN ('queued','running')")
+                .bind(crate::models::JobStatus::EngineUnavailable)
+                .bind(Utc::now().naive_utc())
+                .bind(crate::agents::ENGINE_UNAVAILABLE_REASON)
                 .bind(job_id)
                 .execute(pool)
                 .await
@@ -333,37 +215,6 @@ async fn is_cancelled(pool: &PgPool, job_id: &str) -> Result<bool> {
     Ok(row.map(|(cancelled,)| cancelled).unwrap_or(false))
 }
 
-fn compute_security_score(state: &mut AuditState) {
-    let all = &state.validated_findings;
-    if all.is_empty() {
-        state.security_score = Some(10.0);
-        state.risk_summary = serde_json::json!({"score": 10.0, "risk_level": "low"});
-        return;
-    }
-    let mut score: f64 = 10.0;
-    for f in all {
-        score -= match f.severity {
-            crate::models::Severity::Critical => 3.0,
-            crate::models::Severity::High => 2.0,
-            crate::models::Severity::Medium => 1.0,
-            crate::models::Severity::Low => 0.3,
-            crate::models::Severity::Info => 0.1,
-        };
-    }
-    score = score.clamp(0.0, 10.0);
-    state.security_score = Some((score * 10.0).round() / 10.0);
-    let risk_level = if score >= 8.0 {
-        "low"
-    } else if score >= 5.0 {
-        "medium"
-    } else if score >= 3.0 {
-        "high"
-    } else {
-        "critical"
-    };
-    state.risk_summary = serde_json::json!({"score": state.security_score, "risk_level": risk_level, "total_findings": all.len()});
-}
-
 fn extract_repo_owner(url: &str) -> String {
     let cleaned = url.trim_end_matches('/').trim_end_matches(".git");
     if cleaned.contains("git@") {
@@ -384,19 +235,25 @@ fn extract_repo_name(url: &str) -> String {
     let cleaned = url.trim_end_matches('/').trim_end_matches(".git");
     cleaned.split('/').next_back().unwrap_or("repo").into()
 }
-fn record_error(state: &mut AuditState, phase: &str, error: &str) {
-    state.errors.push(
-        serde_json::json!({"phase": phase, "error": error, "timestamp": Utc::now().to_rfc3339()}),
-    );
-}
-async fn get_job(pool: &PgPool, job_id: &str) -> Result<AuditJob> {
-    sqlx::query_as::<_, AuditJob>("SELECT * FROM audit_jobs WHERE id=$1")
+/// Record a phase that never ran.
+///
+/// `log_phase_completed` only updates a row that `log_phase_started` inserted,
+/// so it silently does nothing for a phase that was skipped before starting.
+/// That hid the unavailability from the ledger. This inserts the terminal row
+/// directly, with `mode='skipped'` so it is distinguishable from real work.
+async fn log_phase_skipped(pool: &PgPool, job_id: &str, phase: &str, reason: &str) -> Result<()> {
+    let now = Utc::now().naive_utc();
+    let _ = sqlx::query("INSERT INTO phase_ledger (id, job_id, phase_name, status, mode, started_at, ended_at, duration_sec, error_message) VALUES ($1,$2,$3,'skipped','skipped',$4,$4,0,$5)")
+        .bind(generate_uuid())
         .bind(job_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(AppError::Database)?
-        .ok_or_else(|| AppError::NotFound("Job not found".into()))
+        .bind(phase)
+        .bind(now)
+        .bind(reason)
+        .execute(pool)
+        .await;
+    Ok(())
 }
+
 async fn log_phase_started(pool: &PgPool, job_id: &str, phase: &str) -> Result<()> {
     let id = generate_uuid();
     let _ = sqlx::query("INSERT INTO phase_ledger (id, job_id, phase_name, status, mode, started_at) VALUES ($1,$2,$3,'started','real',$4)")

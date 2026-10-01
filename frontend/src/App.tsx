@@ -1637,9 +1637,34 @@ function App() {
 
                   {selectedJobDetail.findings.length === 0 ? (
                     <div className="panel-empty">
-                      {selectedJobDetail.job.status === 'completed'
-                        ? 'Clean audit — no vulnerabilities reported.'
-                        : `No findings yet — job is ${selectedJobDetail.job.status}.`}
+                      {/*
+                        security_p0_c: `engine_unavailable` must never read as
+                        "no vulnerabilities found". It means no analysis was
+                        performed at all. The previous fallback rendered it as
+                        "No findings yet", which implies a scan is still pending.
+                      */}
+                      {selectedJobDetail.job.status === 'engine_unavailable' ? (
+                        <>
+                          <strong>No analysis was performed.</strong>
+                          <div style={{ marginTop: '0.4rem', fontSize: '0.78rem' }}>
+                            No vulnerability analysis engine is installed in this build, so this
+                            repository was never fetched, read, or analyzed. This is
+                            <strong> not</strong> a clean result and
+                            <strong> not</strong> a score of 0 vulnerabilities.
+                          </div>
+                          {selectedJobDetail.job.error_message && (
+                            <div
+                              style={{ marginTop: '0.4rem', fontSize: '0.72rem', opacity: 0.75 }}
+                            >
+                              {selectedJobDetail.job.error_message}
+                            </div>
+                          )}
+                        </>
+                      ) : selectedJobDetail.job.status === 'completed' ? (
+                        'Clean audit — no vulnerabilities reported.'
+                      ) : (
+                        `No findings yet — job is ${selectedJobDetail.job.status}.`
+                      )}
                     </div>
                   ) : (
                     selectedJobDetail.findings.map(f => (

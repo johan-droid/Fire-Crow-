@@ -14,6 +14,14 @@ pub enum JobStatus {
     Failed,
     Cancelled,
     Partial,
+    /// The job ran, but no vulnerability analysis was performed because no scan
+    /// engine is installed in this build. Distinct from `Completed`, which means
+    /// an engine executed. A client must never read this as "no vulnerabilities".
+    ///
+    /// Stored in the existing `audit_jobs.status` varchar column, which carries no
+    /// CHECK constraint, so no migration is required.
+    #[serde(rename = "engine_unavailable")]
+    EngineUnavailable,
 }
 
 impl JobStatus {
@@ -25,6 +33,7 @@ impl JobStatus {
             Self::Failed => "failed",
             Self::Cancelled => "cancelled",
             Self::Partial => "partial",
+            Self::EngineUnavailable => "engine_unavailable",
         }
     }
 }
@@ -39,6 +48,7 @@ impl std::str::FromStr for JobStatus {
             "failed" => Ok(Self::Failed),
             "cancelled" => Ok(Self::Cancelled),
             "partial" => Ok(Self::Partial),
+            "engine_unavailable" => Ok(Self::EngineUnavailable),
             _ => Err(format!("Unknown job status: {s}")),
         }
     }
