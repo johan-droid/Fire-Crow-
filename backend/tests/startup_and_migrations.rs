@@ -226,7 +226,7 @@ async fn migration_chain_is_fully_recorded(pool: PgPool) {
 
     assert_eq!(
         rows.len(),
-        17,
+        18,
         "every migration must be recorded exactly once, got {rows:?}"
     );
     assert!(
@@ -238,7 +238,7 @@ async fn migration_chain_is_fully_recorded(pool: PgPool) {
         versions.windows(2).all(|w| w[0] < w[1]),
         "versions must be strictly increasing and unique: {versions:?}"
     );
-    assert_eq!(versions.last().copied(), Some(20260901000100));
+    assert_eq!(versions.last().copied(), Some(20260901000200));
 }
 
 #[sqlx::test(migrations = "./migrations")]

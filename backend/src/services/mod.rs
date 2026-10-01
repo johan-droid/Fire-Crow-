@@ -1,6 +1,5 @@
 pub mod attack_graph;
 pub mod auth;
-pub mod confidence;
 pub mod crypto;
 pub mod csrf;
 pub mod dodo_payment_service;

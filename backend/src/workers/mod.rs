@@ -20,6 +20,67 @@ pub enum WorkerTask {
     Housekeeping,
 }
 
+/// Run one audit job, with the hard 30-minute ceiling.
+///
+/// Both `WorkerTask::execute` and the pool's `worker_loop` funnel through here.
+/// They previously carried separate copies of the timeout + failure UPDATE and
+/// had drifted: only one guarded its UPDATE on a non-terminal status, so the
+/// other could clobber a job that the reaper had already finalised. There is now
+/// a single implementation.
+pub async fn run_audit_job(
+    pool: &PgPool,
+    job_id: &str,
+    user_id: &str,
+    repo_url: &str,
+    repo_branch: &str,
+    custom_email: Option<&str>,
+) {
+    info!("Worker: executing audit job {job_id}");
+    match tokio::time::timeout(
+        tokio::time::Duration::from_secs(1800),
+        execute_audit_job(
+            pool,
+            job_id,
+            user_id,
+            repo_url,
+            repo_branch,
+            custom_email,
+            None,
+        ),
+    )
+    .await
+    {
+        Ok(Err(e)) => {
+            error!("Worker: job {} failed: {}", job_id, e);
+            mark_job_failed(pool, job_id, &e.to_string()).await;
+        }
+        Err(_) => {
+            error!("Worker: job {} timed out after 30 minutes", job_id);
+            mark_job_failed(pool, job_id, "Job timed out after 30 minutes").await;
+        }
+        Ok(Ok(_)) => {
+            info!("Worker: audit job {job_id} completed");
+        }
+    }
+}
+
+/// Fail a job, but only while it is still non-terminal.
+///
+/// The `status IN ('queued','running')` guard is what stops a late failure from
+/// overwriting a `completed` job. Every status write in the worker carries it.
+async fn mark_job_failed(pool: &PgPool, job_id: &str, message: &str) {
+    let _ = sqlx::query(
+        "UPDATE audit_jobs SET status=$1, error_message=$2, finished_at=$3 \
+         WHERE id=$4 AND status IN ('queued','running')",
+    )
+    .bind(JobStatus::Failed)
+    .bind(message.to_string())
+    .bind(chrono::Utc::now().naive_utc())
+    .bind(job_id)
+    .execute(pool)
+    .await;
+}
+
 impl WorkerTask {
     pub async fn execute(self, pool: &PgPool, _settings: &Settings) -> Result<()> {
         match self {
@@ -30,36 +91,15 @@ impl WorkerTask {
                 repo_branch,
                 custom_email,
             } => {
-                info!("Worker: executing audit job {job_id}");
-                match tokio::time::timeout(
-                    tokio::time::Duration::from_secs(1800),
-                    execute_audit_job(
-                        pool,
-                        &job_id,
-                        &user_id,
-                        &repo_url,
-                        &repo_branch,
-                        custom_email.as_deref(),
-                        None,
-                    ),
+                run_audit_job(
+                    pool,
+                    &job_id,
+                    &user_id,
+                    &repo_url,
+                    &repo_branch,
+                    custom_email.as_deref(),
                 )
-                .await
-                {
-                    Ok(Err(e)) => {
-                        return Err(crate::error::AppError::Internal(format!(
-                            "Job {} failed: {}",
-                            job_id, e
-                        )));
-                    }
-                    Err(_) => {
-                        return Err(crate::error::AppError::Internal(format!(
-                            "Job {} timed out after 30 minutes",
-                            job_id
-                        )));
-                    }
-                    Ok(Ok(_)) => {}
-                }
-                info!("Worker: audit job {job_id} completed");
+                .await;
             }
             Self::Housekeeping => {
                 info!("Worker: running housekeeping");
@@ -118,19 +158,23 @@ impl WorkerPool {
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
 
-                // Handle explicit cancellation requests
-                let _ = sqlx::query("UPDATE audit_jobs SET status=$1, error_message=$2, finished_at=$3 WHERE status=$4 AND cancel_requested=true")
-                    .bind(JobStatus::Failed)
+                // Handle explicit cancellation requests. A cancellation is its
+                // own terminal outcome — `cancelled`, never `failed`. The guard
+                // keeps the write on non-terminal rows only.
+                let _ = sqlx::query("UPDATE audit_jobs SET status=$1, error_message=$2, finished_at=$3 WHERE status IN ('queued','running') AND cancel_requested=true")
+                    .bind(JobStatus::Cancelled)
                     .bind("Job cancelled by user")
                     .bind(chrono::Utc::now().naive_utc())
-                    .bind(JobStatus::Running)
                     .execute(&pool)
                     .await;
 
-                // Find potentially orphaned jobs (running for >10 minutes)
+                // Find potentially orphaned jobs. The reaper measures how long a
+                // job has been *running* (`started_at`, stamped at claim time),
+                // not how long ago it was created, so a job that sat in the queue
+                // for a long time is not reaped before it ever starts.
                 let stale_cutoff = chrono::Utc::now() - chrono::Duration::minutes(10);
                 let orphaned: Vec<AuditJob> = sqlx::query_as::<_, AuditJob>(
-                    "SELECT * FROM audit_jobs WHERE status=$1 AND created_at < $2",
+                    "SELECT * FROM audit_jobs WHERE status=$1 AND COALESCE(started_at, created_at) < $2",
                 )
                 .bind(JobStatus::Running)
                 .bind(stale_cutoff.naive_utc())
@@ -146,7 +190,7 @@ impl WorkerPool {
                             "Reaping orphaned job {} (not in active worker list, running >10min)",
                             job.id
                         );
-                        let _ = sqlx::query("UPDATE audit_jobs SET status=$1, error_message=$2, finished_at=$3 WHERE id=$4")
+                        let _ = sqlx::query("UPDATE audit_jobs SET status=$1, error_message=$2, finished_at=$3 WHERE id=$4 AND status IN ('queued','running')")
                             .bind(JobStatus::Failed)
                             .bind("Audit job was interrupted by a server restart")
                             .bind(chrono::Utc::now().naive_utc())
@@ -184,7 +228,7 @@ impl WorkerPool {
             // Atomic claim: SELECT + UPDATE in one statement with row-level locking.
             // FOR UPDATE SKIP LOCKED ensures each worker grabs a different job.
             let claimed: Option<AuditJob> = match sqlx::query_as::<_, AuditJob>(
-                "UPDATE audit_jobs SET status='running' WHERE id = (SELECT id FROM audit_jobs WHERE status='queued' ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *"
+                "UPDATE audit_jobs SET status='running', started_at=NOW() WHERE id = (SELECT id FROM audit_jobs WHERE status='queued' ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING *"
             )
                 .fetch_optional(&pool)
                 .await
@@ -205,44 +249,17 @@ impl WorkerPool {
                     active.push(job.id.clone());
                 }
 
-                match tokio::time::timeout(
-                    tokio::time::Duration::from_secs(1800),
-                    execute_audit_job(
-                        &pool,
-                        &job.id,
-                        &job.user_id,
-                        &job.repo_url,
-                        &job.repo_branch,
-                        None,
-                        None,
-                    ),
+                // One shared job-run path (timeout, execution, and the guarded
+                // failure write all live in `run_audit_job`).
+                run_audit_job(
+                    &pool,
+                    &job.id,
+                    &job.user_id,
+                    &job.repo_url,
+                    &job.repo_branch,
+                    None,
                 )
-                .await
-                {
-                    Ok(Err(e)) => {
-                        error!("Worker {}: job {} failed: {}", id, job.id, e);
-                        let _ = sqlx::query("UPDATE audit_jobs SET status=$1, error_message=$2, finished_at=$3 WHERE id=$4")
-                            .bind(JobStatus::Failed)
-                            .bind(e.to_string())
-                            .bind(chrono::Utc::now().naive_utc())
-                            .bind(&job.id)
-                            .execute(&pool)
-                            .await;
-                    }
-                    Err(_) => {
-                        error!("Worker {}: job {} timed out after 30 minutes", id, job.id);
-                        let _ = sqlx::query("UPDATE audit_jobs SET status=$1, error_message=$2, finished_at=$3 WHERE id=$4")
-                            .bind(JobStatus::Failed)
-                            .bind("Job timed out after 30 minutes".to_string())
-                            .bind(chrono::Utc::now().naive_utc())
-                            .bind(&job.id)
-                            .execute(&pool)
-                            .await;
-                    }
-                    Ok(Ok(_)) => {
-                        info!("Worker {}: job {} completed successfully", id, job.id);
-                    }
-                }
+                .await;
 
                 {
                     let mut active = active_jobs.write().await;

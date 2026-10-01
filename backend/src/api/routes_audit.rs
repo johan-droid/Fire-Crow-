@@ -25,6 +25,12 @@ pub async fn submit_audit(
     user: crate::middleware::auth::AuthenticatedUser,
     Json(req): Json<SubmitJobRequest>,
 ) -> Result<Json<JobResponse>> {
+    // Only real GitHub HTTPS repository URLs are accepted. This is the single
+    // acquisition surface for the scan pipeline, so `file://`, `ssh://`,
+    // `git@…`, any non-github.com host, and `..` path segments are rejected here
+    // rather than being handed to the fetch phase.
+    validate_github_repo_url(&req.repo_url)?;
+
     let job_id = uuid::Uuid::new_v4().to_string();
     sqlx::query("INSERT INTO audit_jobs (id, user_id, tenant_id, repo_url, repo_branch, status, cancel_requested, legal_hold, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)")
         .bind(&job_id)
@@ -131,7 +137,9 @@ pub async fn email_report(
     user: crate::middleware::auth::AuthenticatedUser,
     Path(job_id): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
-    let _job: crate::models::AuditJob = sqlx::query_as::<_, crate::models::AuditJob>(
+    use crate::services::email::EmailService;
+
+    let job: crate::models::AuditJob = sqlx::query_as::<_, crate::models::AuditJob>(
         "SELECT * FROM audit_jobs WHERE id=$1 AND user_id=$2",
     )
     .bind(&job_id)
@@ -140,7 +148,116 @@ pub async fn email_report(
     .await
     .map_err(AppError::Database)?
     .ok_or_else(|| AppError::NotFound("Job not found".into()))?;
-    Ok(Json(serde_json::json!({"status": "email_queued"})))
+
+    // No SMTP transport means the report cannot be delivered. Returning
+    // `email_queued` in that case was a lie: nothing was queued and nothing
+    // would ever be sent. Answer 501 instead.
+    let Some(mailer) = EmailService::from_settings(state.settings()) else {
+        return Err(AppError::NotImplemented(
+            "Email delivery is not configured on this server (SMTP_HOST is unset).".into(),
+        ));
+    };
+
+    // The recipient is the report owner; there is no per-request override here.
+    let recipient: String =
+        sqlx::query_as::<_, (Option<String>,)>("SELECT email FROM users WHERE id=$1")
+            .bind(&user.user_id)
+            .fetch_optional(state.pool())
+            .await
+            .map_err(AppError::Database)?
+            .and_then(|(e,)| e)
+            .filter(|e| !e.trim().is_empty())
+            .ok_or_else(|| {
+                AppError::BadRequest("No email address on file for this account".into())
+            })?;
+
+    let report: Option<crate::models::AuditReport> =
+        sqlx::query_as::<_, crate::models::AuditReport>(
+            "SELECT * FROM audit_reports WHERE job_id=$1",
+        )
+        .bind(&job_id)
+        .fetch_optional(state.pool())
+        .await
+        .map_err(AppError::Database)?;
+    let markdown = report
+        .and_then(|r| r.markdown_content)
+        .ok_or_else(|| AppError::NotFound("Report not found".into()))?;
+
+    let subject = format!("FireCrow security report for {}", job.repo_url);
+    let body = "Your requested FireCrow security report is attached as Markdown.\n";
+
+    // Delivery outcome is recorded on its own column and never rewrites the
+    // job's terminal status. A `completed` job stays `completed` even when the
+    // mail server rejects the message.
+    match mailer
+        .send_report_email(&recipient, &subject, body, &markdown)
+        .await
+    {
+        Ok(()) => {
+            let _ = sqlx::query(
+                "UPDATE audit_jobs SET email_delivery_status='sent' WHERE id=$1 AND status IN ('queued','running','completed','engine_unavailable','failed','cancelled')",
+            )
+            .bind(&job_id)
+            .execute(state.pool())
+            .await;
+            Ok(Json(serde_json::json!({
+                "status": "sent",
+                "recipient": recipient,
+            })))
+        }
+        Err(e) => {
+            tracing::warn!("Report email delivery failed for job {}: {}", job_id, e);
+            let _ = sqlx::query(
+                "UPDATE audit_jobs SET email_delivery_status='failed' WHERE id=$1 AND status IN ('queued','running','completed','engine_unavailable','failed','cancelled')",
+            )
+            .bind(&job_id)
+            .execute(state.pool())
+            .await;
+            Ok(Json(serde_json::json!({
+                "status": "delivery_failed",
+                "recipient": recipient,
+            })))
+        }
+    }
+}
+
+/// Accept only `https://github.com/{owner}/{repo}`.
+///
+/// Owner and repository segments may contain `[A-Za-z0-9._-]`; a single optional
+/// trailing `.git` and trailing `/` are tolerated. Anything else — other
+/// schemes (`file://`, `ssh://`), the `git@host:` SCP form, other hosts, extra
+/// path segments, or `.`/`..` segments — is a 400.
+pub fn validate_github_repo_url(url: &str) -> Result<String> {
+    fn valid_segment(seg: &str) -> bool {
+        !seg.is_empty()
+            && seg != "."
+            && seg != ".."
+            && seg
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+    }
+
+    let trimmed = url.trim();
+    let rest = trimmed
+        .strip_prefix("https://github.com/")
+        .ok_or_else(|| {
+            AppError::BadRequest(
+                "repo_url must be an https://github.com/{owner}/{repo} URL".into(),
+            )
+        })?
+        .trim_end_matches('/');
+
+    // Tolerate a single trailing `.git`.
+    let rest = rest.strip_suffix(".git").unwrap_or(rest);
+
+    let segments: Vec<&str> = rest.split('/').collect();
+    if segments.len() != 2 || !valid_segment(segments[0]) || !valid_segment(segments[1]) {
+        return Err(AppError::BadRequest(
+            "repo_url must be an https://github.com/{owner}/{repo} URL".into(),
+        ));
+    }
+
+    Ok(format!("https://github.com/{}/{}", segments[0], segments[1]))
 }
 pub async fn get_job_insight(
     State(state): State<Arc<crate::AppState>>,

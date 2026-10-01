@@ -2,7 +2,7 @@
 
 # 🦅 Fire Crow
 
-### Autonomous Agentic Security Intelligence & Application Hardening Platform
+### Security Scanning Backend
 
 [![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![Axum](https://img.shields.io/badge/Axum-0.7-blue.svg?style=for-the-badge&logo=tokio)](https://github.com/tokio-rs/axum)
@@ -11,31 +11,54 @@
 [![Vite](https://img.shields.io/badge/Vite-5.0-646CFF.svg?style=for-the-badge&logo=vite)](https://vitejs.dev/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
 
-*Fire Crow coordinates sandboxed security LLM agents to map source code repositories, execute safe vulnerability exploit simulations, enforce enterprise IAM/PAM, and compile compliance-ready PDF reports.*
-
-[Key Features](#-key-features) • [Architecture](#-architecture) • [Getting Started](#-getting-started) • [Environment Setup](#-environment-setup) • [API Documentation](#-documentation)
+*Fire Crow fetches a GitHub repository, scans it for committed secrets with
+gitleaks inside a locked-down container, and writes a Markdown report. Nothing is
+reported that did not come out of the scanner.*
 
 </div>
 
 ---
 
-## 🌟 Key Features
+## What this actually does
 
-### 🤖 Autonomous Agentic Code Auditing
-- **LLM Reasoning Loops**: Integrates Google Gemini Security models for deep code analysis, threat modeling, and automated CWE/OWASP classification.
-- **Automated Remediation**: Generates ready-to-merge patch snippets and code fixes for detected vulnerabilities.
-- **Attack Graph Generation**: Persists multi-node chained attack vectors directly to PostgreSQL graph tables (`attack_graph_nodes` & `attack_graph_edges`).
+The audit pipeline is a Rust state machine with seven phases. Each phase writes a
+row to `phase_ledger`, and a phase that did not run is never reported as a result.
 
-### 🔒 Enterprise Identity & Access Control
-- **Dual Authentication**: Full support for both `Authorization: Bearer <JWT>` headers and HTTP-Only session cookies (`access_token`, `refresh_token`).
-- **OAuth 2.0 & OIDC**: Integrated GitHub OAuth and Google OpenID Connect single sign-on flows.
-- **Multi-Factor Authentication (MFA)**: Built-in TOTP authenticator app enrollment, barcode QR generation, and emergency recovery codes.
-- **Privileged Access Management (PAM)**: Just-in-time privilege elevation requests, ticket reference tracking, and admin approval workflows.
-- **Multi-Tenancy**: Organization and tenant data isolation with custom domain verifications.
+| Phase | What runs |
+|---|---|
+| `intake` | Resolve `owner`/`name` from the submitted URL. |
+| `fetch` | Confirm the token can read the repo, download the GitHub tarball, extract it into a temp dir with byte/file caps and no symlinks or `..`. The temp dir is always removed. |
+| `scan` | Run **gitleaks** over the source, mounted read-only, with `--network=none`, a read-only rootfs, `--pids-limit`, `--cap-drop=ALL`, `no-new-privileges`, an unprivileged user, and cpu/memory limits. |
+| `normalize` | Deduplicate findings by a fingerprint of rule + file + line. |
+| `score` | Compute a score **only** if the scan actually completed (see below). |
+| `report` | Generate Markdown and persist it to `audit_reports`. |
+| `deliver` | Assert the report exists. Delivery itself is on demand via the email endpoint. |
 
-### 🎨 State-of-the-Art Dashboard
-- **Glassmorphism UI**: Minimalist, dark-mode React control panel with real-time health scores, severity badges (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`), and animated telemetry feeds.
-- **Interactive Scans & Finding Drawer**: Trigger automated audits on Git repositories and view granular finding details with one-click code remediations.
+Every finding carries a **file path, a line number, and an evidence snippet taken
+from the scanner**, with the secret value redacted. The score is `NULL` if no
+analysis ran or any scanner failed; a scan never reports a perfect `10/10`, and
+zero findings yields `9.0`, not `10.0`.
+
+### Findings and scoring rules
+
+- A `Finding` must carry `file_path`, `line_number`, and an evidence snippet.
+- The stored snippet has the exact secret value replaced with `[REDACTED]` and is
+  passed through the shared redactor.
+- The LLM helper (`services/llm.rs`) may only explain or prioritise findings that
+  already exist; it never creates one, and it is not on the scan path.
+- Terminal job statuses are never overwritten: every status `UPDATE` is guarded on
+  a non-terminal status.
+
+## Not implemented in this build
+
+The following are deliberately absent and are **not** claimed by the API or UI:
+
+- LLM code analysis, exploit simulation, and automated patch generation.
+- Vulnerability scanners other than gitleaks (osv-scanner, semgrep).
+- Telegram delivery. Report email is SMTP-only, and the endpoint returns `501`
+  when SMTP is not configured.
+- Attack-chain edges. `/audit/job/:id/graph` returns nodes with an empty `edges`
+  array, because nothing discovers real links between findings.
 
 ---
 
@@ -44,13 +67,12 @@
 ```mermaid
 graph TD
     Client[Operator Browser / SPA] -->|HTTPS / Bearer / Cookie| Axum[Axum Rust Web Server]
-    Axum -->|Session & Auth| AuthMiddleware[Auth Middleware & Anti-Replay Cache]
-    AuthMiddleware -->|Revocation Check| Redis[(Redis Cache)]
-    Axum -->|SQL Queries| Postgres[(Neon PostgreSQL DB)]
-    Axum -->|Agent Orchestration| Orchestrator[Rust State Machine Orchestrator]
-    Orchestrator -->|Docker Container API| Sandbox[Sandboxed Docker Scanners]
-    Orchestrator -->|LLM Reasoning| Gemini[Gemini Security API]
-    Axum -->|Artifact Upload| R2[Cloudflare R2 / S3 Reports]
+    Axum -->|Session & Auth| AuthMiddleware[Auth Middleware]
+    Axum -->|SQL Queries| Postgres[(PostgreSQL)]
+    Axum -->|Job Queue| Worker[Worker Pool]
+    Worker -->|Fetch tarball| GitHub[(GitHub API)]
+    Worker -->|Read-only mount| Sandbox[gitleaks in a hardened container]
+    Worker -->|Findings + report| Postgres
 ```
 
 ---
@@ -59,110 +81,102 @@ graph TD
 
 ### Prerequisites
 
-Ensure you have the following installed on your host system:
 - **Rust** (cargo `1.75+`)
 - **Node.js** (`v18+`) & `npm`
-- **PostgreSQL** or **Neon PostgreSQL** account
+- **PostgreSQL**
+- **Docker** (the scan phase runs gitleaks in a container)
 
-### 1. Clone the Repository
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/johan-droid/Fire-Crow-.git
 cd Fire-Crow-
 ```
 
-### 2. Install Dependencies
+### 2. Install dependencies
 
 ```bash
-# Install frontend node modules
 cd frontend
 npm install
 cd ..
 ```
 
-### 3. Configure Environment Variables
+### 3. Configure environment variables
 
-Create or edit your `backend/.env.local` file:
+Create or edit `backend/.env.local`:
 
 ```env
-# Database & Core Security Keys
-DATABASE_URL="postgresql://user:password@ep-host.neon.tech/neondb?sslmode=require"
+# Database & core security keys
+DATABASE_URL="postgresql://user:password@host/db?sslmode=require"
 SECRET_KEY="your-min-32-character-random-secret-key"
 ENCRYPTION_KEY="your-min-32-character-data-encryption-key"
 
-# OAuth Credentials
+# GitHub: OAuth login and the platform token used to read repositories
 GITHUB_CLIENT_ID="your_github_client_id"
 GITHUB_CLIENT_SECRET="your_github_client_secret"
 GITHUB_TOKEN="ghp_your_personal_access_token"
 
-GOOGLE_CLIENT_ID="your_google_client_id"
-GOOGLE_CLIENT_SECRET="your_google_client_secret"
-
-# AI Security Models
-GEMINI_API_KEY="your_gemini_api_key"
-
 # Service URLs
 FRONTEND_URL="http://localhost:5173"
 BACKEND_BASE_URL="http://localhost:8000"
+
+# Optional: only required to deliver the report by email
+# SMTP_HOST="smtp.example.com"
+# SMTP_PORT=587
+# SMTP_USER="apikey"
+# SMTP_PASSWORD="secret"
+# SENDER_EMAIL="reports@example.com"
 ```
 
-### 4. Run the Platform
-
-Start both the Axum backend and Vite React frontend concurrently:
+### 4. Run
 
 ```bash
 npm run dev
 ```
 
-Or start the Rust backend manually:
+or the backend alone:
 
 ```bash
 cd backend
 cargo run
 ```
 
-Access the frontend dashboard at `http://localhost:5173`.
+The dashboard is served at `http://localhost:5173`.
 
 ---
 
-## 📁 Repository Structure
+## 📁 Repository structure
 
 ```text
 Fire-Crow-/
-├── backend/                  # Rust Axum Web Server & Agent Orchestrator
-│   ├── cloudflare/           # Cloudflare Tunnel & Docker Compose setup
-│   ├── migrations/           # SQLx database schema migrations
-│   ├── scripts/              # Validation scripts & developer utility scripts
+├── backend/                  # Rust Axum web server & scan orchestrator
+│   ├── migrations/           # SQLx schema migrations
+│   ├── scripts/              # test.sh and developer utilities
 │   ├── src/
-│   │   ├── agents/           # LLM agent definitions & scanner runners
-│   │   ├── api/              # Axum REST route handlers (auth, sso, pam, iam, audit...)
-│   │   ├── config.rs         # Settings model & environment loader
-│   │   ├── middleware/       # Auth, CORS, Request ID, Rate limiters
-│   │   ├── models/           # SQLx FromRow data structures
-│   │   ├── orchestrator/     # Native Rust state machine scan engine
-│   │   ├── services/         # Core domain logic (auth, crypto, storage, mfa...)
-│   │   └── main.rs           # Application entry point
+│   │   ├── agents/           # fetch (GitHub tarball) and scanner (gitleaks)
+│   │   ├── api/              # REST route handlers
+│   │   ├── middleware/       # Auth, CORS, request id, rate limiting
+│   │   ├── models/           # SQLx FromRow structs
+│   │   ├── orchestrator/     # Scan state machine
+│   │   ├── services/         # Domain logic (auth, crypto, sandbox, reporter...)
+│   │   └── workers/          # Job queue workers and the orphan reaper
 │   └── Cargo.toml
-├── documentation/            # Comprehensive guides and references
-│   ├── API_DOCUMENTATION.md  # REST API manual
-│   ├── CLOUDFLARE_DEPLOYMENT.md # Cloudflare pages/tunnel/R2 deployment guide
-│   └── GITHUB_AUTH.md        # GitHub OAuth integration guide
-└── frontend/                 # React 18 + Vite Control Panel
-    ├── functions/            # Edge Pages functions middleware
-    ├── src/
-    │   ├── App.tsx           # Security Console Dashboard & Auth UI
-    │   ├── index.css         # Glassmorphism design tokens & animations
-    │   └── main.tsx
-    └── package.json
+├── documentation/            # Deployment and integration guides
+└── frontend/                 # React 18 + Vite control panel
 ```
 
 ---
 
-## 📖 Documentation
+## Testing
 
-- 📘 [API Reference Manual](documentation/API_DOCUMENTATION.md) — Endpoint specs, input schemas, headers, and Service Account API keys.
-- 🔑 [GitHub OAuth Integration Guide](documentation/GITHUB_AUTH.md) — Step-by-step setup for GitHub developer applications.
-- ☁️ [Cloudflare Deployment & Integration Manual](documentation/CLOUDFLARE_DEPLOYMENT.md) — Setup guide for Cloudflare Pages, R2, and Tunnels.
+```bash
+cd backend
+./scripts/test.sh          # brings up PostgreSQL + Redis, runs, tears down
+./scripts/test.sh --unit   # database-free tests only
+```
+
+Database-backed tests use `#[sqlx::test(migrations = "./migrations")]`, so each
+test gets a freshly migrated database. See `backend/TESTING.md`.
 
 ---
 

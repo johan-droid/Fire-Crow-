@@ -29,7 +29,7 @@ pub fn remediation_planner_body(findings: &[Finding]) -> Vec<serde_json::Value> 
                     "SQL/NoSQL Injection Remediation: Enforce parameterized query bindings (sqlx::query! with $1, $2 placeholders) and avoid dynamic string concatenation in database queries."
                 }
                 Some("CWE-116") => {
-                    "Clipboard Attack Remediation: Sanitize user input before writing to clipboard buffers and strip unsafe HTML/script tags from paste handlers."
+                    "Improper Encoding or Escaping of Output Remediation: encode data for the context it is written into (HTML, attribute, URL, JS, SQL), and never pass untrusted input to an interpreter without context-correct escaping."
                 }
                 Some("CWE-294") => {
                     "Replay Attack Remediation: Attach unique nonces (jti claim in JWT), enforce strict request timestamp windows, and validate single-use anti-CSRF exchange tokens."
