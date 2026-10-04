@@ -40,15 +40,53 @@ npm run deploy
 ```
 
 ### Automatic Git Integration (Cloudflare Dashboard)
+
+The frontend is hosted as a **Cloudflare Pages** project named `fire-crow`
+(`https://fire-crow.pages.dev`). Git integration builds the SPA from the
+**repository root** and publishes the Vite output directory.
+
 1. Go to **Cloudflare Dashboard > Workers & Pages > Create application > Pages > Connect to Git**.
 2. Select your `Fire-Crow-` repository.
-3. Configure build settings:
-   - **Framework preset**: `Vite`
-   - **Build command**: `npm run build`
-   - **Build output directory**: `dist`
-   - **Root directory**: `frontend`
-4. Environment Variables:
-   - `VITE_BACKEND_URL`: `https://api.firecrow.dev` (Your API domain)
+3. Open **Settings > Build** and set:
+
+   | Field | Value |
+   | --- | --- |
+   | **Build command** | `npm run build` |
+   | **Build output directory** | `frontend/dist` |
+   | **Root directory** (advanced) | *(leave blank — repository root)* |
+   | **Deploy command** | `npx wrangler pages deploy frontend/dist --project-name=fire-crow` |
+   | **Preview deploy command** | `npx wrangler pages deploy frontend/dist --project-name=fire-crow` |
+
+4. Environment Variables (**Settings > Environment variables**):
+   - `VITE_API_URL`: `https://api.firecrow.dev/api/v1`
+
+> ℹ️ The root `package.json` `build` script installs the frontend workspace and
+> runs the Vite production build, so the build command runs from the repository
+> root and emits `frontend/dist`. Do **not** set the root directory to
+> `frontend`.
+
+#### ⚠️ Deploy command must be the Pages command, not the Workers command
+
+This project is a **Pages** project. Cloudflare's default Deploy command is the
+**Workers** command `npx wrangler deploy`, which fails with:
+
+```text
+✘ [ERROR] It looks like you've run a Workers-specific command in a Pages project.
+  For Pages, please run `wrangler pages deploy` instead.
+```
+
+Set the **Deploy command** — and the **Preview deploy command** — to the Pages
+command above. After saving, the next build log must contain:
+
+```text
+Executing user deploy command: npx wrangler pages deploy frontend/dist --project-name=fire-crow
+```
+
+> The `--project-name` value **must match the Pages project name exactly**. The
+> canonical project name used throughout this repository is `fire-crow` (see
+> `package.json#cf:deploy`, `frontend/package.json#deploy`, and
+> `backend/scripts/upload_cf_secrets.sh`). If you omit `--project-name`, Wrangler
+> falls back to the `name` field in `wrangler.jsonc`, which is also `fire-crow`.
 
 ---
 
