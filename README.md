@@ -11,9 +11,19 @@
 [![Vite](https://img.shields.io/badge/Vite-5.0-646CFF.svg?style=for-the-badge&logo=vite)](https://vitejs.dev/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
 
-*Fire Crow fetches a GitHub repository, scans it for committed secrets with
-gitleaks inside a locked-down container, and writes a Markdown report. Nothing is
-reported that did not come out of the scanner.*
+*Fire Crow fetches a GitHub repository, scans it for committed secrets,
+dependency advisories, and source weaknesses with Gitleaks, OSV-Scanner and
+Semgrep inside locked-down containers, and writes a deterministic report.
+Nothing is reported that did not come out of a scanner.*
+
+**Status:** backend **frozen** · release: **controlled-beta candidate**
+(`documentation/RELEASE_CANDIDATE.md`).
+
+**Start here:**
+
+- Canonical backend reference → `documentation/FIRECROW_BACKEND.md`
+- Frontend API contract → `documentation/FRONTEND_CONTRACT.md`
+- Running it in production → `documentation/PRODUCTION_DEPLOYMENT.md`
 
 </div>
 
@@ -27,12 +37,17 @@ row to `phase_ledger`, and a phase that did not run is never reported as a resul
 | Phase | What runs |
 |---|---|
 | `intake` | Resolve `owner`/`name` from the submitted URL. |
-| `fetch` | Confirm the token can read the repo, download the GitHub tarball, extract it into a temp dir with byte/file caps and no symlinks or `..`. The temp dir is always removed. |
-| `scan` | Run **gitleaks** over the source, mounted read-only, with `--network=none`, a read-only rootfs, `--pids-limit`, `--cap-drop=ALL`, `no-new-privileges`, an unprivileged user, and cpu/memory limits. |
-| `normalize` | Deduplicate findings by a fingerprint of rule + file + line. |
+| `fetch` | Confirm the token can read the repo, download the GitHub tarball, extract it into a temp dir with byte/file caps and no symlinks or `..`. The temp dir is always removed. Every execution pins an immutable commit SHA. |
+| `scan` | Run **gitleaks**, **osv-scanner**, and **semgrep** over the source, each in its own container mounted read-only, with `--network=none` (osv alone gets a declared `bridge` network for its vulnerability database), a read-only rootfs, `--pids-limit`, `--cap-drop=ALL`, `no-new-privileges`, an unprivileged user, and cpu/memory limits. |
+| `normalize` | Canonicalize to **Canonical Audit v1**: dedupe by scanner + rule + native fingerprint + normalized location + evidence digest. |
 | `score` | Compute a score **only** if the scan actually completed (see below). |
-| `report` | Generate Markdown and persist it to `audit_reports`. |
-| `deliver` | Assert the report exists. Delivery itself is on demand via the email endpoint. |
+| `report` | Build Canonical Audit v1 and render deterministic Markdown, JSON, and HTML, persisted against the execution. |
+| `deliver` | Assert the report exists. Delivery (email, Telegram) is on demand, downstream, and execution-scoped. |
+
+An **optional** validated AI narrative may explain the deterministic report. It
+is an explanation layer only: it can never create, alter, or remove a finding,
+and any AI failure leaves the deterministic report exactly as it was. The audit
+survives with Gemini, email, Telegram, Redis, or the UI entirely absent.
 
 Every finding carries a **file path, a line number, and an evidence snippet taken
 from the scanner**, with the secret value redacted. The score is `NULL` if no
@@ -54,15 +69,18 @@ zero findings yields `9.0`, not `10.0`.
 The following are deliberately absent and are **not** claimed by the API or UI:
 
 - LLM code analysis, exploit simulation, and automated patch generation.
-- Vulnerability scanners other than gitleaks (osv-scanner, semgrep).
-- Telegram delivery. Report email is SMTP-only, and the endpoint returns `501`
-  when SMTP is not configured.
+- Inline PR annotations, security gates, or required checks. The GitHub App
+  reports a single status Check Run per completed audit.
 - Attack-chain edges. `/audit/job/:id/graph` returns nodes with an empty `edges`
   array, because nothing discovers real links between findings.
 
 ---
 
 ## 🏗️ Architecture
+
+The canonical backend description lives in
+[`documentation/FIRECROW_BACKEND.md`](documentation/FIRECROW_BACKEND.md).
+Overview:
 
 ```mermaid
 graph TD
@@ -71,7 +89,7 @@ graph TD
     Axum -->|SQL Queries| Postgres[(PostgreSQL)]
     Axum -->|Job Queue| Worker[Worker Pool]
     Worker -->|Fetch tarball| GitHub[(GitHub API)]
-    Worker -->|Read-only mount| Sandbox[gitleaks in a hardened container]
+    Worker -->|Read-only mount| Sandbox[gitleaks / osv-scanner / semgrep in hardened containers]
     Worker -->|Findings + report| Postgres
 ```
 
@@ -116,16 +134,37 @@ GITHUB_CLIENT_ID="your_github_client_id"
 GITHUB_CLIENT_SECRET="your_github_client_secret"
 GITHUB_TOKEN="ghp_your_personal_access_token"
 
+# Optional: GitHub App identity + webhooks. Set BOTH app values or NEITHER —
+# half an identity (an ID with no key, or a key with no ID) refuses startup.
+# GITHUB_APP_ID="123456"
+# GITHUB_APP_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+# GITHUB_APP_WEBHOOK_SECRET="your_webhook_secret"
+
 # Service URLs
 FRONTEND_URL="http://localhost:5173"
 BACKEND_BASE_URL="http://localhost:8000"
 
-# Optional: only required to deliver the report by email
+# Optional: only required to deliver the report by email (SMTP transport).
+# NOTE: RESEND_API_KEY (app.json) and brevo/resend fields (config.rs) are
+# DEAD: the transport is SMTP-only via lettre (services/email.rs). Do not set
+# them expecting effect. See documentation/PRODUCTION_DEPLOYMENT.md.
 # SMTP_HOST="smtp.example.com"
 # SMTP_PORT=587
 # SMTP_USER="apikey"
 # SMTP_PASSWORD="secret"
 # SENDER_EMAIL="reports@example.com"
+
+# Optional AI narrative (Gemini). Absent key/model = NotConfigured, audit unaffected.
+# GEMINI_API_KEY=""
+# GEMINI_MODEL="gemini-2.0-flash"
+# GEMINI_TIMEOUT_SECONDS=30
+# GEMINI_MAX_ATTEMPTS=2
+# GEMINI_MAX_PROMPT_CHARS=60000
+# Optional: only required to deliver the report to Telegram. The chat is fixed
+# here on purpose — no request can choose where a security report is sent.
+# TELEGRAM_BOT_TOKEN="123456:your-bot-token"
+# TELEGRAM_CHAT_ID="-1001234567890"
+# TELEGRAM_MESSAGE_LIMIT_CHARS=4096  # lowered to 4096 automatically if set higher
 ```
 
 ### 4. Run

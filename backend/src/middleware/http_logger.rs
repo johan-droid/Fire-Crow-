@@ -27,6 +27,12 @@ pub fn redact_json_value(val: &mut serde_json::Value) {
                     || k_lower.contains("credential")
                     || k_lower.contains("p256dh")
                     || k_lower.contains("private")
+                    // Phase 20: request bodies carry user PII and finding
+                    // evidence. Both are attacker-influenceable (an email
+                    // field, a report response) and neither belongs in logs.
+                    || k_lower.contains("email")
+                    || k_lower.contains("evidence")
+                    || k_lower.contains("snippet")
                 {
                     *v = serde_json::Value::String("[REDACTED]".into());
                 } else {
@@ -56,6 +62,9 @@ const SENSITIVE_QUERY_KEYS: &[&str] = &[
     "code",
     "password",
     "secret",
+    // Exact match, so "secret" does not cover this: an OAuth client secret in
+    // the query string would otherwise be logged verbatim.
+    "client_secret",
     "api_key",
 ];
 

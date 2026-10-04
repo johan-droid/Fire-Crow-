@@ -1,0 +1,380 @@
+{
+  "schema_version": 1,
+  "scan_id": "scan-golden-mixed-1",
+  "repository_url": "https://github.com/acme/widget",
+  "repo_branch": "main",
+  "repo_owner": "acme",
+  "repo_name": "widget",
+  "snapshot_commit": "0123456789abcdef0123456789abcdef01234567",
+  "snapshot_file_count": 8,
+  "snapshot_total_size": 4096,
+  "scanner_runs": [
+    {
+      "scanner": "gitleaks",
+      "version": "8.18.4",
+      "parser": "gitleaks-json-v1",
+      "mode": "secret",
+      "image": "ghcr.io/gitleaks/gitleaks:v8.18.4",
+      "status": {
+        "success_findings": {
+          "finding_count": 2
+        }
+      },
+      "finding_count": 2,
+      "coverage_known": true,
+      "detail": null,
+      "limitations": []
+    },
+    {
+      "scanner": "osv",
+      "version": "2.2.4",
+      "parser": "osv-json-v1",
+      "mode": "dependency",
+      "image": "ghcr.io/google/osv-scanner:v2.2.4",
+      "status": {
+        "success_findings": {
+          "finding_count": 2
+        }
+      },
+      "finding_count": 2,
+      "coverage_known": true,
+      "detail": null,
+      "limitations": []
+    },
+    {
+      "scanner": "semgrep",
+      "version": "1.96.0",
+      "parser": "semgrep-json-v1",
+      "mode": "sast",
+      "image": "semgrep/semgrep:1.96.0",
+      "status": {
+        "success_findings": {
+          "finding_count": 1
+        }
+      },
+      "finding_count": 1,
+      "coverage_known": true,
+      "detail": null,
+      "limitations": []
+    }
+  ],
+  "coverage": {
+    "status": "complete",
+    "complete": true,
+    "successful_scanners": [
+      "gitleaks",
+      "osv",
+      "semgrep"
+    ],
+    "unsuccessful_scanners": {},
+    "limitations": []
+  },
+  "findings": [
+    {
+      "id": "canonical-v1:557be6b137ee70d76e582b17c61af0b4c64f5c2ac8c5b0ae91a44af94af0c1e2",
+      "agent_source": "semgrep",
+      "title": "firecrow.python.sql-injection-concatenation",
+      "description": "Test detection.",
+      "severity": "critical",
+      "confidence": "HIGH",
+      "confidence_source": "scanner",
+      "cwe_id": "CWE-78",
+      "owasp_category": "A03:2021",
+      "remediation": null,
+      "provenance": {
+        "scanner": "semgrep",
+        "scanner_version": "1.96.0",
+        "parser": "semgrep-json-v1",
+        "scanner_image": "semgrep/semgrep:1.96.0",
+        "rule_id": "firecrow.python.sql-injection-concatenation",
+        "native_fingerprint": "semgrep:firecrow.python.sql-injection-concatenation:fp-firecrow.python.sql-injection-concatenation-21",
+        "snapshot_commit": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "native_id": "semgrep:semgrep:firecrow.python.sql-injection-concatenation:fp-firecrow.python.sql-injection-concatenation-21",
+      "location": {
+        "file": "app.py",
+        "line": 21,
+        "start_column": 5,
+        "end_line": 21,
+        "end_column": 40
+      },
+      "evidence": "subprocess.call(cmd, shell=True)",
+      "evidence_kind": "source",
+      "evidence_truncated": false,
+      "references": [
+        {
+          "type": "WEB",
+          "url": "https://cwe.mitre.org/data/definitions/78.html"
+        }
+      ],
+      "scanner_metadata": {
+        "check_id": "firecrow.python.sql-injection-concatenation",
+        "confidence": "HIGH",
+        "cwe": [
+          "CWE-78: Improper Neutralization of Special Elements used in an OS Command"
+        ],
+        "end_column": 40,
+        "end_line": 21,
+        "fingerprint": "semgrep:firecrow.python.sql-injection-concatenation:fp-firecrow.python.sql-injection-concatenation-21",
+        "fingerprint_source": "semgrep",
+        "owasp": [
+          "A03:2021 - Injection"
+        ],
+        "parser": "semgrep-json-v1",
+        "references": [
+          {
+            "type": "WEB",
+            "url": "https://cwe.mitre.org/data/definitions/78.html"
+          }
+        ],
+        "rule_id": "firecrow.python.sql-injection-concatenation",
+        "scanner_image": "semgrep/semgrep:1.96.0",
+        "scanner_severity": "ERROR",
+        "scanner_version": "1.96.0",
+        "snapshot_commit": "0123456789abcdef0123456789abcdef01234567",
+        "start_column": 5,
+        "start_line": 21
+      }
+    },
+    {
+      "id": "canonical-v1:5983672cca0ef3dccebb9fd06a17ef8b55dbb0c0c28eacfe9210b1e32d994866",
+      "agent_source": "osv",
+      "title": "Vulnerable dependency: left-pad 1.3.0 (OSV-UNRATED-1)",
+      "description": "Test advisory.",
+      "severity": "unknown",
+      "confidence": null,
+      "confidence_source": "absent",
+      "cwe_id": null,
+      "owasp_category": null,
+      "remediation": "Upgrade left-pad to version 9.9.9 or later (declared in package-lock.json), then re-lock and rescan.",
+      "provenance": {
+        "scanner": "osv",
+        "scanner_version": "2.2.4",
+        "parser": "osv-json-v1",
+        "scanner_image": "ghcr.io/google/osv-scanner:v2.2.4",
+        "rule_id": "OSV-UNRATED-1",
+        "native_fingerprint": "osv:23a5274ad0c369e36ad39c07c46f2c54e9bfac242a52fb6f3bb2306467ec326d",
+        "snapshot_commit": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "native_id": "osv:osv:23a5274ad0c369e36ad39c07c46f2c54e9bfac242a52fb6f3bb2306467ec326d",
+      "location": {
+        "file": "package-lock.json",
+        "line": 1,
+        "start_column": null,
+        "end_line": null,
+        "end_column": null
+      },
+      "evidence": "npm package left-pad@1.3.0 declared in package-lock.json is affected by OSV-UNRATED-1; fixed in 9.9.9.",
+      "evidence_kind": "dependency",
+      "evidence_truncated": false,
+      "references": [
+        {
+          "type": "ADVISORY",
+          "url": "https://example.com/advisory"
+        }
+      ],
+      "scanner_metadata": {
+        "advisory": "OSV-UNRATED-1",
+        "affected": [
+          {
+            "ranges": [
+              {
+                "events": [
+                  {
+                    "introduced": "0"
+                  },
+                  {
+                    "fixed": "9.9.9"
+                  }
+                ],
+                "type": "SEMVER"
+              }
+            ]
+          }
+        ],
+        "aliases": [],
+        "direct": null,
+        "ecosystem": "npm",
+        "fingerprint": "osv:23a5274ad0c369e36ad39c07c46f2c54e9bfac242a52fb6f3bb2306467ec326d",
+        "fixed_versions": [
+          "9.9.9"
+        ],
+        "installed_version": "1.3.0",
+        "manifest": "package-lock.json",
+        "package": "left-pad",
+        "parser": "osv-json-v1",
+        "references": [
+          {
+            "type": "ADVISORY",
+            "url": "https://example.com/advisory"
+          }
+        ],
+        "rule_id": "OSV-UNRATED-1",
+        "scanner_image": "ghcr.io/google/osv-scanner:v2.2.4",
+        "scanner_version": "2.2.4",
+        "snapshot_commit": "0123456789abcdef0123456789abcdef01234567"
+      }
+    },
+    {
+      "id": "canonical-v1:5f74058222257ceb686162703abb2faec833a953234413388b8eb20e24c9390f",
+      "agent_source": "gitleaks",
+      "title": "AWS Access Token",
+      "description": "gitleaks rule aws-access-token: AWS Access Token",
+      "severity": "high",
+      "confidence": "high",
+      "confidence_source": "scanner_default",
+      "cwe_id": "CWE-798",
+      "owasp_category": "A07:2021",
+      "remediation": "Revoke the exposed credential, remove it from the repository history, and load it from a secret manager at runtime.",
+      "provenance": {
+        "scanner": "gitleaks",
+        "scanner_version": "8.18.4",
+        "parser": "gitleaks-json-v1",
+        "scanner_image": "ghcr.io/gitleaks/gitleaks:v8.18.4",
+        "rule_id": "aws-access-token",
+        "native_fingerprint": "gitleaks:fp-aws-env-3",
+        "snapshot_commit": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "native_id": "gitleaks:gitleaks:fp-aws-env-3",
+      "location": {
+        "file": "config/aws.env",
+        "line": 3,
+        "start_column": 21,
+        "end_line": null,
+        "end_column": 41
+      },
+      "evidence": "AWS_ACCESS_KEY_ID=[REDACTED]",
+      "evidence_kind": "secret",
+      "evidence_truncated": false,
+      "references": [],
+      "scanner_metadata": {
+        "duplicate_occurrences": 2,
+        "end_column": 41,
+        "fingerprint": "gitleaks:fp-aws-env-3",
+        "parser": "gitleaks-json-v1",
+        "rule_id": "aws-access-token",
+        "scanner_image": "ghcr.io/gitleaks/gitleaks:v8.18.4",
+        "scanner_version": "8.18.4",
+        "snapshot_commit": "0123456789abcdef0123456789abcdef01234567",
+        "start_column": 21
+      }
+    },
+    {
+      "id": "canonical-v1:6a9acabd7f0a9391b55e29d422431cde5b64a8c5be9718b29e4650493af60fb2",
+      "agent_source": "osv",
+      "title": "Vulnerable dependency: lodash 4.17.20 (GHSA-4xc9-xhrj-v574)",
+      "description": "Test advisory.",
+      "severity": "high",
+      "confidence": null,
+      "confidence_source": "absent",
+      "cwe_id": null,
+      "owasp_category": null,
+      "remediation": "Upgrade lodash to version 9.9.9 or later (declared in package-lock.json), then re-lock and rescan.",
+      "provenance": {
+        "scanner": "osv",
+        "scanner_version": "2.2.4",
+        "parser": "osv-json-v1",
+        "scanner_image": "ghcr.io/google/osv-scanner:v2.2.4",
+        "rule_id": "GHSA-4xc9-xhrj-v574",
+        "native_fingerprint": "osv:8fabc02a29381a0fbf66a0797ac3517efe708e9e2fed3d31e0140aa7107d2d01",
+        "snapshot_commit": "0123456789abcdef0123456789abcdef01234567"
+      },
+      "native_id": "osv:osv:8fabc02a29381a0fbf66a0797ac3517efe708e9e2fed3d31e0140aa7107d2d01",
+      "location": {
+        "file": "package-lock.json",
+        "line": 1,
+        "start_column": null,
+        "end_line": null,
+        "end_column": null
+      },
+      "evidence": "npm package lodash@4.17.20 declared in package-lock.json is affected by GHSA-4xc9-xhrj-v574; fixed in 9.9.9.",
+      "evidence_kind": "dependency",
+      "evidence_truncated": false,
+      "references": [
+        {
+          "type": "ADVISORY",
+          "url": "https://example.com/advisory"
+        }
+      ],
+      "scanner_metadata": {
+        "advisory": "GHSA-4xc9-xhrj-v574",
+        "affected": [
+          {
+            "ranges": [
+              {
+                "events": [
+                  {
+                    "introduced": "0"
+                  },
+                  {
+                    "fixed": "9.9.9"
+                  }
+                ],
+                "type": "SEMVER"
+              }
+            ]
+          }
+        ],
+        "aliases": [],
+        "direct": null,
+        "ecosystem": "npm",
+        "fingerprint": "osv:8fabc02a29381a0fbf66a0797ac3517efe708e9e2fed3d31e0140aa7107d2d01",
+        "fixed_versions": [
+          "9.9.9"
+        ],
+        "installed_version": "4.17.20",
+        "manifest": "package-lock.json",
+        "package": "lodash",
+        "parser": "osv-json-v1",
+        "references": [
+          {
+            "type": "ADVISORY",
+            "url": "https://example.com/advisory"
+          }
+        ],
+        "rule_id": "GHSA-4xc9-xhrj-v574",
+        "scanner_image": "ghcr.io/google/osv-scanner:v2.2.4",
+        "scanner_version": "2.2.4",
+        "snapshot_commit": "0123456789abcdef0123456789abcdef01234567"
+      }
+    }
+  ],
+  "correlations": [
+    {
+      "correlation_id": "canonical-v1:5f74058222257ceb686162703abb2faec833a953234413388b8eb20e24c9390f",
+      "canonical_id": "canonical-v1:5f74058222257ceb686162703abb2faec833a953234413388b8eb20e24c9390f",
+      "basis": "exact_canonical_identity",
+      "occurrences": 2,
+      "provenance": [
+        {
+          "scanner": "gitleaks",
+          "scanner_version": "8.18.4",
+          "parser": "gitleaks-json-v1",
+          "scanner_image": "ghcr.io/gitleaks/gitleaks:v8.18.4",
+          "rule_id": "aws-access-token",
+          "native_fingerprint": "gitleaks:fp-aws-env-3",
+          "snapshot_commit": "0123456789abcdef0123456789abcdef01234567"
+        }
+      ]
+    }
+  ],
+  "invalid_findings": [],
+  "limitations": [],
+  "summary": {
+    "finding_count": 4,
+    "valid_finding_count": 4,
+    "invalid_finding_count": 0,
+    "duplicate_group_count": 1,
+    "findings_by_scanner": {
+      "gitleaks": 1,
+      "osv": 2,
+      "semgrep": 1
+    },
+    "findings_by_severity": {
+      "critical": 1,
+      "high": 2,
+      "unknown": 1
+    },
+    "security_score": 3.0
+  }
+}

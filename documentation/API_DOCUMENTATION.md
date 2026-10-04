@@ -33,7 +33,7 @@ Fire Crow integrates multiple external providers and security credentials. All s
 | `GOOGLE_CLIENT_ID` | String | Google OpenID Connect (OIDC) Client ID. | Optional |
 | `GOOGLE_CLIENT_SECRET` | String | Google OpenID Connect (OIDC) Client Secret. | Optional |
 | `GEMINI_API_KEY` | String | Google Gemini Security LLM API Key for autonomous agent reasoning loops. | **Yes (AI Audits)** |
-| `RESEND_API_KEY` | String (`re_...`) | Resend API Key for sending transactional security notification emails. | Optional |
+| `SMTP_HOST` (see README) | String | Email delivery uses the SMTP transport via lettre (`services/email.rs`). `RESEND_API_KEY` is legacy/unused — documented as dead in `PRODUCTION_DEPLOYMENT.md`. | Optional |
 | `R2_ACCESS_KEY_ID` | String | Cloudflare R2 / S3 Storage Access Key ID for PDF audit reports. | Optional |
 | `R2_SECRET_ACCESS_KEY` | String | Cloudflare R2 / S3 Storage Secret Access Key. | Optional |
 | `DATABASE_URL` | String | PostgreSQL / Neon PostgreSQL connection string with SSL mode. | **Yes** |

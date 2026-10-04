@@ -3,6 +3,7 @@ pub mod routes_auth;
 pub mod routes_chat;
 pub mod routes_dashboard;
 pub mod routes_dodo;
+pub mod routes_github;
 pub mod routes_health;
 pub mod routes_iam;
 pub mod routes_leaderboard;

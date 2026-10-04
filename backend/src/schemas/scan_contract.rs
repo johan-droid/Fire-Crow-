@@ -233,9 +233,15 @@ pub struct ScanResult {
 
 /// All valid pipeline states.
 ///
-/// `Partial` means some scanner failed or timed out while at least one scanner
-/// succeeded. It must carry the failed scanner name(s) in `ScanResult.error`
-/// or in a failed `ScannerRun`; omitting that information is invalid.
+/// Linear path: `Queued -> Fetching -> Scanning -> Normalizing -> Reporting
+/// -> Delivering -> Completed`.
+///
+/// `Failed` is reachable from any non-terminal state. `Cancelled` is reachable
+/// from any non-terminal state. `Partial` means some scanner failed or timed
+/// out while at least one scanner succeeded; it is reachable from `Scanning`,
+/// `Normalizing`, `Reporting`, or `Delivering`, and must carry the failed
+/// scanner name(s) in `ScanResult.error` or in a failed `ScannerRun`; omitting
+/// that information is invalid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PipelineState {
@@ -243,7 +249,6 @@ pub enum PipelineState {
     Fetching,
     Scanning,
     Normalizing,
-    Scoring,
     Reporting,
     Delivering,
     Completed,
@@ -259,7 +264,6 @@ impl PipelineState {
             Self::Fetching => "fetching",
             Self::Scanning => "scanning",
             Self::Normalizing => "normalizing",
-            Self::Scoring => "scoring",
             Self::Reporting => "reporting",
             Self::Delivering => "delivering",
             Self::Completed => "completed",
@@ -273,6 +277,31 @@ impl PipelineState {
         matches!(
             self,
             Self::Completed | Self::Partial | Self::Failed | Self::Cancelled
+        )
+    }
+
+    /// Whether `self -> next` is a legal lifecycle step.
+    ///
+    /// Terminal states transition nowhere. Every non-terminal state can go to
+    /// `Failed` or `Cancelled`; the linear chain otherwise advances one step,
+    /// with `Partial` fanning out from any post-fetch work phase.
+    pub fn can_transition(&self, next: &Self) -> bool {
+        if self.is_terminal() {
+            return false;
+        }
+        matches!(
+            (self, next),
+            (_, Self::Failed | Self::Cancelled)
+                | (Self::Queued, Self::Fetching)
+                | (Self::Fetching, Self::Scanning)
+                | (Self::Scanning, Self::Normalizing)
+                | (Self::Normalizing, Self::Reporting)
+                | (Self::Reporting, Self::Delivering)
+                | (Self::Delivering, Self::Completed)
+                | (
+                    Self::Scanning | Self::Normalizing | Self::Reporting | Self::Delivering,
+                    Self::Partial,
+                )
         )
     }
 }
@@ -315,9 +344,10 @@ fn valid_segment(segment: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
 }
 
+// Written with `%` rather than `is_multiple_of` to stay within the README's
+// stated Rust 1.75 MSRV (`is_multiple_of` stabilized in 1.87).
+#[allow(clippy::manual_is_multiple_of)]
 fn is_lower_hex_digest(value: &str) -> bool {
-    // Written with `%` rather than `is_multiple_of` to stay within the README's
-    // stated Rust 1.75 MSRV.
     !value.is_empty()
         && value.len() % 2 == 0
         && value
@@ -622,18 +652,17 @@ pub fn validate_scan_result(result: &ScanResult) -> ContractResult<()> {
                 return Err(ContractError::PartialWithoutCause);
             }
         }
-        PipelineState::Failed => {
+        PipelineState::Failed
             if result
                 .error
                 .as_deref()
                 .unwrap_or_default()
                 .trim()
-                .is_empty()
-            {
-                return Err(ContractError::InconsistentResult {
-                    reason: "failed scan must carry an error".to_string(),
-                });
-            }
+                .is_empty() =>
+        {
+            return Err(ContractError::InconsistentResult {
+                reason: "failed scan must carry an error".to_string(),
+            });
         }
         _ => {}
     }

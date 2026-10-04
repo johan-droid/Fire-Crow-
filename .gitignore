@@ -11,6 +11,8 @@
 *.pem
 *.key
 *.crt
+*.p12
+*.pfx
 .dev.vars
 backend/scripts/cf_secrets.json
 deploy/cloudflare/cf_secrets.json

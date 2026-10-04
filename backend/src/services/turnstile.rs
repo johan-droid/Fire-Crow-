@@ -4,12 +4,24 @@
 use crate::error::{AppError, Result};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize)]
-struct TurnstileVerifyRequest<'a> {
-    secret: &'a str,
-    response: &'a str,
+#[derive(Serialize)]
+pub struct TurnstileVerifyRequest<'a> {
+    pub secret: &'a str,
+    pub response: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    remoteip: Option<&'a str>,
+    pub remoteip: Option<&'a str>,
+}
+
+/// Secret-safe `Debug` (Phase 20): the derived impl printed the Turnstile
+/// secret and the user's verification token.
+impl std::fmt::Debug for TurnstileVerifyRequest<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TurnstileVerifyRequest")
+            .field("secret", &"[REDACTED]")
+            .field("response", &"[REDACTED]")
+            .field("remoteip", &self.remoteip)
+            .finish()
+    }
 }
 
 #[derive(Debug, Deserialize)]

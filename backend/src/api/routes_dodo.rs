@@ -26,8 +26,8 @@ pub async fn create_checkout(
     user: crate::middleware::auth::AuthenticatedUser,
     Json(payload): Json<DodoCheckoutSessionRequest>,
 ) -> Result<Json<DodoCheckoutSessionResponse>> {
-    // P0-2: The audit engine is currently a stub, returning canned results.
-    // Billing is disabled until a real analysis engine is implemented.
+    // Billing is disabled during the Phase 1 engine cleanup; the scan pipeline
+    // itself runs fetch + gitleaks (see agents::scanner).
     Err(AppError::Unavailable(
         "Service temporarily unavailable while audit engine is being upgraded.".into(),
     ))

@@ -6,7 +6,7 @@ use serde::Deserialize;
 pub const BACKEND_DIR: &str = env!("CARGO_MANIFEST_DIR");
 pub const WORKSPACE_DIR: &str = BACKEND_DIR;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct Settings {
     #[serde(default = "default_port")]
     pub port: u16,
@@ -89,6 +89,23 @@ pub struct Settings {
     pub github_client_secret: String,
     #[serde(default)]
     pub github_token: String,
+    /// GitHub App identity (Phase 19B.1). `0` / empty means the App
+    /// integration is disabled: startup succeeds and the OAuth + platform
+    /// token paths are unaffected. Setting only one of the two is a
+    /// configuration error, and a key that is not an RSA private key PEM is
+    /// rejected at startup rather than at first mint.
+    ///
+    /// The App ID is public (it appears in JWT claims and API URLs); the
+    /// private key is secret and never logged (see the manual `Debug` impl).
+    #[serde(default)]
+    pub github_app_id: u64,
+    #[serde(default)]
+    pub github_app_private_key: String,
+    /// Webhook signature secret (Phase 19B.5). Empty means the webhook route
+    /// is unconfigured and refuses every delivery; it never degrades to
+    /// unverified acceptance.
+    #[serde(default)]
+    pub github_app_webhook_secret: String,
     #[serde(default, deserialize_with = "deserialize_comma_separated")]
     pub github_oauth_scopes: Vec<String>,
     #[serde(default)]
@@ -109,6 +126,26 @@ pub struct Settings {
     pub smtp_user: String,
     #[serde(default)]
     pub smtp_password: String,
+    // Telegram delivery (Phase 17.3). Both are operator configuration and both are
+    // optional: an absent token or chat leaves the channel unconfigured, which
+    // fails a delivery request cleanly instead of breaking startup. Neither is
+    // ever derived from request input.
+    #[serde(default)]
+    pub telegram_bot_token: String,
+    #[serde(default)]
+    pub telegram_chat_id: String,
+    #[serde(default = "default_telegram_timeout")]
+    pub telegram_timeout_seconds: i64,
+    #[serde(default = "default_telegram_max_attempts")]
+    pub telegram_max_attempts: i32,
+    #[serde(default = "default_telegram_max_response_bytes")]
+    pub telegram_max_response_bytes: usize,
+    /// Ceiling on a Telegram message before it becomes a summary instead of the
+    /// full report. Defaults to the provider's own message ceiling; lowering it is
+    /// an operator choice, raising it above the ceiling would only produce
+    /// rejections.
+    #[serde(default = "default_telegram_message_limit")]
+    pub telegram_message_limit_chars: usize,
     #[serde(default)]
     pub r2_access_key_id: String,
     #[serde(default)]
@@ -131,10 +168,20 @@ pub struct Settings {
     pub dodo_payments_environment: String,
     #[serde(default)]
     pub gemini_api_key: String,
-    #[serde(default = "default_gemini_fallback")]
-    pub gemini_fallback_model: String,
-    #[serde(default = "default_true")]
-    pub gemini_enable_fallback_model: bool,
+    /// The model used for a generation. Recorded for observability only: it
+    /// names the model that produced a narrative without ever becoming part of
+    /// the narrative itself.
+    ///
+    /// Intentionally defaulted to *empty* rather than to a model name. An unset
+    /// model fails generation loudly instead of silently substituting one, and
+    /// the backend still starts with the AI layer disabled.
+    #[serde(default)]
+    pub gemini_model: String,
+    // Phase 19.1: the fallback-model settings were removed. They were never
+    // read by any generation path (a single model is configured and used), so
+    // they only suggested a failover that does not exist. Environments that
+    // still set GEMINI_FALLBACK_MODEL / GEMINI_ENABLE_FALLBACK_MODEL load
+    // unchanged: unknown env keys are ignored.
     #[serde(default = "default_gemini_max_attempts")]
     pub gemini_max_attempts: i32,
     #[serde(default = "default_gemini_timeout")]
@@ -201,6 +248,149 @@ pub struct Settings {
     pub terms_version: String,
 }
 
+/// Secret-safe `Debug`: credentials and credential-bearing URLs render as
+/// `[REDACTED]`, never their values.
+///
+/// `Settings` holds every credential the process uses (signing keys, database
+/// URLs that embed passwords, provider tokens). A derived `Debug` would print
+/// all of them into any log line, panic message, or test snapshot that formats
+/// the struct. Non-secret operational fields stay visible so the output is
+/// still useful for diagnosing configuration problems.
+impl std::fmt::Debug for Settings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        const HIDDEN: &str = "[REDACTED]";
+        f.debug_struct("Settings")
+            .field("port", &self.port)
+            .field("host", &self.host)
+            .field("debug", &self.debug)
+            .field("rate_limit_enabled", &self.rate_limit_enabled)
+            .field("secret_key", &HIDDEN)
+            .field("encryption_key", &HIDDEN)
+            .field("frontend_url", &self.frontend_url)
+            .field("backend_base_url", &self.backend_base_url)
+            .field("cors_origins", &self.cors_origins)
+            .field("database_url", &HIDDEN)
+            .field("database_pool_size", &self.database_pool_size)
+            .field("database_pool_timeout", &self.database_pool_timeout)
+            .field("database_pool_recycle", &self.database_pool_recycle)
+            .field("redis_url", &HIDDEN)
+            .field("redis_password", &HIDDEN)
+            .field("default_rate_limit", &self.default_rate_limit)
+            .field(
+                "login_failure_window_minutes",
+                &self.login_failure_window_minutes,
+            )
+            .field("login_failure_limit", &self.login_failure_limit)
+            .field(
+                "jwt_access_token_expire_minutes",
+                &self.jwt_access_token_expire_minutes,
+            )
+            .field("auth_cookie_name", &self.auth_cookie_name)
+            .field("auth_cookie_secure", &self.auth_cookie_secure)
+            .field("auth_cookie_httponly", &self.auth_cookie_httponly)
+            .field("auth_cookie_samesite", &self.auth_cookie_samesite)
+            .field("csrf_enabled", &self.csrf_enabled)
+            .field("mfa_enforce_for_admins", &self.mfa_enforce_for_admins)
+            .field("mfa_totp_issuer", &self.mfa_totp_issuer)
+            .field("mfa_max_failed_attempts", &self.mfa_max_failed_attempts)
+            .field("mfa_recovery_code_count", &self.mfa_recovery_code_count)
+            .field("sso_oidc_scopes", &self.sso_oidc_scopes)
+            .field("sso_allow_auto_provision", &self.sso_allow_auto_provision)
+            .field("sso_default_role_id", &self.sso_default_role_id)
+            .field("github_client_id", &self.github_client_id)
+            .field("github_client_secret", &HIDDEN)
+            .field("github_token", &HIDDEN)
+            .field("github_app_id", &self.github_app_id)
+            .field("github_app_private_key", &HIDDEN)
+            .field("github_app_webhook_secret", &HIDDEN)
+            .field("github_oauth_scopes", &self.github_oauth_scopes)
+            .field("google_client_id", &self.google_client_id)
+            .field("google_client_secret", &HIDDEN)
+            .field("resend_api_key", &HIDDEN)
+            .field("brevo_api_key", &HIDDEN)
+            .field("sender_email", &self.sender_email)
+            .field("smtp_host", &self.smtp_host)
+            .field("smtp_port", &self.smtp_port)
+            .field("smtp_user", &self.smtp_user)
+            .field("smtp_password", &HIDDEN)
+            .field("telegram_bot_token", &HIDDEN)
+            .field("telegram_chat_id", &self.telegram_chat_id)
+            .field("telegram_timeout_seconds", &self.telegram_timeout_seconds)
+            .field("telegram_max_attempts", &self.telegram_max_attempts)
+            .field(
+                "telegram_max_response_bytes",
+                &self.telegram_max_response_bytes,
+            )
+            .field(
+                "telegram_message_limit_chars",
+                &self.telegram_message_limit_chars,
+            )
+            .field("r2_access_key_id", &HIDDEN)
+            .field("r2_secret_access_key", &HIDDEN)
+            .field("r2_endpoint_url", &self.r2_endpoint_url)
+            .field("r2_bucket_name", &self.r2_bucket_name)
+            .field("cf_turnstile_secret_key", &HIDDEN)
+            .field("cf_turnstile_site_key", &self.cf_turnstile_site_key)
+            .field("cf_turnstile_enabled", &self.cf_turnstile_enabled)
+            .field("dodo_payments_api_key", &HIDDEN)
+            .field("dodo_payments_webhook_secret", &HIDDEN)
+            .field("dodo_payments_environment", &self.dodo_payments_environment)
+            .field("gemini_api_key", &HIDDEN)
+            .field("gemini_model", &self.gemini_model)
+            .field("gemini_max_attempts", &self.gemini_max_attempts)
+            .field("gemini_timeout_seconds", &self.gemini_timeout_seconds)
+            .field(
+                "gemini_max_findings_per_call",
+                &self.gemini_max_findings_per_call,
+            )
+            .field("gemini_max_prompt_chars", &self.gemini_max_prompt_chars)
+            .field("gemini_daily_soft_limit", &self.gemini_daily_soft_limit)
+            .field(
+                "gemini_min_seconds_between_calls",
+                &self.gemini_min_seconds_between_calls,
+            )
+            .field("max_active_jobs_per_user", &self.max_active_jobs_per_user)
+            .field("broker_connection_timeout", &self.broker_connection_timeout)
+            .field("sse_poll_interval", &self.sse_poll_interval)
+            .field("sse_heartbeat_interval", &self.sse_heartbeat_interval)
+            .field("report_presigned_ttl", &self.report_presigned_ttl)
+            .field("report_local_fallback", &self.report_local_fallback)
+            .field("max_scan_duration", &self.max_scan_duration)
+            .field("default_budget_usd", &self.default_budget_usd)
+            .field("scanner_command_timeout", &self.scanner_command_timeout)
+            .field("scanner_output_max_length", &self.scanner_output_max_length)
+            .field("api_discovery_limit", &self.api_discovery_limit)
+            .field(
+                "housekeeping_interval_seconds",
+                &self.housekeeping_interval_seconds,
+            )
+            .field("max_request_body_bytes", &self.max_request_body_bytes)
+            .field("max_json_body_bytes", &self.max_json_body_bytes)
+            .field("report_max_pages", &self.report_max_pages)
+            .field(
+                "report_max_findings_in_pdf",
+                &self.report_max_findings_in_pdf,
+            )
+            .field("report_max_evidence_chars", &self.report_max_evidence_chars)
+            .field(
+                "report_max_remediation_chars",
+                &self.report_max_remediation_chars,
+            )
+            .field(
+                "report_include_detailed_findings",
+                &self.report_include_detailed_findings,
+            )
+            .field("scoring_critical", &self.scoring_critical)
+            .field("scoring_high", &self.scoring_high)
+            .field("scoring_medium", &self.scoring_medium)
+            .field("scoring_low", &self.scoring_low)
+            .field("scoring_info", &self.scoring_info)
+            .field("privacy_policy_version", &self.privacy_policy_version)
+            .field("terms_version", &self.terms_version)
+            .finish()
+    }
+}
+
 fn default_port() -> u16 {
     8000
 }
@@ -258,8 +448,19 @@ fn default_sso_scopes() -> String {
 fn default_smtp_port() -> u16 {
     587
 }
-fn default_gemini_fallback() -> String {
-    "gemini-1.5-pro".into()
+fn default_telegram_timeout() -> i64 {
+    20
+}
+fn default_telegram_max_attempts() -> i32 {
+    2
+}
+fn default_telegram_max_response_bytes() -> usize {
+    64 * 1024
+}
+fn default_telegram_message_limit() -> usize {
+    // Telegram's documented ceiling for a text message. Reused rather than
+    // duplicated so the default can never drift from the transport's contract.
+    crate::services::telegram_artifact::TELEGRAM_MAX_MESSAGE_CHARS
 }
 fn default_gemini_max_attempts() -> i32 {
     3
@@ -441,6 +642,26 @@ impl Settings {
             ));
         }
 
+        // Phase 19B.1: the GitHub App identity is all-or-nothing. Half an
+        // identity (an ID with no key, or a key with no ID) fails startup
+        // loudly instead of producing authentication failures at first use.
+        // A key that is not an RSA private key PEM is rejected here too; the
+        // mint path re-validates, so this is the early, actionable error.
+        let app_id_set = settings.github_app_id != 0;
+        let app_key_set = !settings.github_app_private_key.trim().is_empty();
+        if app_id_set != app_key_set {
+            return Err(ConfigError::Message(
+                "GitHub App identity is incomplete: set both GITHUB_APP_ID and \
+                 GITHUB_APP_PRIVATE_KEY, or neither to leave the App integration disabled."
+                    .into(),
+            ));
+        }
+        if app_key_set && !is_rsa_private_key_pem(&settings.github_app_private_key) {
+            return Err(ConfigError::Message(
+                "GITHUB_APP_PRIVATE_KEY is not an RSA private key PEM.".into(),
+            ));
+        }
+
         Ok(())
     }
 
@@ -480,6 +701,41 @@ pub fn ensure_workspace_dirs(_settings: &Settings) -> std::io::Result<()> {
         std::fs::create_dir_all(base.join(dir))?;
     }
     Ok(())
+}
+
+/// Structural check that `value` is an RSA private key PEM.
+///
+/// Accepts PKCS#1 (`BEGIN RSA PRIVATE KEY`) and PKCS#8 (`BEGIN PRIVATE KEY`);
+/// encrypted (`ENCRYPTED PRIVATE KEY`) and non-PEM values are refused. This
+/// is the startup gate only — the mint path parses the key for real and would
+/// refuse anything this check let through. Env-provided PEMs often carry
+/// literal `\n` escapes instead of newlines; those are normalized first.
+fn is_rsa_private_key_pem(value: &str) -> bool {
+    normalize_pem(value)
+        .map(|pem| pem.contains("BEGIN RSA PRIVATE KEY") || pem.contains("BEGIN PRIVATE KEY"))
+        .unwrap_or(false)
+}
+
+/// Normalize an env-provided PEM: literal `\n` escapes become newlines when
+/// the value has no real ones. Returns `None` when the body is not decodable
+/// base64, so random strings fail the gate.
+fn normalize_pem(value: &str) -> Option<String> {
+    let mut text = value.trim().to_string();
+    if !text.contains('\n') && text.contains("\\n") {
+        text = text.replace("\\n", "\n");
+    }
+    if !(text.contains("-----BEGIN") && text.contains("-----END")) {
+        return None;
+    }
+    // The body between the armor lines must be base64.
+    let body: String = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with("-----"))
+        .collect();
+    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &body)
+        .ok()
+        .map(|_| text)
 }
 
 fn deserialize_comma_separated<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>

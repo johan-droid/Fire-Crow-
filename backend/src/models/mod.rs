@@ -6,6 +6,7 @@ pub mod audit_job;
 pub mod compliance;
 pub mod domain_verification;
 pub mod finding;
+pub mod github_installation;
 pub mod iam;
 pub mod mfa;
 pub mod pam;

@@ -29,6 +29,8 @@ const ENV_KEYS: &[&str] = &[
     "PORT",
     "HOST",
     "CSRF_ENABLED",
+    "GITHUB_APP_ID",
+    "GITHUB_APP_PRIVATE_KEY",
 ];
 
 struct Env {
@@ -303,4 +305,101 @@ fn security_s1_non_cloudflare_peer_never_gets_header_trust() {
 fn security_s1_real_peer_with_no_forwarding_headers_is_used_directly() {
     let out = resolve_client_ip(&headers(&[]), Some(ip(ATTACKER)));
     assert_eq!(out, ATTACKER);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 19B.1: GitHub App identity is all-or-nothing at startup
+// ---------------------------------------------------------------------------
+
+/// TEST-ONLY RSA key (generated with `openssl genrsa`); signs nothing real.
+const TEST_APP_KEY_PEM: &str = "-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDM5+/U2YwFZdjE
+jBfKwA4PSdSp9oRe60vhNesRGE+nGMlO9dZHc7AITvvXIYu5qUHTQkbLJlH2BIe/
+CfKSBoIFHBfn/TOcmNz3U2NFwALaPtA56NXxFxbbof8z3cda4udToY76I5B/k5bS
+QSTsM0QPPNoSWz6L3hG/wVFGGLARI1fU91ZAOcBOvwerZ5Ygbk72i/WQHO2H15X0
+9bVAmqSt/ATOfCg6S6A7pPieJ/lHzSlT0K8+rdVddB2ss4BT93Lt62JNk5eSYA46
+nL8Mz/Qk6pwQCQB7CEVteHKCRx/mnqlj7n2ksZRODloPDYkyu+KUPqYf/fwan9OG
+rRoY+ewjAgMBAAECggEATg07ahTEJXo6LARBO9YUhPZWr7dbjNyMNulW9VgRX1Et
+vYofaXBD6aZMgBIjK0Gx9UsVtGSQa+ol2ztqzvzzogalhJUKh+gio4N8GSGe9Itg
+ve5XMFLfPiJjF9qvCYvNGio8UEQj0rThio2OBvswPa2sU7m2BYk9sZFt6AmXZ68k
+LJGYX24Ktquo8Wz33Q/Fx7WAt0NlOrwaNa6jUjue9MLl6peIFZXNSd0gPU62IqmL
+o+IMtTbVHYe3b+I1GEKUrzXs1/j9OGB+veUlqLokQvJSQugYGmqlxNOJMAO2GAHb
+Z2CfwuNBim55XcLwR+kvOuVQAV40RqrS4WttsyzRIQKBgQDvBxI+o+vROBw19rnn
+JFYwgY2TJOCOA+OQ9L8ZytQDgXW159siGlnYdrtmEV20yo6+x9FYROz4M8bVEENC
+P5wHHgtcf4MBhgzOy2OoDqXjBggwbG2BmgG20QQJ9M/74sBQ7eMW1mvfrfFfVnG4
+Yvfgjebl7TNcnGIjApW4/LzqXQKBgQDbdJ6Hn4UqJgjraeGPNxVXcBQpRX9FKMuQ
+pwd3UDaZdVsBcQ2ybzcINqytuHx1x7Jafmccp27NSOJFNeo5IcYPn7EjJ7azfF8n
+AOyDBJC6Oyk/fW9+CGquxobjKcejtdnMaMuLMdXsmWLLwHsvP9CRjLc2oky3+Pqw
+g3PN6D3IfwKBgQCH3bkdKgftELvYYLojDKCBSeKzdQ6/Kq67wqKtgoEozPmfwH7q
+z5eqVzMGPXDKRykEgIgaaHNaUfP/QBM7IPULhqRmm4RX5V56XVn0OP9KIC+fdsJ4
+HJZE2GI3VpSyVJ2EYvPmE1OV/UVqL7TMXlUPqxlIMKA1UB7oT5vTXrXzcQKBgQCf
+n4qz0Ub16mZwfTpQhltilyZDAsbY0hyHIcbfdRvRsTe5q7avxA8+TS56yYbV0KQd
+CHYNtId2j/3tI5MzbSp4MMqSbI+Kq/s2Doj5n3d5zhBpmt5eyNZ4O/TfBIOuw1Yh
+RVRP8bbNeqAO3fl726nkRHr7JUAyTMpjW6n+6l8OFwKBgDPbwQtfMS23yQxtCTt5
+UbasFdoYNeaI9tIYe7VEDvZXqpXiIqb7gqEfl2Fgy+a+MSSkLKhwNSSDNLg7COhb
+F2bluSxO3pitCf0N0F4p6iiB6kTurzID41KVAwVGWZtsz/+9t7ze1ufiUREo4BpD
+vTr3yQc1kmXLT8QMholpAl29
+-----END PRIVATE KEY-----
+";
+
+#[test]
+fn security_p19b1_app_identity_absent_means_disabled() {
+    let env = Env::clean();
+    env.with_valid_keys();
+    let settings = Settings::new().expect("no App config must start fine");
+    assert_eq!(settings.github_app_id, 0);
+    assert!(settings.github_app_private_key.trim().is_empty());
+    // And the Debug impl must not print what is not there to print —
+    // nor anything else secret.
+    let rendered = format!("{settings:?}");
+    assert!(rendered.contains("github_app_id"));
+    assert!(!rendered.contains("MIIEvg"));
+}
+
+#[test]
+fn security_p19b1_app_identity_half_configured_fails_startup() {
+    // ID without a key.
+    {
+        let env = Env::clean();
+        env.with_valid_keys();
+        env.set("GITHUB_APP_ID", "123456");
+        let err = Settings::new().expect_err("an ID with no key must fail closed");
+        assert!(err.to_string().contains("GITHUB_APP_ID"));
+    }
+
+    // Key without an ID.
+    {
+        let env = Env::clean();
+        env.with_valid_keys();
+        env.set("GITHUB_APP_PRIVATE_KEY", TEST_APP_KEY_PEM);
+        let err = Settings::new().expect_err("a key with no ID must fail closed");
+        assert!(err.to_string().contains("GITHUB_APP_ID"));
+        assert!(
+            !err.to_string().contains("MIIEvg"),
+            "the key must not appear in the startup error"
+        );
+    }
+}
+
+#[test]
+fn security_p19b1_app_identity_non_rsa_key_fails_startup() {
+    let env = Env::clean();
+    env.with_valid_keys();
+    env.set("GITHUB_APP_ID", "123456");
+    env.set("GITHUB_APP_PRIVATE_KEY", "definitely-not-a-pem-key");
+    let err = Settings::new().expect_err("a non-PEM key must fail closed");
+    assert!(err.to_string().contains("GITHUB_APP_PRIVATE_KEY"));
+}
+
+#[test]
+fn security_p19b1_app_identity_complete_starts() {
+    let env = Env::clean();
+    env.with_valid_keys();
+    env.set("GITHUB_APP_ID", "123456");
+    env.set("GITHUB_APP_PRIVATE_KEY", TEST_APP_KEY_PEM);
+    let settings = Settings::new().expect("a complete identity must start");
+    assert_eq!(settings.github_app_id, 123456);
+    let rendered = format!("{settings:?}");
+    assert!(rendered.contains("123456"), "the public ID stays visible");
+    assert!(!rendered.contains("MIIEvg"), "the key stays hidden");
 }

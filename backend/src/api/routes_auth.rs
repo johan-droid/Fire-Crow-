@@ -685,12 +685,18 @@ pub async fn github_callback(
             .bind(&github_id_str).bind(&encrypted).bind(now)
             .execute(state.pool()).await {
             Ok(_) => {},
-            Err(e) => {
+            Err(_) => {
                 // `users.email` is UNIQUE. Without the email-match fallback above,
                 // an address already in use means someone else holds the account,
                 // so say so rather than leaking the constraint name.
                 if gh_user.email.is_some() {
-                    error!("GitHub signup collided with an existing email: {}", e);
+                    // Phase 20: the sqlx error embeds `Key (email)=(…)` — the
+                    // claimant's address must not reach the log. The GitHub
+                    // subject identifies the collision without PII.
+                    error!(
+                        "GitHub signup collided with an existing email for github_id {}",
+                        gh_user.id
+                    );
                     return (jar, error_redirect(
                         "An account already exists for this email address. Sign in with your password instead.",
                     ));

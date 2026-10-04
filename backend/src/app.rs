@@ -93,6 +93,14 @@ pub fn api_router() -> Router<Arc<AppState>> {
         )
         .nest("/dashboard", crate::api::routes_dashboard::router())
         .nest("/sse", crate::api::routes_sse::router())
+        // GitHub App webhooks: HMAC-verified, so no user session is required
+        // or accepted. Rate-limited like the payment webhook: the signature
+        // check is cheap, but a public endpoint still gets a ceiling.
+        .nest(
+            "/github",
+            crate::api::routes_github::router()
+                .layer(crate::middleware::rate_limit::rate_limiter("30/minute")),
+        )
 }
 
 /// Build the complete application for `state`.

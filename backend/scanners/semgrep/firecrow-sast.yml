@@ -1,0 +1,293 @@
+# Fire Crow SAST ruleset (Phase 9)
+#
+# Pinned and local on purpose. Semgrep's registry rulesets (`--config=p/python`)
+# are fetched over the network, which the sandbox forbids; a ruleset that can be
+# swapped remotely would also make a finding unreproducible. This file is part
+# of the scanner contract: the same rules produce the same findings on every
+# run, forever.
+#
+# Rule ids are namespaced `firecrow.` so they can never collide with a registry
+# id, and `check_id` is preserved verbatim in canonical findings.
+#
+# Metadata discipline: `cwe`, `owasp`, `confidence`, `category` and `references`
+# are only present where the rule author verified them. Fire Crow never infers
+# them from the rule name or from the detected pattern.
+
+rules:
+  # --- Injection -------------------------------------------------------------
+
+  - id: firecrow.python.sql-injection-concatenation
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A SQL query is built by string concatenation or interpolation. Use
+      parameterized queries so values are never parsed as SQL.
+    patterns:
+      - pattern-either:
+          - pattern: $C.execute("..." + $X + "...")
+          - pattern: $C.execute("..." % $X)
+          - pattern: $C.execute("...".format(...))
+          - pattern: $C.cursor.execute("..." + $X + "...")
+          - pattern: $C.cursor.execute("..." % $X)
+          - pattern: $C.cursor.execute("...".format(...))
+          - pattern: $C.executemany("..." + $X + "...")
+          - pattern: $C.executemany("..." % $X)
+    metadata:
+      category: security
+      subcategory: [vuln]
+      technology: [django, flask]
+      cwe:
+        - "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+      owasp:
+        - "A03:2021 - Injection"
+      confidence: HIGH
+      likelihood: HIGH
+      impact: HIGH
+      references:
+        - https://cwe.mitre.org/data/definitions/89.html
+        - https://owasp.org/Top10/A03_2021-Injection/
+
+  - id: firecrow.python.command-injection-shell-true
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A command is run through a shell. Any metacharacter in the input becomes
+      shell syntax; pass an argument vector with shell=False instead.
+    patterns:
+      - pattern-either:
+          - pattern: subprocess.call(..., shell=True, ...)
+          - pattern: subprocess.run(..., shell=True, ...)
+          - pattern: subprocess.Popen(..., shell=True, ...)
+          - pattern: subprocess.check_call(..., shell=True, ...)
+          - pattern: subprocess.check_output(..., shell=True, ...)
+          - pattern: os.system($X)
+          - pattern: os.popen($X)
+    metadata:
+      category: security
+      subcategory: [vuln]
+      cwe:
+        - "CWE-78: Improper Neutralization of Special Elements used in an OS Command"
+      owasp:
+        - "A03:2021 - Injection"
+      confidence: HIGH
+      likelihood: HIGH
+      impact: HIGH
+      references:
+        - https://cwe.mitre.org/data/definitions/78.html
+
+  - id: firecrow.python.code-injection-eval
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Dynamic evaluation of a non-literal executes attacker-controlled code.
+    pattern-either:
+      - pattern: eval($S)
+      - pattern: exec($S)
+    metadata:
+      category: security
+      subcategory: [vuln]
+      cwe:
+        - "CWE-95: Improper Neutralization of Directives in Dynamically Evaluated Code"
+      owasp:
+        - "A03:2021 - Injection"
+      confidence: HIGH
+      likelihood: HIGH
+      impact: HIGH
+      references:
+        - https://cwe.mitre.org/data/definitions/95.html
+
+  # --- Path traversal --------------------------------------------------------
+
+  - id: firecrow.python.path-traversal-open
+    languages: [python]
+    severity: ERROR
+    message: >-
+      A path is built from a value that may contain "..", escaping the intended
+      directory. Resolve the path and confirm it stays under the base directory.
+    pattern-either:
+      - pattern: open($BASE + $X, ...)
+      - pattern: open(f"...{$X}...", ...)
+      - pattern: os.path.join($BASE, $X, ...)
+      - pattern: shutil.$F(..., $BASE + $X, ...)
+    metadata:
+      category: security
+      subcategory: [vuln]
+      cwe:
+        - "CWE-22: Improper Limitation of a Pathname to a Restricted Directory"
+      owasp:
+        - "A01:2021 - Broken Access Control"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: HIGH
+      references:
+        - https://cwe.mitre.org/data/definitions/22.html
+
+  # --- XSS -------------------------------------------------------------------
+
+  - id: firecrow.python.xss-string-concat-response
+    languages: [python]
+    severity: WARNING
+    message: >-
+      Untrusted data is concatenated into an HTML response. Escape it for the
+      context it is rendered in, or use a template engine that escapes by default.
+    patterns:
+      - pattern-either:
+          - pattern: $RESPONSE.write("<" + $X + ">")
+          - pattern: $RESPONSE.write(f"...{$X}...")
+          - pattern: return "<" + $X + ">"
+          - pattern: HttpResponse("<" + $X + ">")
+    metadata:
+      category: security
+      subcategory: [vuln]
+      cwe:
+        - "CWE-79: Improper Neutralization of Input During Web Page Generation"
+      owasp:
+        - "A03:2021 - Injection"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: MEDIUM
+      references:
+        - https://cwe.mitre.org/data/definitions/79.html
+
+  # --- SSRF ------------------------------------------------------------------
+
+  - id: firecrow.python.ssrf-request-to-variable-url
+    languages: [python]
+    severity: WARNING
+    message: >-
+      An outbound request is made to a URL that is not a literal. If the URL
+      derives from user input this enables server-side request forgery; allowlist
+      the reachable hosts.
+    pattern-either:
+      - pattern: requests.get($URL, ...)
+      - pattern: requests.post($URL, ...)
+      - pattern: urllib.request.urlopen($URL)
+      - pattern: urlopen($URL)
+      - pattern: http.client.HTTPConnection($HOST, ...)
+    metadata:
+      category: security
+      subcategory: [vuln]
+      cwe:
+        - "CWE-918: Server-Side Request Forgery"
+      owasp:
+        - "A10:2021 - Server-Side Request Forgery"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: HIGH
+      references:
+        - https://cwe.mitre.org/data/definitions/918.html
+
+  # --- Deserialization -------------------------------------------------------
+
+  - id: firecrow.python.unsafe-deserialization
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Unpickling data executes arbitrary code on load. Use a data-only format
+      such as JSON, or verify the payload is signed before deserializing it.
+    pattern-either:
+      - pattern: pickle.loads($X)
+      - pattern: pickle.load($F)
+      - pattern: dill.loads($X)
+      - pattern: yaml.load($X)
+      - pattern: yaml.unsafe_load($X)
+    metadata:
+      category: security
+      subcategory: [vuln]
+      cwe:
+        - "CWE-502: Deserialization of Untrusted Data"
+      owasp:
+        - "A08:2021 - Software and Data Integrity Failures"
+      confidence: HIGH
+      likelihood: HIGH
+      impact: HIGH
+      references:
+        - https://cwe.mitre.org/data/definitions/502.html
+
+  # --- Cryptography ----------------------------------------------------------
+
+  - id: firecrow.python.weak-cryptographic-hash
+    languages: [python]
+    severity: WARNING
+    message: >-
+      MD5 and SHA-1 are broken for security purposes. Use SHA-256 or stronger,
+      and a slow KDF such as bcrypt or argon2 for passwords.
+    pattern-either:
+      - pattern: hashlib.md5(...)
+      - pattern: hashlib.sha1(...)
+      - pattern: hashlib.new("md5", ...)
+      - pattern: hashlib.new("sha1", ...)
+    metadata:
+      category: security
+      subcategory: [vuln]
+      cwe:
+        - "CWE-327: Use of a Broken or Risky Cryptographic Algorithm"
+        - "CWE-328: Use of Weak Hash"
+      owasp:
+        - "A02:2021 - Cryptographic Failures"
+      confidence: MEDIUM
+      likelihood: LOW
+      impact: MEDIUM
+      references:
+        - https://cwe.mitre.org/data/definitions/327.html
+
+  - id: firecrow.python.insecure-random-for-secret
+    languages: [python]
+    severity: WARNING
+    message: >-
+      A predictable random source is used where a secret is produced. Use
+      `secrets` or `os.urandom`.
+    pattern-either:
+      - pattern: random.random(...)
+      - pattern: random.randint(...)
+      - pattern: random.choice(...)
+    metadata:
+      category: security
+      subcategory: [vuln]
+      cwe:
+        - "CWE-330: Use of Insufficiently Random Values"
+      owasp:
+        - "A02:2021 - Cryptographic Failures"
+      confidence: LOW
+      likelihood: LOW
+      impact: MEDIUM
+      references:
+        - https://cwe.mitre.org/data/definitions/330.html
+
+  # --- Hardcoded credentials -------------------------------------------------
+  #
+  # Semgrep's own `generic.secrets` registry ruleset is deliberately NOT used:
+  # that is Gitleaks' job, and duplicating it here would produce two findings
+  # for one credential from two scanners with different identities. This rule
+  # is limited to obvious literal assignments in source.
+
+  - id: firecrow.python.hardcoded-credential-assignment
+    languages: [python]
+    severity: WARNING
+    message: >-
+      A credential is assigned as a literal. Read it from the environment or a
+      secret manager at runtime.
+    patterns:
+      - pattern-either:
+          - pattern: $NAME = "$VALUE"
+          - pattern: $NAME = '$VALUE'
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: (?i).*(password|passwd|pwd|secret|api_?key|access_?key|token|credential).*
+      # The literal must be long enough to plausibly be a real credential, so
+      # `token = "n"` or a placeholder like `""` does not fire.
+      - metavariable-regex:
+          metavariable: $VALUE
+          regex: (?i).{8,}.*
+    metadata:
+      category: security
+      subcategory: [vuln]
+      cwe:
+        - "CWE-798: Use of Hard-coded Credentials"
+      owasp:
+        - "A07:2021 - Identification and Authentication Failures"
+      confidence: MEDIUM
+      likelihood: MEDIUM
+      impact: HIGH
+      references:
+        - https://cwe.mitre.org/data/definitions/798.html

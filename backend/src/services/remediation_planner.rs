@@ -10,6 +10,9 @@ pub fn remediation_planner_body(findings: &[Finding]) -> Vec<serde_json::Value> 
                 crate::models::Severity::Medium => 3,
                 crate::models::Severity::Low => 4,
                 crate::models::Severity::Info => 5,
+                // Unknown severity sorts last: it must never outrank a known
+                // signal in remediation order.
+                crate::models::Severity::Unknown => 6,
             };
 
             let detailed_remediation = match f.cwe_id.as_deref() {

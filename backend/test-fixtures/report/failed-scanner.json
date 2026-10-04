@@ -1,0 +1,104 @@
+{
+  "report_schema_version": 1,
+  "identity": {
+    "audit_id": "scan-report-1",
+    "execution_id": "exec-1",
+    "attempt_number": 1,
+    "repository_url": "https://github.com/acme/widget",
+    "repo_branch": "main",
+    "repo_owner": "acme",
+    "repo_name": "widget",
+    "snapshot_commit": "0123456789abcdef0123456789abcdef01234567",
+    "snapshot_file_count": 8,
+    "snapshot_total_size": 4096,
+    "canonical_schema_version": 1,
+    "report_schema_version": 1
+  },
+  "coverage": {
+    "state": "FAILED",
+    "status": "partial",
+    "complete": false,
+    "scanner_runs": [
+      {
+        "scanner": "gitleaks",
+        "version": "1.0.0",
+        "parser": "gitleaks-json-v1",
+        "mode": "secret",
+        "image": "registry/gitleaks:1.0.0",
+        "status": {
+          "failed": {
+            "reason": "scanner produced no report"
+          }
+        },
+        "finding_count": null,
+        "coverage_known": false,
+        "detail": "scanner produced no report",
+        "limitations": [
+          "scanner gitleaks did not analyze the repository (failed)"
+        ]
+      },
+      {
+        "scanner": "osv",
+        "version": "1.0.0",
+        "parser": "osv-json-v1",
+        "mode": "dependency",
+        "image": "registry/osv:1.0.0",
+        "status": {
+          "failed": {
+            "reason": "scanner produced no report"
+          }
+        },
+        "finding_count": null,
+        "coverage_known": false,
+        "detail": "scanner produced no report",
+        "limitations": [
+          "scanner osv did not analyze the repository (failed)"
+        ]
+      },
+      {
+        "scanner": "semgrep",
+        "version": "1.0.0",
+        "parser": "semgrep-json-v1",
+        "mode": "sast",
+        "image": "registry/semgrep:1.0.0",
+        "status": "success_clean",
+        "finding_count": 0,
+        "coverage_known": true,
+        "detail": null,
+        "limitations": []
+      }
+    ],
+    "successful_scanners": [
+      "semgrep"
+    ],
+    "unsuccessful_scanners": {
+      "gitleaks": "failed",
+      "osv": "failed"
+    },
+    "limitations": [
+      "scanner gitleaks did not analyze the repository (failed)",
+      "scanner osv did not analyze the repository (failed)"
+    ]
+  },
+  "summary": {
+    "headline": "Coverage is incomplete: gitleaks (failed), osv (failed).",
+    "finding_count": 0,
+    "findings_by_severity": {},
+    "findings_by_scanner": {},
+    "invalid_finding_count": 0,
+    "duplicate_group_count": 0,
+    "security_score": null
+  },
+  "findings": [],
+  "correlations": [],
+  "invalid_findings": [],
+  "limitations": [
+    "scanner gitleaks did not analyze the repository (failed)",
+    "scanner osv did not analyze the repository (failed)"
+  ],
+  "disclaimers": [
+    "This report presents a frozen canonical audit. Generating it ran no scanners, accessed no repository, and called no AI service.",
+    "A missing or \"unknown\" value means the scanner did not report it; it is never inferred or defaulted here.",
+    "Remediation text is guidance suggested by the scanner or platform; it is not a verified fact about the repository."
+  ]
+}

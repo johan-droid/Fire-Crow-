@@ -1,7 +1,7 @@
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct SsoProvider {
     pub id: String,
     pub name: String,
@@ -33,6 +33,37 @@ pub struct SsoProvider {
     pub auto_provision: bool,
     pub default_role_id: Option<String>,
     pub created_at: NaiveDateTime,
+}
+
+/// Secret-safe `Debug` (Phase 20): the derived impl printed `client_secret`
+/// even though the wire format already skips it — `skip_serializing` does not
+/// affect `Debug`.
+impl std::fmt::Debug for SsoProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SsoProvider")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("provider_type", &self.provider_type)
+            .field("issuer_url", &self.issuer_url)
+            .field("client_id", &self.client_id)
+            .field(
+                "client_secret",
+                &self.client_secret.as_ref().map(|_| "[REDACTED]"),
+            )
+            .field("client_secret_set", &self.client_secret_set)
+            .field("authorization_url", &self.authorization_url)
+            .field("token_url", &self.token_url)
+            .field("userinfo_url", &self.userinfo_url)
+            .field("jwks_url", &self.jwks_url)
+            .field("certificate", &self.certificate)
+            .field("attribute_mapping", &self.attribute_mapping)
+            .field("domains", &self.domains)
+            .field("enforce_mfa", &self.enforce_mfa)
+            .field("auto_provision", &self.auto_provision)
+            .field("default_role_id", &self.default_role_id)
+            .field("created_at", &self.created_at)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]

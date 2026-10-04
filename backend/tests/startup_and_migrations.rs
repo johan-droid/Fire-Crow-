@@ -143,7 +143,16 @@ async fn startup_refuses_when_a_migration_fails() {
         .collect();
     files.sort();
 
-    let scratch_url = base.replace("/postgres", &format!("/{name}"));
+    // Substitute only the database *name*, which is the path segment. A blanket
+    // `replace("/postgres", ...)` also matches the `/postgres:postgres@...` in
+    // the authority of a URL like `postgres://postgres:postgres@host/postgres`,
+    // producing a connection string whose *user* is the scratch database's name
+    // — which then fails to authenticate for reasons unrelated to the behaviour
+    // under test.
+    let (authority, _) = base
+        .rsplit_once('/')
+        .expect("a postgres URL has a path segment");
+    let scratch_url = format!("{authority}/{name}");
     let scratch = sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
         .connect(&scratch_url)
@@ -224,9 +233,20 @@ async fn migration_chain_is_fully_recorded(pool: PgPool) {
             .await
             .expect("read bookkeeping");
 
+    // Derived from the migrations directory rather than hardcoded: the assertion is
+    // that every migration *file* is recorded exactly once, so a literal count
+    // only re-encodes the number and has to be edited (and can silently drift)
+    // whenever a migration is added.
+    let migration_files =
+        std::fs::read_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations"))
+            .expect("migrations dir")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "sql"))
+            .count();
     assert_eq!(
         rows.len(),
-        18,
+        migration_files,
         "every migration must be recorded exactly once, got {rows:?}"
     );
     assert!(
@@ -238,21 +258,66 @@ async fn migration_chain_is_fully_recorded(pool: PgPool) {
         versions.windows(2).all(|w| w[0] < w[1]),
         "versions must be strictly increasing and unique: {versions:?}"
     );
-    assert_eq!(versions.last().copied(), Some(20260901000200));
+    // The newest applied migration must be the newest migration file. Derived
+    // from the directory for the same reason as the count above: pinning a
+    // literal version here would have to be edited on every new migration, and
+    // would silently pass if someone forgot.
+    let newest_on_disk =
+        std::fs::read_dir(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations"))
+            .expect("migrations dir")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "sql"))
+            .filter_map(|path| {
+                // Files are `<version>_<description>.sql`, so the version is the
+                // leading numeric run of the stem, not the whole stem.
+                path.file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .and_then(|stem| {
+                        let digits: String =
+                            stem.chars().take_while(char::is_ascii_digit).collect();
+                        digits.parse::<i64>().ok()
+                    })
+            })
+            .max()
+            .expect("at least one migration");
+    assert_eq!(
+        versions.last().copied(),
+        Some(newest_on_disk),
+        "the applied chain must end at the newest migration file"
+    );
 }
 
 #[sqlx::test(migrations = "./migrations")]
 async fn migration_chain_produces_the_expected_schema(pool: PgPool) {
-    let tables: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM information_schema.tables
+    // Assert the tables the product depends on actually exist, rather than
+    // counting them. A total is a number that has to be edited whenever a
+    // migration adds a table, and editing it proves nothing: it would still
+    // pass if a required table were dropped while an unrelated one appeared.
+    let present: Vec<String> = sqlx::query_scalar(
+        "SELECT table_name FROM information_schema.tables
          WHERE table_schema='public' AND table_type='BASE TABLE'",
     )
-    .fetch_one(&pool)
+    .fetch_all(&pool)
     .await
     .unwrap();
-    // 33 tables created by the migration chain, plus the _sqlx_migrations
-    // bookkeeping table that sqlx creates itself.
-    assert_eq!(tables, 34, "schema entity count changed unexpectedly");
+    for required in [
+        "audit_jobs",
+        "audit_executions",
+        "audit_scanner_runs",
+        "audit_reports",
+        "findings",
+        "phase_ledger",
+        "users",
+        "roles",
+        "iam_policies",
+        "tenants",
+    ] {
+        assert!(
+            present.iter().any(|table| table == required),
+            "required table {required} is missing; present: {present:?}"
+        );
+    }
 
     // Spot-check the three historically non-idempotent migrations' objects.
     for (table, constraint) in [

@@ -5,34 +5,13 @@
 
 mod support;
 
-use firecrow_backend::models::{AuditJob, JobStatus, Severity};
+use firecrow_backend::models::Severity;
 use firecrow_backend::schemas::audit_state::Finding;
-use firecrow_backend::services::reporter::ReportGenerator;
 use sqlx::PgPool;
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
-
-fn audit_job_fixture() -> AuditJob {
-    AuditJob {
-        id: "job-1".into(),
-        user_id: "user-1".into(),
-        tenant_id: None,
-        repo_url: "https://github.com/owner/repo".into(),
-        repo_branch: "main".into(),
-        status: JobStatus::Completed,
-        created_at: chrono::Utc::now().naive_utc(),
-        finished_at: None,
-        cancel_requested: false,
-        cancel_requested_at: None,
-        report_pdf_url: None,
-        report_id: None,
-        error_message: None,
-        security_score: Some(8.0),
-        legal_hold: false,
-    }
-}
 
 fn finding_with_evidence(evidence: &str) -> Finding {
     Finding {
@@ -55,50 +34,6 @@ fn finding_with_evidence(evidence: &str) -> Finding {
         route: None,
         metadata_json: None,
     }
-}
-
-// ---------------------------------------------------------------------------
-// T1 — reporter: verbatim evidence in fences, n/a score
-// ---------------------------------------------------------------------------
-
-#[test]
-fn evidence_in_a_fence_is_reproduced_verbatim() {
-    let job = audit_job_fixture();
-    let raw = "password=/etc/passwd <xml> & \"quoted\" 'a'";
-    let md = ReportGenerator::generate_markdown(&job, &[finding_with_evidence(raw)], Some(8.0))
-        .expect("report");
-
-    assert!(
-        md.contains(raw),
-        "evidence inside a code fence must be verbatim; got:\n{md}"
-    );
-    assert!(!md.contains("&lt;"), "evidence must not be HTML-escaped");
-    assert!(!md.contains("&#x2F;"), "evidence must not escape '/'");
-}
-
-#[test]
-fn triple_backticks_in_evidence_cannot_close_the_fence() {
-    let job = audit_job_fixture();
-    let raw = "line1\n```\n# not a fence\n```\nline2";
-    let md = ReportGenerator::generate_markdown(&job, &[finding_with_evidence(raw)], None)
-        .expect("report");
-
-    // The raw triple-backtick run must have been broken.
-    assert!(
-        !md.contains("```\n# not a fence"),
-        "a ``` run in evidence must be neutralized; got:\n{md}"
-    );
-}
-
-#[test]
-fn null_score_renders_as_na() {
-    let job = audit_job_fixture();
-    let md = ReportGenerator::generate_markdown(&job, &[], None).expect("report");
-    assert!(
-        md.contains("Security Score: n/a"),
-        "a null score must render as n/a: {md}"
-    );
-    assert!(!md.contains("10.0/10"), "must not invent a perfect score");
 }
 
 // ---------------------------------------------------------------------------
@@ -246,6 +181,9 @@ fn tar_header(name: &str, typeflag: u8, size: usize) -> [u8; 512] {
     h
 }
 
+// `repeat_n` would read better here, but it stabilized in Rust 1.82 and this
+// project targets the 1.75 MSRV stated in the README.
+#[allow(clippy::manual_repeat_n)]
 fn tar_entry(name: &str, typeflag: u8, data: &[u8]) -> Vec<u8> {
     let mut out = tar_header(name, typeflag, data.len()).to_vec();
     out.extend_from_slice(data);
@@ -362,19 +300,36 @@ async fn temp_dir_is_removed_when_fetch_fails() {
 // ---------------------------------------------------------------------------
 
 #[sqlx::test(migrations = "./migrations")]
-async fn email_report_returns_501_when_smtp_is_unconfigured(pool: PgPool) {
+async fn email_resolves_eligibility_before_mail_configuration(pool: PgPool) {
+    // Phase 17: delivery is execution-scoped, so the route names an execution.
+    // With no SMTP configured the server must not claim the email was queued.
     let user = support::seed_user(&pool, "email501").await;
     let job = support::seed_job(&pool, &user.id, "completed").await;
+    let execution = uuid::Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO audit_executions (id, job_id, attempt_number, status, started_at)
+         VALUES ($1,$2,1,'completed',NOW())",
+    )
+    .bind(&execution)
+    .bind(&job)
+    .execute(&pool)
+    .await
+    .unwrap();
     let app = support::test_app(pool.clone()).await;
 
     let res = app
-        .post(&format!("/api/v1/audit/job/{job}/email"))
+        .post(&format!(
+            "/api/v1/audit/job/{job}/execution/{execution}/email"
+        ))
         .add_header("authorization", user.auth_header())
         .await;
-    assert_eq!(
-        res.status_code(),
-        501,
-        "with no SMTP configured the server must not claim the email was queued"
+    // A `completed` execution with no canonical audit has nothing to deliver.
+    // Answering that question must come before asking about the mail server,
+    // so the response names the execution's state, not the SMTP setup.
+    assert!(
+        res.status_code() == 404 || res.status_code() == 409,
+        "a reportless execution must be refused as missing, regardless of SMTP: {}",
+        res.status_code()
     );
 }
 
@@ -459,6 +414,8 @@ async fn late_failure_does_not_overwrite_a_completed_job(pool: PgPool) {
         "https://gitlab.com/owner/repo",
         "main",
         None,
+        None,
+        None,
     )
     .await;
 
@@ -497,13 +454,15 @@ async fn e2e_real_gitleaks_scan_finds_and_redacts() {
     let secret = "AKIAIOSFODNN7EXAMPLE";
     std::fs::write(dir.join("aws.env"), format!("AWS_ACCESS_KEY_ID={secret}\n")).unwrap();
 
-    let sandbox = firecrow_backend::services::sandbox::SandboxManager::new("", "");
-    let outcome = firecrow_backend::agents::scanner::run_secret_scan(&dir, &sandbox).await;
+    let sandbox = firecrow_backend::services::sandbox::SandboxManager::new();
+    let input = firecrow_backend::agents::scanner::ScanInput::from_dir(&dir);
+    let outcome =
+        firecrow_backend::agents::scanner::run_secret_scan(&input, &sandbox, &|| false).await;
 
     assert!(
-        !outcome.failed,
+        outcome.usable(),
         "scan must not fail: {:?}",
-        outcome.scanner_execution
+        outcome.execution_record
     );
     assert_eq!(outcome.findings.len(), 1, "exactly one secret expected");
 
@@ -553,4 +512,86 @@ async fn re_running_findings_persist_is_idempotent(pool: PgPool) {
     let line_number: Option<i32> = rows[0].line_number;
     assert_eq!(line_number, Some(1));
     assert!(rows[0].evidence.as_deref().unwrap().contains("[REDACTED]"));
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8: both scanners' findings reach one persisted result set
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "./migrations")]
+async fn secret_and_dependency_findings_persist_together(pool: PgPool) {
+    use firecrow_backend::agents::scanner::findings_from_osv;
+    use firecrow_backend::orchestrator::{
+        dedupe_findings, load_findings, persist_findings, prepare_findings_for_persist,
+    };
+
+    let user = support::seed_user(&pool, "both-scanners").await;
+    let job = support::seed_job(&pool, &user.id, "running").await;
+
+    // One secret finding from the gitleaks adapter, one dependency finding
+    // from the OSV adapter, exactly as the scan phase concatenates them.
+    let secret = finding_with_evidence("AWS_ACCESS_KEY_ID=[REDACTED]");
+    let report = serde_json::json!({"results": [{
+        "source": {"path": "/scan/package-lock.json", "type": "lockfile"},
+        "packages": [{
+            "package": {"name": "lodash", "version": "4.17.20", "ecosystem": "npm"},
+            "vulnerabilities": [{
+                "id": "GHSA-4xc9-xhrj-v574", "aliases": ["CVE-2020-8203"],
+                "summary": "Prototype pollution in lodash.",
+                "affected": [{"package": {"ecosystem": "npm", "name": "lodash"},
+                    "ranges": [{"type": "SEMVER",
+                        "events": [{"introduced": "0"}, {"fixed": "4.17.21"}]}]}],
+                "references": [{"type": "ADVISORY", "url": "https://github.com/advisories/GHSA-4xc9-xhrj-v574"}],
+                "database_specific": {"severity": "HIGH", "cwe_ids": ["CWE-1321"]},
+            }],
+            "groups": [{"ids": ["GHSA-4xc9-xhrj-v574"]}],
+        }],
+    }]})
+    .to_string();
+    let dependencies = findings_from_osv(&report, std::path::Path::new("/nonexistent-dir"))
+        .expect("dependency findings must canonicalize");
+
+    let mut combined = vec![secret];
+    combined.extend(dependencies);
+    assert_eq!(combined.len(), 2);
+
+    let prepared = prepare_findings_for_persist(dedupe_findings(combined));
+    assert_eq!(prepared.dropped_count, 0, "both must survive normalization");
+    assert_eq!(prepared.valid.len(), 2);
+
+    let stored = persist_findings(&pool, &job, &prepared.valid)
+        .await
+        .expect("persist both");
+    assert_eq!(stored, 2);
+
+    let rows = load_findings(&pool, &job).await.expect("load findings");
+    assert_eq!(rows.len(), 2);
+
+    let secret_row = rows
+        .iter()
+        .find(|r| r.scanner_name.as_deref() == Some("gitleaks"))
+        .expect("secret finding persisted");
+    let dependency_row = rows
+        .iter()
+        .find(|r| r.scanner_name.as_deref() == Some("osv"))
+        .expect("dependency finding persisted");
+
+    // Distinct categories survive the shared table.
+    assert_eq!(secret_row.scanner_mode.as_deref(), Some("secret"));
+    assert_eq!(dependency_row.scanner_mode.as_deref(), Some("dependency"));
+    assert_eq!(
+        dependency_row.file_path.as_deref(),
+        Some("package-lock.json")
+    );
+
+    let meta: serde_json::Value =
+        serde_json::from_str(dependency_row.metadata_json.as_deref().unwrap()).unwrap();
+    assert_eq!(meta["advisory"], "GHSA-4xc9-xhrj-v574");
+    assert_eq!(meta["package"], "lodash");
+    assert_eq!(meta["installed_version"], "4.17.20");
+    assert_eq!(meta["ecosystem"], "npm");
+    assert_eq!(meta["fixed_versions"], serde_json::json!(["4.17.21"]));
+    assert!(meta["fingerprint"].as_str().unwrap().starts_with("osv:"));
+    // The advisory-backed severity round-trips; nothing is invented.
+    assert_eq!(dependency_row.severity, Severity::High);
 }

@@ -418,7 +418,6 @@ fn pipeline_states_and_versions_round_trip() {
         PipelineState::Fetching,
         PipelineState::Scanning,
         PipelineState::Normalizing,
-        PipelineState::Scoring,
         PipelineState::Reporting,
         PipelineState::Delivering,
         PipelineState::Completed,

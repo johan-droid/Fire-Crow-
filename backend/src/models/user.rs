@@ -36,6 +36,42 @@ impl JobStatus {
             Self::EngineUnavailable => "engine_unavailable",
         }
     }
+
+    /// Terminal job outcomes: nothing may leave them.
+    pub fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            Self::Completed
+                | Self::Failed
+                | Self::Cancelled
+                | Self::Partial
+                | Self::EngineUnavailable
+        )
+    }
+
+    /// Whether `self -> next` is a legal job-status step.
+    ///
+    /// `Queued -> Running` is the worker claim; `Running` fans out to every
+    /// terminal outcome. `Queued` may also go straight to `Failed` (claim-time
+    /// error, reaper) or `Cancelled` (user cancels before start). Terminal
+    /// states transition nowhere — a finished job is immutable.
+    pub fn can_transition(&self, next: &Self) -> bool {
+        if self.is_terminal() {
+            return false;
+        }
+        matches!(
+            (self, next),
+            (Self::Queued, Self::Running | Self::Failed | Self::Cancelled)
+                | (
+                    Self::Running,
+                    Self::Completed
+                        | Self::Partial
+                        | Self::Failed
+                        | Self::Cancelled
+                        | Self::EngineUnavailable,
+                )
+        )
+    }
 }
 
 impl std::str::FromStr for JobStatus {
@@ -87,6 +123,10 @@ pub enum Severity {
     Low,
     #[default]
     Info,
+    /// No trustworthy severity signal. Dependency advisories (OSV) do not
+    /// uniformly carry severity; reporting `Unknown` is honest, while mapping
+    /// every such finding to High would invent urgency.
+    Unknown,
 }
 
 impl Severity {
@@ -97,6 +137,7 @@ impl Severity {
             Self::Medium => "medium",
             Self::Low => "low",
             Self::Info => "info",
+            Self::Unknown => "unknown",
         }
     }
 }
@@ -109,6 +150,7 @@ impl std::str::FromStr for Severity {
             "high" => Ok(Self::High),
             "medium" => Ok(Self::Medium),
             "low" => Ok(Self::Low),
+            "unknown" => Ok(Self::Unknown),
             "info" => Ok(Self::Info),
             _ => Ok(Self::Info),
         }
@@ -139,7 +181,26 @@ impl<'q> sqlx::Encode<'q, sqlx::Postgres> for Severity {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+/// Secret-safe `Debug` for credential-bearing rows (Phase 20).
+///
+/// These models travel through logs, panics, and test snapshots. The derived
+/// `Debug` printed password hashes, OAuth tokens, MFA secrets, and push keys
+/// verbatim. Each impl below renders `[REDACTED]` for credential fields and
+/// keeps operational fields visible.
+macro_rules! redact_debug {
+    ($name:ident, { $( $field:ident ),* }, { $( $secret:ident ),* }) => {
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_struct(stringify!($name))
+                    $(.field(stringify!($field), &self.$field))*
+                    $(.field(stringify!($secret), &"[REDACTED]"))*
+                    .finish()
+            }
+        }
+    };
+}
+
+#[derive(Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct User {
     pub id: String,
     pub username: String,
@@ -168,6 +229,14 @@ pub struct User {
     pub created_at: NaiveDateTime,
 }
 
+redact_debug!(User,
+    { id, username, credit_balance, email, tenant_id, role_id, is_active,
+      github_id, google_id, github_token_scopes, github_token_updated_at,
+      privacy_policy_version, privacy_policy_accepted_at, terms_version,
+      terms_accepted_at, first_login_at, last_login_at, last_logout_at,
+      region, timezone, mfa_enabled, created_at },
+    { password_hash, github_access_token, mfa_secret });
+
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct LoginFailure {
     pub id: String,
@@ -175,7 +244,7 @@ pub struct LoginFailure {
     pub attempted_at: NaiveDateTime,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct UserSession {
     pub id: String,
     pub user_id: String,
@@ -188,7 +257,12 @@ pub struct UserSession {
     pub revocation_reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+redact_debug!(UserSession,
+    { id, user_id, ip_hash, user_agent_hash, created_at, expires_at,
+      is_revoked, revocation_reason },
+    { token_family });
+
+#[derive(Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct AuthExchangeCode {
     pub id: Option<String>,
     pub code: String,
@@ -199,7 +273,11 @@ pub struct AuthExchangeCode {
     pub expires_at: NaiveDateTime,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+redact_debug!(AuthExchangeCode,
+    { id, user_id, username, created_at, expires_at },
+    { code, access_token });
+
+#[derive(Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct PushSubscription {
     pub id: String,
     pub user_id: String,
@@ -208,6 +286,10 @@ pub struct PushSubscription {
     pub auth: String,
     pub created_at: NaiveDateTime,
 }
+
+redact_debug!(PushSubscription,
+    { id, user_id, endpoint, created_at },
+    { p256dh, auth });
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct UserActivityEvent {
@@ -218,7 +300,7 @@ pub struct UserActivityEvent {
     pub created_at: NaiveDateTime,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct GithubCredential {
     pub id: String,
     pub user_id: String,
@@ -227,3 +309,7 @@ pub struct GithubCredential {
     pub scopes: Option<String>,
     pub created_at: NaiveDateTime,
 }
+
+redact_debug!(GithubCredential,
+    { id, user_id, github_id, scopes, created_at },
+    { access_token });

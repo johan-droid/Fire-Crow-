@@ -15,6 +15,8 @@
 use axum_test::TestServer;
 use firecrow_backend::app::{build_app, build_state};
 use firecrow_backend::config::Settings;
+use firecrow_backend::models::Severity;
+use firecrow_backend::schemas::audit_state::Finding;
 use sqlx::PgPool;
 
 /// The URL of the PostgreSQL server used for integration tests, if configured.
@@ -206,6 +208,34 @@ pub async fn seed_tenant(pool: &PgPool, prefix: &str) -> String {
     id
 }
 
+/// Mint an authorization header for an existing user.
+///
+/// Tests that seed rows directly (rather than through `seed_job`) still need to
+/// act *as* the owner to reach ownership-checked routes. Going through
+/// `SeededUser` would mean re-seeding a throwaway user and mismatching the owner
+/// the row actually has, which would be refused for the wrong reason. Keeping
+/// the secret key here means no call site repeats it.
+pub async fn bearer_for(pool: &PgPool, user_id: &str) -> String {
+    // `tenant_id` is nullable, so it is read as an Option rather than assumed:
+    // a user created outside the tenant flow has none, and a token minted with a
+    // fabricated tenant would fail authentication for the wrong reason.
+    let (username, tenant_id): (String, Option<String>) =
+        sqlx::query_as("SELECT username, tenant_id FROM users WHERE id=$1")
+            .bind(user_id)
+            .fetch_one(pool)
+            .await
+            .expect("owner user exists");
+    let (token, _jti) = firecrow_backend::services::auth::create_access_token(
+        user_id,
+        &username,
+        TEST_SECRET_KEY,
+        tenant_id.as_deref().unwrap_or_default(),
+        60,
+    )
+    .expect("mint token");
+    format!("Bearer {token}")
+}
+
 /// Insert an audit job owned by `user_id` and return its id.
 pub async fn seed_job(pool: &PgPool, user_id: &str, status: &str) -> String {
     let id = uuid::Uuid::new_v4().to_string();
@@ -261,6 +291,31 @@ pub async fn grant_admin(pool: &PgPool, user: &SeededUser) {
     .execute(pool)
     .await
     .expect("grant admin");
+}
+
+/// A minimal persistable finding: has file, line, and evidence, so it
+/// survives `prepare_findings_for_persist`. Callers set the fields under test.
+pub fn dummy_finding() -> Finding {
+    Finding {
+        id: uuid::Uuid::new_v4().to_string(),
+        agent_source: "test".into(),
+        title: "Test finding".into(),
+        description: "fixture".into(),
+        severity: Severity::Info,
+        cvss_vector: None,
+        cvss_score: None,
+        evidence: Some("evidence".into()),
+        remediation: None,
+        cwe_id: None,
+        owasp_category: None,
+        confidence: None,
+        scanner_name: Some("test".into()),
+        scanner_mode: Some("test".into()),
+        file_path: Some("src/x.rs".into()),
+        line_number: Some(1),
+        route: None,
+        metadata_json: None,
+    }
 }
 
 /// Deactivate a user, so `is_active` enforcement can be tested.
