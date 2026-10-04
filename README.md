@@ -180,7 +180,7 @@ cd backend
 cargo run
 ```
 
-The dashboard is served at `http://localhost:5173`.
+The dashboard is served at `http://localhost:3000` (the Vite dev server is pinned to port 3000 in `frontend/vite.config.ts`, and proxies `/api` to the backend on port 8000).
 
 ---
 
