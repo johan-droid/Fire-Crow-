@@ -88,6 +88,32 @@ Executing user deploy command: npx wrangler pages deploy frontend/dist --project
 > `backend/scripts/upload_cf_secrets.sh`). If you omit `--project-name`, Wrangler
 > falls back to the `name` field in `wrangler.jsonc`, which is also `fire-crow`.
 
+#### Continuous deployment via GitHub Actions (recommended)
+
+Because the Cloudflare dashboard Deploy command is dashboard-only and defaults to
+the Workers command, the repository also ships a GitHub Actions workflow that
+bypasses it entirely: **`.github/workflows/deploy-pages.yml`**.
+
+It runs on every push to `main` (and can be triggered manually via
+*workflow_dispatch*):
+
+```text
+npm ci (root)             -> installs Wrangler from devDependencies
+npm ci (frontend)         -> reproducible frontend install
+npm run build (frontend)  -> tsc -b && vite build   -> frontend/dist
+npm run cf:deploy         -> wrangler pages deploy frontend/dist --project-name=fire-crow
+```
+
+Add these repository secrets under **Settings > Secrets and variables > Actions**:
+
+| Secret | Value / required permission |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | API token with **Account → Cloudflare Pages → Edit** |
+| `CLOUDFLARE_ACCOUNT_ID` | Account ID from the Cloudflare dashboard |
+
+If you use this workflow, either fix or disconnect the Cloudflare Git integration
+build — otherwise that build will keep failing on every push.
+
 ---
 
 ## 📦 2. Configure Cloudflare R2 Object Storage
