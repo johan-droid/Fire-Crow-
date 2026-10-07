@@ -295,6 +295,7 @@ Fire-Crow-/
 │   ├── THREAT_MODEL.md         # Threat model & security enforcement matrix
 │   ├── PRODUCTION_DEPLOYMENT.md# Production deployment topology & configuration
 │   ├── CLOUDFLARE_DEPLOYMENT.md# Cloudflare Pages static frontend deployment
+│   ├── VERCEL_DEPLOYMENT.md    # Vercel frontend & containerized backend guide
 │   ├── RELEASE_CANDIDATE.md    # Release candidate evidence scorecard
 │   └── RELEASE_GATE.md         # Phase 20 production release gate audit
 └── frontend/                   # React 19 + TypeScript + Vite web dashboard

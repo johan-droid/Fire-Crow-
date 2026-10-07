@@ -10,7 +10,8 @@
     "cargo:check": "cargo check --manifest-path backend/Cargo.toml",
     "cf:build": "npm --prefix frontend run build",
     "cf:deploy": "npx wrangler pages deploy frontend/dist --project-name=fire-crow",
-    "cf:preview": "npx wrangler pages dev frontend/dist"
+    "cf:preview": "npx wrangler pages dev frontend/dist",
+    "vercel-build": "npm run build"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
