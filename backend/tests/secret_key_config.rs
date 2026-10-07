@@ -45,7 +45,8 @@ impl Run {
 fn run(env: &Env) -> Run {
     let mut cmd = Command::new(BINARY);
     cmd.env_clear()
-        .env("PATH", std::env::var("PATH").unwrap_or_default());
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("FIRECROW_SKIP_DOTENV", "1");
     for (k, v) in env {
         cmd.env(k, v);
     }

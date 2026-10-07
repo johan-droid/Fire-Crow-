@@ -13,14 +13,10 @@
 *.crt
 *.p12
 *.pfx
-.dev.vars
-backend/scripts/cf_secrets.json
-deploy/cloudflare/cf_secrets.json
-# Explicit local overrides (Vite / Wrangler)
+
+# Explicit local overrides
 frontend/.env.local
 backend/.env.local
-.dev.vars.local
-wrangler.toml.local
 
 # Rust / Cargo Build Output
 target/
@@ -44,9 +40,7 @@ build/
 .output/
 .next/
 out/
-.wrangler/
-.wrangler/tmp/
-wrangler-debug.log*
+.vercel/
 .vite/
 .turbo/
 .parcel-cache/

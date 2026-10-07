@@ -552,9 +552,11 @@ fn default_scoring_info() -> f64 {
 
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
-        let _ = dotenvy::from_filename(".env.local");
-        let _ = dotenvy::from_filename("../.env.local");
-        let _ = dotenvy::dotenv();
+        if std::env::var("FIRECROW_SKIP_DOTENV").is_err() {
+            let _ = dotenvy::from_filename(".env.local");
+            let _ = dotenvy::from_filename("../.env.local");
+            let _ = dotenvy::dotenv();
+        }
         let config = Config::builder()
             .set_default("port", default_port())?
             .set_default("host", default_host())?

@@ -56,6 +56,7 @@ impl Env {
         std::env::set_var("DATABASE_URL", "postgresql://u:p@localhost/db");
         std::env::set_var("FRONTEND_URL", "https://example.com");
         std::env::set_var("CORS_ORIGINS", "https://example.com");
+        std::env::set_var("FIRECROW_SKIP_DOTENV", "1");
         Self { _lock: lock, saved }
     }
 
