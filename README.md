@@ -1,297 +1,185 @@
 <div align="center">
 
-# 🦅 Fire Crow
+# 🦅 FireCrow
 
-### Scanner-Backed Security Auditing Backend & Deterministic Reporting Engine
+### Enterprise Repository Security Auditing & Deterministic Scanning Engine
 
-[![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange.svg?style=for-the-badge&logo=rust)](https://www.rust-lang.org/)
 [![Axum](https://img.shields.io/badge/Axum-0.7-blue.svg?style=for-the-badge&logo=tokio)](https://github.com/tokio-rs/axum)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15%2B-336791.svg?style=for-the-badge&logo=postgresql)](https://www.postgresql.org/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791.svg?style=for-the-badge&logo=postgresql)](https://www.postgresql.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg?style=for-the-badge&logo=react)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-8.1-646CFF.svg?style=for-the-badge&logo=vite)](https://vitejs.dev/)
+[![Vercel Ready](https://img.shields.io/badge/Vercel-Frontend-black.svg?style=for-the-badge&logo=vercel)](https://vercel.com)
+[![Render Ready](https://img.shields.io/badge/Render-Backend-46E3B7.svg?style=for-the-badge&logo=render)](https://render.com)
 [![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)](LICENSE)
 
-*Fire Crow fetches an immutable GitHub repository snapshot, executes real security scanners inside hardened containers, normalizes findings into Canonical Audit v1, persists an immutable execution record, and renders byte-deterministic reports. An optional AI narrative layer explains the findings without ever deciding security truth.*
+*FireCrow fetches an immutable GitHub repository snapshot, executes real security scanners (Gitleaks, OSV, Semgrep) inside hardened Docker containers, normalizes findings into Canonical Audit v1, persists an immutable database record, and renders byte-deterministic security reports. An optional AI narrative layer explains findings without ever influencing security truth.*
 
-> **Nothing is reported that did not originate from a scanner.**
+> **Security Core Invariant**: Nothing is reported that did not originate directly from a sandboxed scanner execution. `failure != clean`.
 
-**Release Status:** Backend **Architecture Frozen** · **Controlled-Beta Candidate**
-([`RELEASE_CANDIDATE.md`](documentation/RELEASE_CANDIDATE.md) / [`RELEASE_GATE.md`](documentation/RELEASE_GATE.md)).
-
-**Essential References:**
-- [Canonical Backend Reference](documentation/FIRECROW_BACKEND.md)
-- [Frontend API Contract v1](documentation/FRONTEND_CONTRACT.md)
-- [Threat Model & Security Boundaries](documentation/THREAT_MODEL.md)
-- [Production Deployment Guide](documentation/PRODUCTION_DEPLOYMENT.md)
-- [Deterministic Reporting](documentation/DETERMINISTIC_REPORT.md)
-- [Atomic Audit Commit & Lifecycle](documentation/ATOMIC_AUDIT_COMMIT.md)
+**Documentation Quick Links**:
+- [📘 Unified Developer & Deployment Guide](documentation/DEVELOPER_GUIDE.md)
+- [🛡️ Final Security Hardening & Audit Report](documentation/FINAL_SECURITY_HARDENING_REPORT.md)
+- [📜 Historical Security Audit Baseline](documentation/INTERNAL_SECURITY_AUDIT.md)
 
 </div>
 
 ---
 
-## 1. What Fire Crow Is
+## 🚀 Key Highlights
 
-Fire Crow is an automated GitHub security auditing backend built with Rust (Axum) and PostgreSQL. It audits repositories for committed secrets, dependency vulnerabilities, and source-code weaknesses through real, sandboxed security tools, producing reproducible, evidence-backed security reports:
+- **Stream-Bounded Acquisition**: Incremental HTTP response chunking & pax inflation controls prevent memory exhaustion and decompression bombs (max 50MB limit).
+- **Hardened Ephemeral Sandboxes**: Scanners run in unprivileged containers with read-only filesystems, `--cap-drop=ALL`, `--security-opt=no-new-privileges`, and strict memory/PID caps.
+- **Canonical Audit v1 Engine**: Deduplicates findings across scanners by exact identity (`scanner + rule + fingerprint + location + evidence digest`) and redacts secret patterns.
+- **Database-Authoritative Lifecycle**: State transitions are strictly enforced via PostgreSQL `BEFORE UPDATE` triggers, preventing illegal job state mutations.
+- **Total AI Truth Isolation**: The optional Gemini AI narrator reads only finalized audit summaries; it cannot create findings, alter severities, or modify risk scores.
+- **Zero-Trust Auth & IDOR Protection**: HttpOnly/Secure/SameSite cookie authentication replaces URL query tokens, backed by strict ownership gates on all endpoints.
+
+---
+
+## 🏗️ Architecture Flow
 
 ```text
-GitHub repository snapshot (pinned 40-hex commit SHA)
-        ↓
-Hardened container execution (one container per scanner)
-  ├── Gitleaks v8.18.4 (committed secrets, network: none)
-  ├── OSV-Scanner v2.2.4 (dependencies, network: bridge [sole exception])
-  └── Semgrep 1.96.0 (SAST, network: none, pinned local ruleset)
-        ↓
-Parser adapters → Validated & redacted findings
-        ↓
-Exact-identity deduplication & provenance tracking
-        ↓
-Canonical Audit v1 (authoritative normalized representation)
-        ↓
-Atomic persistence to PostgreSQL (findings, runs, coverage, report in 1 transaction)
-        ↓
-Deterministic Report generation (byte-identical JSON, Markdown, HTML)
-        ↓
-Optional AI Narrative (Gemini explanation layer; cannot forge findings)
-        ↓
-Downstream Delivery (execution-scoped SMTP email & Telegram) + GitHub Check Run
+       ┌────────────────────────────────────────────────────────┐
+       │             Vercel Frontend (React 19 / Vite)          │
+       └───────────────────────────┬────────────────────────────┘
+                                   │ HTTPS (HttpOnly Session Cookie / Strict CSRF)
+                                   ▼
+       ┌────────────────────────────────────────────────────────┐
+       │             Render Backend (Rust Axum Service)         │
+       └─────┬─────────────────────┬──────────────────────┬─────┘
+             │                     │                      │
+             ▼                     ▼                      ▼
+  ┌───────────────────┐ ┌────────────────────┐ ┌──────────────────────┐
+  │ PostgreSQL Store  │ │ Stream Fetch Agent │ │ Sandboxed Containers │
+  │ (Render Database) │ │ (Bounded Tarball)  │ │ Gitleaks/OSV/Semgrep │
+  └───────────────────┘ └────────────────────┘ └──────────────────────┘
+             │
+             ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │       Canonical Audit v1 Normalization & Report Store       │
+  └───────────────────────────┬─────────────────────────────────┘
+                              │ Redacted Canonical Summary
+                              ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │            Optional AI Explanation Layer (Gemini)           │
+  └─────────────────────────────────────────────────────────────┘
 ```
 
-### Facts vs. Optional AI Explanation
+---
 
-Fire Crow enforces a strict, architectural separation between **security facts** and **optional AI explanations**:
+## 🛠️ Technology Stack
 
-| Dimension | Scanner Pipeline (Facts) | AI Narrative Layer (Optional Explanation) |
-|---|---|---|
-| **Source of Truth** | Scanners (**Gitleaks**, **OSV-Scanner**, **Semgrep**) | None (reads only the finalized deterministic report) |
-| **Can Create Findings?** | **Yes** (when a scanner emits valid evidence) | **NEVER** (invented finding IDs are rejected by validator) |
-| **Can Alter Severity?** | **Yes** (native scanner severity mapped) | **NEVER** (severity mismatches trigger validation failure) |
-| **Can Alter Score?** | Calculated deterministically | **NEVER** (tampering with score is rejected) |
-| **Failure Impact** | Scanner failure = incomplete coverage (`score = null`) | AI failure = report served without narrative; audit succeeds |
-| **Network Egress** | Offline default (OSV live DB sole exception) | Talks exclusively to Gemini API; prompt contains no raw code/secrets |
+- **Backend**: Rust 1.85+, Axum 0.7, SQLx (PostgreSQL 16), Tokio, Serde.
+- **Frontend**: React 19, TypeScript 5.7+, Vite 8.1, Vanilla CSS Design Tokens.
+- **Scanners**: Gitleaks v8.18.2, OSV-Scanner v1.6.2, Semgrep v1.64.0.
+- **Deployment**: Vercel (Frontend SPA & API Proxy) + Render (Containerized Backend & Managed Postgres).
 
 ---
 
-## 2. Audit Execution Pipeline
-
-The audit pipeline is a Rust state machine with seven execution phases. Each phase records its start and end timestamps into `phase_ledger`:
-
-| Phase | Description & Enforcement |
-|---|---|
-| `intake` | Validates and normalizes the GitHub URL (`https://github.com/{owner}/{repo}`). Enforces per-user concurrency backpressure via advisory transaction lock. |
-| `fetch` | Verifies repository read access, resolves the default branch or requested SHA, pins an immutable 40-hex commit SHA, downloads the tarball with strict caps (100MB download, 150MB extracted, 20MB file, 20,000 files), rejects symlinks, hardlinks, and traversal paths (`..`), and stages the snapshot in a private temp directory cleaned up on drop. |
-| `scan` | Executes **gitleaks**, **osv-scanner**, and **semgrep**, each in its own hardened Docker container. Every container runs with read-only rootfs, unprivileged user, dropped capabilities, memory/CPU/PID limits, and isolated stdout/stderr stream caps. |
-| `normalize` | Normalizes scanner output into **Canonical Audit v1**. Validates evidence text, enforces line bounds, redacts secrets, strips credential shapes, and deduplicates identical findings by exact canonical identity (`scanner + rule + native fingerprint + location + evidence digest`). |
-| `score` | Computes the security score `[0.0, 9.0]` **only** if all scanners completed successfully. Score is `NULL` for partial or failed scans. Zero findings yields `9.0`, never `10.0`. |
-| `report` | Derives the deterministic report model (`CanonicalAuditReport`) and produces byte-identical Markdown, JSON, and HTML. Persisted atomically alongside the execution. |
-| `deliver` | Asserts the finalized report exists. Downstream delivery (SMTP email and Telegram) is execution-scoped and idempotent. |
-
----
-
-## 3. Scanner Inventory & Container Isolation
-
-Every scanner execution is governed by `docker_argv` in [`backend/src/services/sandbox.rs`](backend/src/services/sandbox.rs),
-with content-level enforcement in `enforce_execution_policy` (only the three pinned scanner runs may execute —
-no arbitrary images, networks, binds, or Docker capabilities) and transport through a deny-by-default Docker
-socket proxy the backend reaches via `DOCKER_HOST` (the backend itself holds no socket mount and runs as
-non-root `10001:10001`; see `docker-compose.yml` / `Dockerfile`):
-
-| Tool | Pinned Image Reference | Domain | Network Mode | Output Handshake | Failure Semantics |
-|---|---|---|---|---|---|
-| **Gitleaks** | `ghcr.io/gitleaks/gitleaks:v8.18.4` | Committed secrets | `--network=none` | JSON artifact (`/work/gitleaks.json`) streamed with `cat` | Exit 1 + valid report = success; broken/missing report = FAILED |
-| **OSV-Scanner** | `ghcr.io/google/osv-scanner:v2.2.4` | Dependency vulnerabilities | `--network=bridge` *(sole declared exception)* | JSON artifact (`/work/osv.json`) streamed with `cat` | Missing lockfile = clean; unparseable output = FAILED, never clean |
-| **Semgrep** | `semgrep/semgrep:1.96.0` | Source-code SAST | `--network=none` | JSON artifact (`/work/semgrep.json`) streamed with `cat` | `no_files_analyzed` or syntax errors = FAILED, never clean |
-
-### Sandbox Security Hardening
-
-- **Filesystem Isolation:** Repository snapshot mounted read-only at `/scan`. Container root filesystem is `--read-only`. Writable scratch is an in-memory `tmpfs` (`/work` capped at 64MB; `/tmp` capped at 32MB). Writes never touch the host filesystem and evaporate when the container terminates.
-- **Network Isolation:** `--network=none` by default. OSV-Scanner is the sole scanner granted `--network=bridge` to query Google's live advisory database.
-- **Least Privilege:** Backend runs as non-root `10001:10001` with no Docker socket mount. Scanner containers run as `--user=65534:65534` (`nobody:nogroup`). All capabilities dropped (`--cap-drop=ALL`), and `--security-opt=no-new-privileges` prevents privilege escalation. The socket proxy allows only container/image lifecycle APIs (EXEC, NETWORKS, VOLUMES, BUILD, SYSTEM, SWARM and the rest stay denied); forbidden operation content is rejected in code before Docker is touched.
-- **Resource Ceilings:** Process ceilings via `--pids-limit`, CPU ceilings via `--cpus`, and memory ceilings via `-m` with `--memory-swap` pinned equal to memory (preventing swap evasion).
-- **Process Supervision:** `--init` runs `tini` as PID 1 to reap orphaned child processes. Containers are automatically cleaned up (`--rm`), with explicit `docker rm -f` on timeout or cancellation.
-- **Streaming Bounds:** Standard output is capped at 16MB; standard error is capped at 1MB and redacted before logging.
-
----
-
-## 4. Key Architectural Guarantees
-
-### 1. Failure Is Never Reported as Clean
-A crashed, timed-out, cancelled, or unparseable scanner produces **unknown coverage**, never "zero findings". Incomplete or partial scans keep successful scanners' findings but leave the security score as `NULL`.
-
-### 2. Immutable Execution History & Retries
-Every audit job has one or more attempts stored in `audit_executions`:
-- Retries create a new attempt record (attempt $N+1$) with a distinct `execution_id`.
-- A retry **never overwrites or mutates** a previous attempt's findings, reports, or logs.
-- Database triggers reject updates to terminal execution and report rows.
-
-### 3. Atomic Finalization
-Findings, scanner runs, aggregate coverage, deterministic reports, and execution status commit in **one single PostgreSQL transaction**. Crashes cannot produce half-finalized audits or orphaned findings.
-
-### 4. Deterministic Reporting
-Reports are rendered directly from `CanonicalAuditReport` as a pure function. Report regeneration performs **zero I/O** (no filesystem reads, no scanner execution, no LLM queries, and no database queries). The exact same report can be reconstructed from persisted database state years later.
-
-### 5. Scoring Transparency
-- Perfect `10.0` is never awarded: zero findings yields `9.0/10` because "no vulnerabilities detected" is not equivalent to "proven secure".
-- Each finding incurs a `1.5` penalty: `score = (10.0 - findings * 1.5).clamp(0.0, 9.0)`.
-- The score is strictly `NULL` whenever coverage is partial, failed, or absent.
-
-### 6. GitHub Integration
-- **GitHub OAuth:** User authentication, identity bound to provider subject ID.
-- **GitHub App:** Organization installations, installation-token exchange (tokens kept in memory only, never persisted), HMAC-SHA256 verified webhooks (`POST /api/v1/github/webhook`), and a status Check Run (`firecrow-security-audit`) on the pinned commit SHA.
-- **No Inline PR Annotations:** Status, counts, and coverage only.
-
----
-
-## 5. What Is Deliberately NOT Implemented
-
-To ensure architectural honesty, Fire Crow explicitly declares the following features as **absent**:
-
-- ❌ **No AI-generated security findings:** The AI explains; scanners detect.
-- ❌ **No automatic exploit simulation or code patching.**
-- ❌ **No inline GitHub PR annotations or merge-blocking security gates.**
-- ❌ **No attack-chain graph edges:** `/audit/job/:id/graph` returns vulnerability nodes with an empty `edges: []` array because findings are not correlated across attack chains.
-- ❌ **No full public beta claim:** The system is in **controlled beta**. Multi-user sustained soak and credential-gated Gemini smoke tests remain recorded operational gates.
-
----
-
-## 6. Getting Started
+## ⚡ Quick Start (Local Development)
 
 ### Prerequisites
+- Docker & Docker Compose
+- Node.js 20+ & `npm`
+- Rust 1.85+ (`cargo`)
 
-- **Rust** `1.75+` (tested with Rust `1.85+` / `1.98+`)
-- **Node.js** `v18+` & `npm`
-- **PostgreSQL** `14+`
-- **Docker** (with permissions to run `gitleaks`, `osv-scanner`, `semgrep` containers)
-
-### 1. Clone the repository
-
+### 1. Clone & Start Infrastructure
 ```bash
 git clone https://github.com/johan-droid/Fire-Crow-.git
 cd Fire-Crow-
+
+# Start local PostgreSQL instance
+docker run -d --name firecrow-postgres \
+  -e POSTGRES_DB=firecrow_dev \
+  -e POSTGRES_USER=firecrow \
+  -e POSTGRES_PASSWORD=firecrow_pass \
+  -p 55433:5432 postgres:16-alpine
 ```
 
-### 2. Install dependencies
-
+### 2. Run Backend
 ```bash
-# Install frontend workspace dependencies
-npm --prefix frontend install
-```
-
-### 3. Configure backend environment
-
-Create `backend/.env.local`:
-
-```env
-# Server & Network Configuration
-PORT=8000
-HOST="0.0.0.0"
-FRONTEND_URL="http://localhost:3000"
-BACKEND_BASE_URL="http://localhost:8000"
-CORS_ORIGINS="http://localhost:3000"
-
-# Core Secrets (Must be at least 32 characters, never identical)
-SECRET_KEY="replace-with-a-random-32-char-secret-key-for-jwt"
-ENCRYPTION_KEY="replace-with-a-different-32-char-encryption-key"
-
-# Database (PostgreSQL with 28 migrations)
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/firecrow?sslmode=disable"
-
-# GitHub OAuth (Optional for local testing, required for OAuth login)
-GITHUB_CLIENT_ID=""
-GITHUB_CLIENT_SECRET=""
-GITHUB_TOKEN=""
-
-# GitHub App Integration (Optional, set BOTH or NEITHER)
-# GITHUB_APP_ID=123456
-# GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
-# GITHUB_APP_WEBHOOK_SECRET="webhook-secret-here"
-
-# SMTP Email Delivery (Optional)
-# SMTP_HOST="smtp.example.com"
-# SMTP_PORT=587
-# SMTP_USER="apikey"
-# SMTP_PASSWORD="password"
-# SENDER_EMAIL="reports@firecrow.dev"
-
-# Telegram Delivery (Optional)
-# TELEGRAM_BOT_TOKEN="bot-token"
-# TELEGRAM_CHAT_ID="operator-chat-id"
-
-# Google Gemini AI Narrative (Optional: Unset = NotConfigured, audits still succeed)
-# GEMINI_API_KEY=""
-# GEMINI_MODEL="gemini-2.0-flash"
-```
-
-### 4. Run the development environment
-
-Start both the backend server and frontend development server concurrently:
-
-```bash
-npm run dev
-```
-
-Or run each independently:
-
-```bash
-# Terminal 1: Backend (Axum on port 8000)
 cd backend
+export DATABASE_URL="postgres://firecrow:firecrow_pass@127.0.0.1:55433/firecrow_dev"
+export SECRET_KEY="local_dev_secret_key_minimum_32_bytes_long_change_me!"
+export ENCRYPTION_KEY="local_dev_encryption_key_minimum_32_bytes_long!"
+export FRONTEND_URL="http://localhost:5173"
+export CORS_ORIGINS="http://localhost:5173"
+
 cargo run
+```
 
-# Terminal 2: Frontend (Vite on port 3000, proxies /api to port 8000)
-cd frontend
+### 3. Run Frontend
+```bash
+cd ../frontend
+npm install
 npm run dev
 ```
-
-The web dashboard is served at `http://localhost:3000`.
-
----
-
-## 7. Testing & Verification
-
-Fire Crow contains a comprehensive suite of unit, integration, and security regression tests:
-
-```bash
-cd backend
-
-# Run the complete test suite (spins up isolated PostgreSQL via docker-compose)
-./scripts/test.sh
-
-# Run database-free unit tests only
-./scripts/test.sh --unit
-
-# Check formatting and clippy lints
-cargo fmt --check
-cargo clippy --all-targets -- -D warnings
-```
-
-Database-backed tests use `#[sqlx::test(migrations = "./migrations")]` to ensure every test executes against a fresh, fully migrated database schema with zero cross-test interference.
+Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ---
 
-## 8. Repository Layout
+## 📦 Deployment Guide
+
+### Deploying Frontend to Vercel
+1. Import repository into [Vercel](https://vercel.com).
+2. Set **Framework Preset** to `Vite`.
+3. Set **Environment Variable**:
+   - `VITE_API_URL`: Your deployed Render backend URL (e.g. `https://firecrow-backend.onrender.com`).
+4. Vercel automatically proxies `/api/*` to the Render backend via `vercel.json`.
+
+### Deploying Backend to Render
+1. Create a **New Blueprint Instance** on [Render](https://render.com) using `render.yaml` OR create a **Web Service**:
+   - **Environment**: `Docker`
+   - **Dockerfile Path**: `backend/Dockerfile`
+2. **Configure Environment Variables**:
+   - `DATABASE_URL`: Render PostgreSQL Connection String
+   - `SECRET_KEY`: `openssl rand -base64 48`
+   - `ENCRYPTION_KEY`: `openssl rand -base64 48`
+   - `FRONTEND_URL`: Your Vercel application URL
+   - `CORS_ORIGINS`: Your Vercel application URL
+
+---
+
+## 🔒 Security Invariants & Compliance
+
+| Security Dimension | Enforcement Mechanism | Status |
+| :--- | :--- | :--- |
+| **Host Boundary** | Hardened Docker flag validation rejecting `/var/run/docker.sock` & privileged mounts | **VERIFIED (F1)** |
+| **Resource Bounds** | Incremental streaming HTTP & gzip inflation bounds (max 50MB total) | **VERIFIED (H1)** |
+| **Network Egress** | OSV network policy blocking link-local (`169.254.169.254`), loopback & private networks | **VERIFIED (H2)** |
+| **DB Lifecycle** | PostgreSQL BEFORE UPDATE trigger enforcing state machine transitions | **VERIFIED (H3)** |
+| **Session Security** | HttpOnly/Secure/SameSite cookies replacing query tokens; 7d refresh TTL | **VERIFIED (H4)** |
+| **Security Truth** | Scanner failure/timeout/cancel yields `NULL` score and incomplete audit status | **VERIFIED (Truth)** |
+| **AI Isolation** | Structural validator rejects invented findings, severity edits, or score mutations | **VERIFIED (L10)** |
+
+For full details, review the [Final Security Hardening Report](documentation/FINAL_SECURITY_HARDENING_REPORT.md).
+
+---
+
+## 📂 Repository Layout
 
 ```text
 Fire-Crow-/
 ├── .github/workflows/          # GitHub Actions CI
 ├── backend/                    # Rust (Axum) web server & scanning orchestrator
-│   ├── migrations/             # SQLx PostgreSQL schema migrations
-│   ├── scanners/semgrep/       # Pinned local SAST ruleset (firecrow-sast.yml)
+│   ├── migrations/             # PostgreSQL SQLx schema migrations
+│   ├── scanners/semgrep/       # Pinned local SAST ruleset
 │   ├── src/
-│   │   ├── agents/             # Stream-bounded fetch & container scanner runtimes
-│   │   ├── api/                # REST API routers & request handlers
-│   │   ├── middleware/         # Auth, CSRF, rate-limiting, security headers
+│   │   ├── agents/             # Stream-bounded fetch & scanner execution agents
+│   │   ├── api/                # REST API endpoints & route handlers
+│   │   ├── middleware/         # Cookie auth, CSRF, security headers, rate limits
 │   │   ├── models/             # Database entity models with secret-safe Debug
-│   │   ├── orchestrator/       # State machine & atomic commit
+│   │   ├── orchestrator/       # State machine, worker pool, and delivery
 │   │   ├── schemas/            # Canonical Audit v1, AI narrative, report schemas
-│   │   ├── services/           # Sandbox, reporter, LLM transport, email, telegram
-│   │   └── workers/            # Job queue workers, heartbeat, and orphan reaper
-│   ├── tests/                  # Integration, lifecycle, and security regression tests
+│   │   └── services/           # Container sandbox, egress guard, LLM provider
+│   ├── tests/                  # Integration, unit, and regression test suite
 │   └── Cargo.toml              # Rust crate manifest
-├── documentation/              # Canonical manuals & security reports
-│   ├── DEVELOPER_GUIDE.md      # Developer guide & Vercel/Render deployment reference
-│   ├── FINAL_SECURITY_HARDENING_REPORT.md # Comprehensive final security audit report
+├── documentation/              # Architecture, security & deployment guides
+│   ├── DEVELOPER_GUIDE.md      # Unified Developer & Deployment Guide
+│   ├── FINAL_SECURITY_HARDENING_REPORT.md # Comprehensive security audit report
 │   └── INTERNAL_SECURITY_AUDIT.md       # Historical audit baseline
-├── frontend/                   # React 19 + TypeScript + Vite web dashboard (Vercel Ready)
+├── frontend/                   # React 19 + TypeScript + Vite SPA (Vercel Ready)
 ├── render.yaml                 # Render Infrastructure-as-Code manifest
 └── vercel.json                 # Vercel deployment manifest
 ```
@@ -300,4 +188,4 @@ Fire-Crow-/
 
 ## 📄 License
 
-Distributed under the MIT License. See [`LICENSE`](LICENSE) for details.
+Distributed under the MIT License. See `LICENSE` for more information.
