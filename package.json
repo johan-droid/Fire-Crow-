@@ -6,15 +6,11 @@
     "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
     "frontend": "npm --prefix frontend run dev",
     "backend": "cd backend && cargo run",
-    "build": "npm install --prefix frontend && npm run build --prefix frontend",
+    "build": "npm --prefix frontend run build",
     "cargo:check": "cargo check --manifest-path backend/Cargo.toml",
-    "cf:build": "npm --prefix frontend run build",
-    "cf:deploy": "npx wrangler pages deploy frontend/dist --project-name=fire-crow",
-    "cf:preview": "npx wrangler pages dev frontend/dist",
     "vercel-build": "npm run build"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2",
-    "wrangler": "^3.100.0"
+    "concurrently": "^8.2.2"
   }
 }

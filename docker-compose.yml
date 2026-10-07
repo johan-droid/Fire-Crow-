@@ -28,6 +28,58 @@ services:
       timeout: 5s
       retries: 5
 
+  # Least-privilege Docker API proxy (deny-by-default). Sole socket holder:
+  # the backend talks to it over TCP and never sees the socket itself.
+  # Pinned image (never :latest); see backend/src/services/sandbox.rs
+  # enforce_execution_policy for the content-level gate the proxy cannot do
+  # (it filters API categories, not request bodies).
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:v0.5.0
+    container_name: firecrow-docker-proxy
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      LOG_LEVEL: warning
+      # `docker run` (create/attach/start/wait) + image pull + `docker rm -f`
+      # (kill/remove) need exactly these sections. PING/VERSION stay at their
+      # harmless defaults for the client handshake. POST=1 is required: the
+      # proxy denies every non-GET method unless it is set, so without it even
+      # container creation is refused; per-section rules below still gate
+      # which endpoints any POST/DELETE may reach. Everything else stays
+      # denied by the proxy default: no exec into containers, no network or
+      # volume management, no builds, no swarm/system access. Forbidden
+      # operation *content* (privileged, host binds, arbitrary images) is
+      # rejected in code by enforce_execution_policy before Docker is touched.
+      POST: 1
+      CONTAINERS: 1
+      IMAGES: 1
+      ALLOW_START: 1
+      ALLOW_RESTARTS: 1
+      EXEC: 0
+      NETWORKS: 0
+      VOLUMES: 0
+      BUILD: 0
+      SYSTEM: 0
+      SWARM: 0
+      SERVICES: 0
+      TASKS: 0
+      SECRETS: 0
+      CONFIGS: 0
+      AUTH: 0
+      NODES: 0
+      PLUGINS: 0
+      DISTRIBUTION: 0
+      SESSION: 0
+      COMMIT: 0
+      INFO: 0
+      GRPC: 0
+      EVENTS: 0
+    expose:
+      # Internal only: reachable as docker-socket-proxy:2375, never published
+      # to the host (no `ports:`). Never expose this port publicly.
+      - "2375"
+
   backend:
     build:
       context: .
@@ -39,14 +91,23 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      docker-socket-proxy:
+        condition: service_started
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Phase A (F1): the backend MUST NOT hold the daemon socket. Scanner
+      # execution goes through the least-privilege proxy above (DOCKER_HOST);
+      # re-adding a socket mount here re-opens host takeover on backend RCE
+      # and fails the docker_host_boundary regression test.
       - firecrow_storage:/app/workspace/storage
     ports:
       - "8000:8000"
     environment:
       DATABASE_URL: "postgres://firecrow:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/firecrow"
       REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379"
+      # Phase A (F1): scanner execution via the least-privilege socket proxy,
+      # never via a mounted socket. The backend restores only this variable
+      # (validated tcp://host:port form) after clearing its environment.
+      DOCKER_HOST: "tcp://docker-socket-proxy:2375"
       SECRET_KEY: "${SECRET_KEY:?SECRET_KEY is required - generate with: openssl rand -base64 48}"
       ENCRYPTION_KEY: "${ENCRYPTION_KEY:?ENCRYPTION_KEY is required - must differ from SECRET_KEY - generate with: openssl rand -base64 48}"
       FRONTEND_URL: "${FRONTEND_URL:-https://your-firecrow-app.vercel.app}"

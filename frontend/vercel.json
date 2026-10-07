@@ -8,7 +8,7 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://api.firecrow.dev/api/:match*"
+      "destination": "https://firecrow-backend.onrender.com/api/:match*"
     },
     {
       "source": "/(.*)",
@@ -34,15 +34,6 @@
         {
           "key": "Referrer-Policy",
           "value": "strict-origin-when-cross-origin"
-        }
-      ]
-    },
-    {
-      "source": "/assets/(.*)",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
         }
       ]
     }

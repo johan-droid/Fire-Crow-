@@ -551,8 +551,7 @@ export default function LandingPage({ user, onNavigateLogin, onInitiateCheckout 
             <div className="apple-footer-col-title">Developers</div>
             <ul className="apple-footer-links">
               <li><a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer">GitHub Repository</a></li>
-              <li><a href="https://github.com/johan-droid/Fire-Crow-/blob/main/documentation/API_DOCUMENTATION.md" target="_blank" rel="noreferrer">API Documentation</a></li>
-              <li><a href="https://github.com/johan-droid/Fire-Crow-/blob/main/documentation/CLOUDFLARE_DEPLOYMENT.md" target="_blank" rel="noreferrer">Deployment Guide</a></li>
+              <li><a href="https://github.com/johan-droid/Fire-Crow-/blob/main/documentation/DEVELOPER_GUIDE.md" target="_blank" rel="noreferrer">Developer &amp; Deployment Guide</a></li>
             </ul>
           </div>
           <div>

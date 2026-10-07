@@ -61,11 +61,11 @@ impl CryptoManager {
     }
 }
 
-pub fn crypto_manager(secret_key: &str, encryption_key: &str) -> Result<Arc<CryptoManager>> {
-    let key = if encryption_key.is_empty() {
-        secret_key
-    } else {
-        encryption_key
-    };
-    Ok(Arc::new(CryptoManager::new(key)?))
+pub fn crypto_manager(_secret_key: &str, encryption_key: &str) -> Result<Arc<CryptoManager>> {
+    if encryption_key.trim().is_empty() {
+        anyhow::bail!(
+            "ENCRYPTION_KEY must be configured and non-empty for cryptographic operations"
+        );
+    }
+    Ok(Arc::new(CryptoManager::new(encryption_key)?))
 }

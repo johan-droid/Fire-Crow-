@@ -140,6 +140,11 @@ pub async fn create_audit_job_attributed(
     webhook: Option<WebhookJob>,
 ) -> Result<String> {
     validate_github_repo_url(repo_url)?;
+    if !repo_branch.trim().is_empty() && !crate::agents::fetch::is_valid_branch_name(repo_branch) {
+        return Err(AppError::BadRequest(
+            "repo_branch contains invalid characters or format".into(),
+        ));
+    }
 
     let sha = match requested_sha.map(str::trim) {
         None | Some("") => None,
@@ -443,11 +448,23 @@ impl ReportFormat {
 }
 
 fn report_response(format: ReportFormat, body: String) -> axum::response::Response {
-    axum::response::Response::builder()
+    let mut builder = axum::response::Response::builder()
         .status(200)
-        .header("Content-Type", format.content_type())
-        .body(axum::body::Body::from(body))
-        .unwrap()
+        .header("Content-Type", format.content_type());
+
+    if matches!(format, ReportFormat::Html) {
+        builder = builder
+            .header(
+                "Content-Disposition",
+                "attachment; filename=\"firecrow-audit-report.html\"",
+            )
+            .header(
+                "Content-Security-Policy",
+                "sandbox; default-src 'none'; style-src 'unsafe-inline';",
+            );
+    }
+
+    builder.body(axum::body::Body::from(body)).unwrap()
 }
 
 /// Latest finalized report for a job.
@@ -820,11 +837,41 @@ pub async fn telegram_execution_report(
         limit,
     );
 
+    let destination_ref = chat_id.to_string();
+    let already_sent: Option<(i32,)> = sqlx::query_as(
+        "SELECT delivery_version FROM audit_deliveries
+          WHERE execution_id = $1 AND channel = $2 AND destination_ref = $3 AND status = 'sent'
+          LIMIT 1",
+    )
+    .bind(&execution_id)
+    .bind(crate::orchestrator::delivery::CHANNEL_TELEGRAM)
+    .bind(&destination_ref)
+    .fetch_optional(state.pool())
+    .await
+    .map_err(AppError::Database)?;
+
+    if already_sent.is_some() {
+        return Ok(Json(serde_json::json!({
+            "status": "already_sent",
+            "execution_id": execution_id,
+            "message_is_summary": message.is_summary,
+            "omitted_findings": message.omitted_findings,
+        })));
+    }
+
+    let delivery_version = crate::orchestrator::delivery::resolve_delivery_version(
+        state.pool(),
+        &execution_id,
+        crate::orchestrator::delivery::CHANNEL_TELEGRAM,
+        &destination_ref,
+    )
+    .await?;
+
     let key = crate::orchestrator::delivery::DeliveryKey {
         execution_id: execution_id.clone(),
         channel: crate::orchestrator::delivery::CHANNEL_TELEGRAM,
-        destination_ref: chat_id.to_string(),
-        delivery_version: 1,
+        destination_ref,
+        delivery_version,
     };
 
     let outcome = crate::orchestrator::delivery::deliver(state.pool(), &key, || async {

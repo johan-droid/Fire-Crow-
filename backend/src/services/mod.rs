@@ -4,6 +4,7 @@ pub mod crypto;
 pub mod csrf;
 pub mod dodo_payment_service;
 pub mod domain_verify;
+pub mod egress_policy;
 pub mod email;
 pub mod email_artifact;
 pub mod evidence_normalizer;

@@ -28,6 +28,33 @@ impl HousekeepingService {
             .await
             .map_err(AppError::Database)?;
         stats.expired_codes_deleted = r.rows_affected() as i64;
+
+        // Phase F (M3): Prune expired token revocations (tokens past exp claim)
+        let r = sqlx::query("DELETE FROM token_revocations WHERE expires_at < $1")
+            .bind(now)
+            .execute(pool)
+            .await
+            .map_err(AppError::Database)?;
+        stats.expired_token_revocations_deleted = r.rows_affected() as i64;
+
+        // Prune old revoked sessions past 30 days
+        let r =
+            sqlx::query("DELETE FROM user_sessions WHERE expires_at < $1 AND is_revoked = true")
+                .bind(thirty_days)
+                .execute(pool)
+                .await
+                .map_err(AppError::Database)?;
+        stats.old_sessions_deleted = r.rows_affected() as i64;
+
+        // Prune activity logs older than 90 days to prevent unbounded growth
+        let ninety_days = (Utc::now() - chrono::Duration::days(90)).naive_utc();
+        let r = sqlx::query("DELETE FROM user_activity_events WHERE created_at < $1")
+            .bind(ninety_days)
+            .execute(pool)
+            .await
+            .map_err(AppError::Database)?;
+        stats.old_activity_events_deleted = r.rows_affected() as i64;
+
         Ok(stats)
     }
 }
@@ -36,15 +63,21 @@ pub struct HousekeepingStats {
     pub expired_sessions_revoked: i64,
     pub old_login_failures_deleted: i64,
     pub expired_codes_deleted: i64,
+    pub expired_token_revocations_deleted: i64,
+    pub old_sessions_deleted: i64,
+    pub old_activity_events_deleted: i64,
 }
 impl std::fmt::Display for HousekeepingStats {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "sessions_revoked={}, login_failures_deleted={}, codes_deleted={}",
+            "sessions_revoked={}, login_failures_deleted={}, codes_deleted={}, token_revocations_deleted={}, old_sessions_deleted={}, activity_events_deleted={}",
             self.expired_sessions_revoked,
             self.old_login_failures_deleted,
-            self.expired_codes_deleted
+            self.expired_codes_deleted,
+            self.expired_token_revocations_deleted,
+            self.old_sessions_deleted,
+            self.old_activity_events_deleted
         )
     }
 }

@@ -90,7 +90,11 @@ The audit pipeline is a Rust state machine with seven execution phases. Each pha
 
 ## 3. Scanner Inventory & Container Isolation
 
-Every scanner execution is governed by `docker_argv` in [`backend/src/services/sandbox.rs`](backend/src/services/sandbox.rs):
+Every scanner execution is governed by `docker_argv` in [`backend/src/services/sandbox.rs`](backend/src/services/sandbox.rs),
+with content-level enforcement in `enforce_execution_policy` (only the three pinned scanner runs may execute —
+no arbitrary images, networks, binds, or Docker capabilities) and transport through a deny-by-default Docker
+socket proxy the backend reaches via `DOCKER_HOST` (the backend itself holds no socket mount and runs as
+non-root `10001:10001`; see `docker-compose.yml` / `Dockerfile`):
 
 | Tool | Pinned Image Reference | Domain | Network Mode | Output Handshake | Failure Semantics |
 |---|---|---|---|---|---|
@@ -102,7 +106,7 @@ Every scanner execution is governed by `docker_argv` in [`backend/src/services/s
 
 - **Filesystem Isolation:** Repository snapshot mounted read-only at `/scan`. Container root filesystem is `--read-only`. Writable scratch is an in-memory `tmpfs` (`/work` capped at 64MB; `/tmp` capped at 32MB). Writes never touch the host filesystem and evaporate when the container terminates.
 - **Network Isolation:** `--network=none` by default. OSV-Scanner is the sole scanner granted `--network=bridge` to query Google's live advisory database.
-- **Least Privilege:** Runs as `--user=65534:65534` (`nobody:nogroup`). All capabilities dropped (`--cap-drop=ALL`), and `--security-opt=no-new-privileges` prevents privilege escalation.
+- **Least Privilege:** Backend runs as non-root `10001:10001` with no Docker socket mount. Scanner containers run as `--user=65534:65534` (`nobody:nogroup`). All capabilities dropped (`--cap-drop=ALL`), and `--security-opt=no-new-privileges` prevents privilege escalation. The socket proxy allows only container/image lifecycle APIs (EXEC, NETWORKS, VOLUMES, BUILD, SYSTEM, SWARM and the rest stay denied); forbidden operation content is rejected in code before Docker is touched.
 - **Resource Ceilings:** Process ceilings via `--pids-limit`, CPU ceilings via `--cpus`, and memory ceilings via `-m` with `--memory-swap` pinned equal to memory (preventing swap evasion).
 - **Process Supervision:** `--init` runs `tini` as PID 1 to reap orphaned child processes. Containers are automatically cleaned up (`--rm`), with explicit `docker rm -f` on timeout or cancellation.
 - **Streaming Bounds:** Standard output is capped at 16MB; standard error is capped at 1MB and redacted before logging.
@@ -268,37 +272,28 @@ Database-backed tests use `#[sqlx::test(migrations = "./migrations")]` to ensure
 
 ```text
 Fire-Crow-/
-├── .github/workflows/          # GitHub Actions CI & Cloudflare Pages deployment
+├── .github/workflows/          # GitHub Actions CI
 ├── backend/                    # Rust (Axum) web server & scanning orchestrator
-│   ├── migrations/             # 28 SQLx PostgreSQL schema migrations
+│   ├── migrations/             # SQLx PostgreSQL schema migrations
 │   ├── scanners/semgrep/       # Pinned local SAST ruleset (firecrow-sast.yml)
-│   ├── scripts/                # Test runner and development scripts
 │   ├── src/
-│   │   ├── agents/             # Fetch engine & container scanner runtimes
+│   │   ├── agents/             # Stream-bounded fetch & container scanner runtimes
 │   │   ├── api/                # REST API routers & request handlers
 │   │   ├── middleware/         # Auth, CSRF, rate-limiting, security headers
 │   │   ├── models/             # Database entity models with secret-safe Debug
-│   │   ├── orchestrator/       # 7-phase state machine & atomic commit
+│   │   ├── orchestrator/       # State machine & atomic commit
 │   │   ├── schemas/            # Canonical Audit v1, AI narrative, report schemas
 │   │   ├── services/           # Sandbox, reporter, LLM transport, email, telegram
 │   │   └── workers/            # Job queue workers, heartbeat, and orphan reaper
-│   ├── test-fixtures/          # Golden report benchmarks and scanner fixtures
 │   ├── tests/                  # Integration, lifecycle, and security regression tests
 │   └── Cargo.toml              # Rust crate manifest
-├── documentation/              # Canonical architectural & operational manuals
-│   ├── FIRECROW_BACKEND.md     # Single canonical backend reference
-│   ├── FRONTEND_CONTRACT.md    # API contract v1 for frontend consumers
-│   ├── DETERMINISTIC_REPORT.md # Deterministic report generation manual
-│   ├── ATOMIC_AUDIT_COMMIT.md  # Atomic commit & execution identity
-│   ├── LLM_PROVIDER.md         # Google Gemini provider contract
-│   ├── GITHUB_APP.md           # GitHub App integration & trust boundary
-│   ├── THREAT_MODEL.md         # Threat model & security enforcement matrix
-│   ├── PRODUCTION_DEPLOYMENT.md# Production deployment topology & configuration
-│   ├── CLOUDFLARE_DEPLOYMENT.md# Cloudflare Pages static frontend deployment
-│   ├── VERCEL_DEPLOYMENT.md    # Vercel frontend & containerized backend guide
-│   ├── RELEASE_CANDIDATE.md    # Release candidate evidence scorecard
-│   └── RELEASE_GATE.md         # Phase 20 production release gate audit
-└── frontend/                   # React 19 + TypeScript + Vite web dashboard
+├── documentation/              # Canonical manuals & security reports
+│   ├── DEVELOPER_GUIDE.md      # Developer guide & Vercel/Render deployment reference
+│   ├── FINAL_SECURITY_HARDENING_REPORT.md # Comprehensive final security audit report
+│   └── INTERNAL_SECURITY_AUDIT.md       # Historical audit baseline
+├── frontend/                   # React 19 + TypeScript + Vite web dashboard (Vercel Ready)
+├── render.yaml                 # Render Infrastructure-as-Code manifest
+└── vercel.json                 # Vercel deployment manifest
 ```
 
 ---

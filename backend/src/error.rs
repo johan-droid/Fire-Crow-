@@ -334,10 +334,12 @@ impl AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let status = self.status_code();
-        // In dev, expose the real error message so we can debug
-        let detail = self.to_string();
+        let is_debug = std::env::var("APP_DEBUG")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(false);
+        let detail = self.safe_message(is_debug);
         if self.is_internal() {
-            tracing::error!(error = %detail, "Internal error");
+            tracing::error!(status = %status, error = %self, "Internal server error encountered");
         }
         let body = Json(json!({ "detail": detail }));
         (status, body).into_response()

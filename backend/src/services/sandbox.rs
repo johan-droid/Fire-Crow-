@@ -578,6 +578,176 @@ pub fn validate_pinned_image(image: &str) -> Result<()> {
     }
 }
 
+/// Execution allowlist — Phase A (F1) host boundary.
+///
+/// The backend reaches Docker through a least-privilege socket proxy, and the
+/// proxy filters API *categories* but cannot inspect request *bodies*: a
+/// `Privileged: true` create or a host bind would pass the proxy unchallenged.
+/// This table is the content-level gate: [`SandboxManager::run`] rejects every
+/// spec that is not exactly one of these scanner runs — including well-pinned
+/// but unapproved images (e.g. `alpine:3.19`), a scanner asking for a network
+/// it was not granted, or any non-`sh` entrypoint.
+///
+/// The pairs mirror the scanner descriptors (`Scanner::gitleaks/osv/semgrep`);
+/// `docker_host_boundary` tests assert they cannot drift apart. OSV keeps its
+/// declared `bridge` exception (H2 stays OPEN and is out of scope for Phase A);
+/// nothing else gets egress because nothing stronger is representable —
+/// [`NetworkMode`] has no host/pid option by construction.
+pub const APPROVED_SCANNER_EXECUTIONS: [(&str, NetworkMode); 3] = [
+    ("ghcr.io/gitleaks/gitleaks:v8.18.4", NetworkMode::None),
+    ("ghcr.io/google/osv-scanner:v2.2.4", NetworkMode::Bridge),
+    ("semgrep/semgrep:1.96.0", NetworkMode::None),
+];
+
+/// Host paths a scanner bind may never aim at, even read-only.
+///
+/// [`validate_mount`] already restricts binds to `/scan` + `/config`; this
+/// additionally rejects sensitive host sources outright, so a future caller
+/// cannot aim a read-only bind at host secrets or the Docker socket itself.
+/// Snapshot staging directories (server tempdirs) and the pinned ruleset
+/// directory are the only legitimate sources.
+fn reject_sensitive_host_path(host_path: &str) -> Result<()> {
+    if !host_path.starts_with('/') {
+        return Err(AppError::BadRequest(
+            "sandbox host path must be absolute".into(),
+        ));
+    }
+    const DENIED_EXACT: [&str; 2] = ["/", "/var/run/docker.sock"];
+    const DENIED_PREFIXES: [&str; 7] = [
+        "/proc/",
+        "/sys/",
+        "/dev/",
+        "/etc/",
+        "/root/",
+        "/var/run/",
+        "/run/",
+    ];
+    if DENIED_EXACT.contains(&host_path) || DENIED_PREFIXES.iter().any(|p| host_path.starts_with(p))
+    {
+        return Err(AppError::BadRequest(format!(
+            "sandbox host path {host_path:?} is not an observable scanner input"
+        )));
+    }
+    Ok(())
+}
+
+/// Assert the built argv carries the hardening contract and none of the
+/// Docker capabilities Phase A removes.
+///
+/// [`docker_argv`] never emits these; this re-asserts the invariant at the
+/// point of execution so a future builder change fails closed instead of
+/// silently widening the boundary.
+fn assert_hardened_argv(argv: &[String], network: NetworkMode) -> Result<()> {
+    const REQUIRED: [&str; 7] = [
+        "run",
+        "--rm",
+        "--init",
+        "--read-only",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--user=65534:65534",
+    ];
+    for flag in REQUIRED {
+        if !argv.iter().any(|a| a == flag) {
+            return Err(AppError::Internal(format!(
+                "sandbox argv lost required flag {flag}"
+            )));
+        }
+    }
+    let expected_net = network.as_docker_arg();
+    if !argv.contains(&expected_net) {
+        return Err(AppError::Internal(
+            "sandbox argv lost its declared network mode".into(),
+        ));
+    }
+    if argv.first().map(|s| s.as_str()) != Some("run") {
+        return Err(AppError::Internal(
+            "sandbox argv must be a `run` invocation".into(),
+        ));
+    }
+    for a in argv {
+        // `--pids-limit=` is required hardening, not `--pid=`: the prefix
+        // check below deliberately requires the `=` right after `--pid`.
+        let forbidden = a == "--privileged"
+            || a.starts_with("--pid=")
+            || a == "--network=host"
+            || a.starts_with("--uts=")
+            || a.starts_with("--ipc=")
+            || a.starts_with("--cap-add")
+            || a == "--device"
+            || a.starts_with("--device=")
+            || a == "--volumes-from"
+            || a == "exec"
+            || a.contains("docker.sock");
+        if forbidden {
+            return Err(AppError::Internal(format!(
+                "sandbox argv contains a forbidden Docker capability: {a:?}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Enforce the Phase A execution policy on a spec, before Docker is touched.
+///
+/// Additive to [`validate_spec`]: pin *format*, limits, timeout, entrypoint
+/// shape, and mount shape are checked there; here the spec must additionally
+/// be an approved scanner run on approved host paths, and the argv it renders
+/// must carry the hardening contract with no forbidden capability.
+pub fn enforce_execution_policy(spec: &SandboxSpec) -> Result<()> {
+    if !APPROVED_SCANNER_EXECUTIONS.contains(&(spec.image.as_str(), spec.network)) {
+        return Err(AppError::BadRequest(format!(
+            "sandbox execution is not an approved scanner run: {:?} ({})",
+            spec.image,
+            spec.network.as_str(),
+        )));
+    }
+    // The only entrypoint scanners use is `sh`, for the constant-owned
+    // report-streaming wrapper. Anything else is rejected here even though
+    // `validate_spec` already constrains its shape.
+    if let Some(entrypoint) = spec.entrypoint.as_deref() {
+        if entrypoint != "sh" {
+            return Err(AppError::BadRequest(format!(
+                "sandbox entrypoint {entrypoint:?} is not an approved scanner entrypoint"
+            )));
+        }
+    }
+    for mount in &spec.mounts {
+        reject_sensitive_host_path(&mount.host_path)?;
+    }
+    assert_hardened_argv(&docker_argv(spec, "firecrow-policy-check"), spec.network)?;
+    Ok(())
+}
+
+/// Restore the single allowlisted ambient variable the docker client needs.
+///
+/// [`SandboxManager::run`] clears the ambient environment so host configuration
+/// cannot change how Docker is invoked. The one exception is `DOCKER_HOST`:
+/// without it the client would always dial the default unix socket — exactly
+/// the unrestricted access Phase A removed. The value is operator
+/// configuration (compose sets `tcp://docker-socket-proxy:2375`), never
+/// repository or user input, and only `tcp://host:port` form is restored —
+/// never a unix socket path, credentials, or extra components. Anything else
+/// fails closed: the client errors and the run reports FAILED, never clean.
+pub fn validated_docker_host(raw: &std::ffi::OsStr) -> Option<String> {
+    let value = raw.to_str()?;
+    let rest = value.strip_prefix("tcp://")?;
+    let (host, port) = rest.rsplit_once(':')?;
+    if host.is_empty()
+        || host.starts_with(['.', '-'])
+        || !host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+    {
+        return None;
+    }
+    let port: u16 = port.parse().ok()?;
+    if port == 0 {
+        return None;
+    }
+    Some(format!("tcp://{host}:{port}"))
+}
+
 /// Build the exact `docker` argument vector for a run.
 ///
 /// Pure, so the whole isolation contract is verifiable without Docker. Every
@@ -620,7 +790,9 @@ pub fn docker_argv(spec: &SandboxSpec, name: &str) -> Vec<String> {
     ));
     for path in &spec.extra_tmpfs {
         argv.push("--tmpfs".into());
-        argv.push(format!("{path}:rw,nosuid,nodev,size={EXTRA_TMPFS_SIZE}"));
+        argv.push(format!(
+            "{path}:rw,noexec,nosuid,nodev,size={EXTRA_TMPFS_SIZE}"
+        ));
     }
     for mount in &spec.mounts {
         argv.push("-v".into());
@@ -699,6 +871,11 @@ impl SandboxManager {
         cancel: &(dyn Fn() -> bool + Sync),
     ) -> Result<SandboxOutput> {
         validate_spec(spec)?;
+        // Phase A (F1): content-level gate. The socket proxy filters API
+        // categories, not request bodies — this rejects non-scanner images,
+        // ungranted networks, sensitive host binds, and forbidden Docker
+        // capabilities before Docker is touched.
+        enforce_execution_policy(spec)?;
 
         let name = container_name();
         let argv = docker_argv(spec, &name);
@@ -721,10 +898,19 @@ impl SandboxManager {
             // unexpectedly, so a panic cannot leave a container running.
             .kill_on_drop(true);
         // The ambient environment is cleared on the *client*: a host variable
-        // (a proxy, a token, a DOCKER_HOST) cannot influence how the `docker`
-        // invocation itself behaves. Values listed in `spec.env` travel into
-        // the container as validated `-e` flags, which `docker_argv` renders.
+        // (a proxy, a token) cannot influence how the `docker` invocation
+        // itself behaves — except DOCKER_HOST, which names the least-privilege
+        // socket proxy and is restored below in validated `tcp://host:port`
+        // form only. Values listed in `spec.env` travel into the container as
+        // validated `-e` flags, which `docker_argv` renders.
         cmd.env_clear();
+        if let Some(raw) = std::env::var_os("DOCKER_HOST") {
+            if let Some(host) = validated_docker_host(&raw) {
+                cmd.env("DOCKER_HOST", host);
+            } else {
+                tracing::warn!("ignoring malformed DOCKER_HOST; docker client will fail closed");
+            }
+        }
         let mut child = cmd
             .spawn()
             .map_err(|e| AppError::Internal(format!("Failed to execute sandbox: {e}")))?;
@@ -763,7 +949,7 @@ impl SandboxManager {
                 break Stop::OutputExceeded(e);
             }
             tokio::select! {
-                s = child.wait() => {
+                s = child.wait(), if status.is_none() => {
                     status = Some(s.map_err(|e| AppError::Internal(format!("Failed waiting on sandbox: {e}")))?);
                 }
                 r = &mut out_task, if !out_settled => match r {

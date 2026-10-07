@@ -12,7 +12,7 @@
 //!     malicious archive never reaches a tool with its own extraction quirks.
 
 use crate::error::{AppError, Result};
-use std::io::Read;
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 
 /// Ceiling on the compressed download.
@@ -64,12 +64,33 @@ impl Drop for TempDirGuard {
 /// Overridable via `GITHUB_API_BASE_URL` (used by tests to point at a mock
 /// server, and by GitHub Enterprise Server deployments). Defaults to
 /// `https://api.github.com`.
+///
+/// Finding L11: Operator-controlled overrides must be valid HTTP/HTTPS URLs,
+/// and in production must use HTTPS unless hitting localhost/127.0.0.1.
 pub fn github_api_base() -> String {
-    std::env::var("GITHUB_API_BASE_URL")
+    let raw = std::env::var("GITHUB_API_BASE_URL")
         .map(|v| v.trim().trim_end_matches('/').to_string())
         .ok()
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| "https://api.github.com".to_string())
+        .filter(|v| !v.is_empty());
+
+    if let Some(val) = raw {
+        if let Ok(parsed) = reqwest::Url::parse(&val) {
+            let scheme = parsed.scheme();
+            let host = parsed.host_str().unwrap_or_default();
+            let is_prod = std::env::var("APP_ENV")
+                .map(|e| e == "production")
+                .unwrap_or(false);
+            if is_prod && scheme != "https" && host != "localhost" && host != "127.0.0.1" {
+                tracing::warn!(url = %val, "GITHUB_API_BASE_URL must use https:// in production; falling back to https://api.github.com");
+                return "https://api.github.com".to_string();
+            }
+            if scheme == "https" || scheme == "http" {
+                return val;
+            }
+        }
+        tracing::warn!("invalid GITHUB_API_BASE_URL; falling back to https://api.github.com");
+    }
+    "https://api.github.com".to_string()
 }
 
 /// A fetched repository on local disk. Removes its temporary directory on drop.
@@ -170,6 +191,11 @@ pub async fn fetch_repo_with_cancel(
     // 2. Resolve which branch to scan (blank means the repo default) and pin
     // its head commit — unless the caller pinned a SHA at submission time.
     let branch = resolve_branch(repo_branch, &metadata.default_branch);
+    if !is_valid_branch_name(&branch) {
+        return Err(AppError::BadRequest(format!(
+            "resolved branch name '{branch}' is invalid or contains forbidden characters"
+        )));
+    }
     let commit_sha = match requested_sha.map(str::trim).filter(|s| !s.is_empty()) {
         Some(pinned) => {
             if !is_valid_commit_sha(pinned) {
@@ -215,7 +241,7 @@ pub async fn fetch_repo_with_cancel(
         ));
     }
 
-    let bytes = read_bounded(resp, MAX_DOWNLOAD_BYTES).await?;
+    let bytes = read_bounded(resp, MAX_DOWNLOAD_BYTES, cancel).await?;
     if cancel() {
         return Err(AppError::Cancelled("fetch cancelled before extract".into()));
     }
@@ -298,6 +324,53 @@ pub fn resolve_branch(requested_branch: &str, default_branch: &str) -> String {
     } else {
         requested.to_string()
     }
+}
+
+/// Validate git branch name format according to git reference rules and security constraints.
+/// Finding L3: Reject path traversals, control characters, special characters, and excessive lengths.
+pub fn is_valid_branch_name(value: &str) -> bool {
+    let s = value.trim();
+    if s.is_empty() || s.len() > 255 {
+        return false;
+    }
+    if s.starts_with('/') || s.starts_with('.') || s.starts_with('-') {
+        return false;
+    }
+    if s.ends_with('/') || s.ends_with('.') || s.ends_with(".lock") {
+        return false;
+    }
+    if s.contains("..") || s.contains("//") || s.contains("@{") {
+        return false;
+    }
+    for c in s.chars() {
+        if c.is_ascii_control() || c.is_whitespace() {
+            return false;
+        }
+        if matches!(
+            c,
+            '~' | '^'
+                | ':'
+                | '?'
+                | '*'
+                | '['
+                | '\\'
+                | '#'
+                | '&'
+                | '\''
+                | '"'
+                | '<'
+                | '>'
+                | ';'
+                | '`'
+                | '$'
+                | '|'
+                | '{'
+                | '}'
+        ) {
+            return false;
+        }
+    }
+    true
 }
 
 /// A git commit sha is 40 lowercase hex characters. Anything else is not a
@@ -768,7 +841,7 @@ fn read_prefix(path: &Path, limit: u64) -> Result<Vec<u8>> {
     let mut file = std::fs::File::open(path)
         .map_err(|e| AppError::Internal(format!("snapshot read failed: {e}")))?;
     let mut buf = Vec::new();
-    file.by_ref()
+    std::io::Read::by_ref(&mut file)
         .take(limit)
         .read_to_end(&mut buf)
         .map_err(|e| AppError::Internal(format!("snapshot read failed: {e}")))?;
@@ -776,27 +849,140 @@ fn read_prefix(path: &Path, limit: u64) -> Result<Vec<u8>> {
 }
 
 /// Read an HTTP body up to `cap` bytes, erroring past the cap.
-async fn read_bounded(resp: reqwest::Response, cap: u64) -> Result<Vec<u8>> {
-    // Reject on the declared length before allocating, and verify again after.
+///
+/// Enforced incrementally while streaming, never after buffering: a chunked
+/// (or lying `Content-Length`) response cannot dictate backend memory. The
+/// declared length is still checked first when present, purely to fail faster.
+pub async fn read_bounded(
+    mut resp: reqwest::Response,
+    cap: u64,
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> Result<Vec<u8>> {
+    // Reject on the declared length before allocating, and verify again while
+    // streaming: the header is attacker-controlled and optional.
     if let Some(len) = resp.content_length() {
         if len > cap {
             return Err(AppError::PayloadTooLarge);
         }
     }
-    let bytes = resp
-        .bytes()
+    let mut out = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
         .await
-        .map_err(|e| AppError::HttpClientError(e.to_string()))?;
-    if bytes.len() as u64 > cap {
-        return Err(AppError::PayloadTooLarge);
+        .map_err(|e| AppError::HttpClientError(e.to_string()))?
+    {
+        if cancel() {
+            return Err(AppError::Cancelled("download cancelled".into()));
+        }
+        if out.len() as u64 + chunk.len() as u64 > cap {
+            return Err(AppError::PayloadTooLarge);
+        }
+        out.extend_from_slice(&chunk);
     }
-    Ok(bytes.to_vec())
+    Ok(out)
 }
 
 /// Extract a gzip-compressed tar into `dest`, enforcing every cap and rejecting
 /// every link/escape entry.
 pub fn extract_tarball(gz: &[u8], dest: &Path) -> Result<()> {
     extract_tarball_with_cancel(gz, dest, &|| false)
+}
+
+/// Streaming chunk size for archive bodies. RAM stays near this no matter what
+/// member sizes headers claim: a gigabyte member never materializes in memory.
+const STREAM_CHUNK_BYTES: usize = 64 * 1024;
+/// Ceiling on GNU long-name / PAX `path=` payloads. Real names beyond
+/// `MAX_PATH_CHARS` are rejected by `safe_join` anyway; this stops a hostile
+/// name header from becoming a memory bomb first.
+const MAX_META_BYTES: u64 = 64 * 1024;
+
+/// Fill exactly one 512-byte tar block from the inflation stream.
+/// `Ok(false)` is clean EOF on an entry boundary; EOF anywhere else is
+/// truncation, exactly as before.
+fn fill_block(decoder: &mut flate2::read::GzDecoder<&[u8]>, block: &mut [u8; 512]) -> Result<bool> {
+    let mut filled = 0;
+    while filled < block.len() {
+        match decoder.read(&mut block[filled..]) {
+            Ok(0) => {
+                if filled == 0 {
+                    return Ok(false);
+                }
+                return Err(AppError::Internal("truncated tar archive".into()));
+            }
+            Ok(n) => filled += n,
+            Err(e) => return Err(AppError::Internal(format!("gzip decode failed: {e}"))),
+        }
+    }
+    Ok(true)
+}
+
+/// Charge `n` freshly inflated bytes against the archive budget.
+fn charge(total: &mut u64, n: u64) -> Result<()> {
+    *total = total.saturating_add(n);
+    if *total > MAX_TOTAL_BYTES {
+        return Err(AppError::PayloadTooLarge);
+    }
+    Ok(())
+}
+
+/// Stream exactly `size` bytes into `out`, charging the shared budget as the
+/// bytes inflate. `cancel` is consulted every chunk so a huge member cannot
+/// grind on after cancellation.
+fn stream_exact(
+    decoder: &mut flate2::read::GzDecoder<&[u8]>,
+    size: u64,
+    out: &mut dyn Write,
+    total: &mut u64,
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> Result<()> {
+    let mut remaining = size;
+    let mut chunk = [0u8; STREAM_CHUNK_BYTES];
+    while remaining > 0 {
+        if cancel() {
+            return Err(AppError::Cancelled("extract cancelled".into()));
+        }
+        let want = (remaining as usize).min(chunk.len());
+        let n = match decoder.read(&mut chunk[..want]) {
+            Ok(0) => return Err(AppError::Internal("truncated tar archive".into())),
+            Ok(n) => n,
+            Err(e) => return Err(AppError::Internal(format!("gzip decode failed: {e}"))),
+        };
+        out.write_all(&chunk[..n])
+            .map_err(|e| AppError::Internal(format!("failed to write file: {e}")))?;
+        charge(total, n as u64)?;
+        remaining -= n as u64;
+    }
+    Ok(())
+}
+
+/// Read a GNU long-name / PAX `path=` payload, bounded: name headers are
+/// metadata, never bulk data.
+fn read_meta_body(
+    decoder: &mut flate2::read::GzDecoder<&[u8]>,
+    size: u64,
+    total: &mut u64,
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> Result<Vec<u8>> {
+    if size > MAX_META_BYTES {
+        return Err(AppError::PayloadTooLarge);
+    }
+    let mut body = Vec::new();
+    stream_exact(decoder, size, &mut body, total, cancel)?;
+    Ok(body)
+}
+
+/// Discard exactly `size` bytes of a skipped member, still charging the shared
+/// budget: skipped bytes are archive content too, and without this a giant
+/// skipped member would inflate unboundedly for free. (Padding bytes are the
+/// only exception: at most 511 per entry, already bounded by the entry-count
+/// cap, and charging them could tip legitimate near-cap archives over.)
+fn discard_exact(
+    decoder: &mut flate2::read::GzDecoder<&[u8]>,
+    size: u64,
+    total: &mut u64,
+    cancel: &(dyn Fn() -> bool + Sync),
+) -> Result<()> {
+    stream_exact(decoder, size, &mut std::io::sink(), total, cancel)
 }
 
 /// Extract with cancellation: `cancel()` is consulted every few entries so a
@@ -806,29 +992,27 @@ pub fn extract_tarball_with_cancel(
     dest: &Path,
     cancel: &(dyn Fn() -> bool + Sync),
 ) -> Result<()> {
+    // Inflated incrementally as the tar walker pulls: at no point does the
+    // full decompressed archive sit in memory. Every inflated byte is charged
+    // against MAX_TOTAL_BYTES as it arrives, so a high-ratio gzip aborts
+    // mid-stream instead of after materializing gigabytes.
     let mut decoder = flate2::read::GzDecoder::new(gz);
-    let mut data = Vec::new();
-    decoder
-        .read_to_end(&mut data)
-        .map_err(|e| AppError::Internal(format!("gzip decode failed: {e}")))?;
 
-    // Decompression bomb guard: refuse before touching the disk.
-    if data.len() as u64 > MAX_TOTAL_BYTES {
-        return Err(AppError::PayloadTooLarge);
-    }
-
-    let mut pos = 0usize;
     let mut pending_name: Option<String> = None;
     let mut file_count = 0usize;
     let mut total: u64 = 0;
+    let mut header = [0u8; 512];
 
-    while pos + 512 <= data.len() {
-        // Consulted every entry: a single boolean load against disk IO, so a
-        // cancelled job stops extracting at once instead of grinding on.
+    loop {
+        // Consulted every entry and every body chunk: a single boolean load
+        // against disk IO, so a cancelled job stops extracting at once instead
+        // of grinding on.
         if cancel() {
             return Err(AppError::Cancelled("extract cancelled".into()));
         }
-        let header = &data[pos..pos + 512];
+        if !fill_block(&mut decoder, &mut header)? {
+            break;
+        }
         // Two zero blocks mark the end of the archive.
         if header.iter().all(|&b| b == 0) {
             break;
@@ -839,32 +1023,33 @@ pub fn extract_tarball_with_cancel(
         let typeflag = header[156];
         let prefix = cstr(&header[345..500]);
 
-        pos += 512;
-        let data_end = pos
-            .checked_add(size as usize)
-            .ok_or_else(|| AppError::Internal("tar entry size overflow".into()))?;
-        if data_end > data.len() {
-            return Err(AppError::Internal("truncated tar archive".into()));
-        }
-        let body = &data[pos..data_end];
-
         match typeflag {
             // GNU long name: the following entry's name is this payload.
             b'L' => {
                 pending_name = Some(
-                    String::from_utf8_lossy(body)
-                        .trim_end_matches('\0')
-                        .to_string(),
+                    String::from_utf8_lossy(&read_meta_body(
+                        &mut decoder,
+                        size,
+                        &mut total,
+                        cancel,
+                    )?)
+                    .trim_end_matches('\0')
+                    .to_string(),
                 );
             }
             // PAX extended header: honour only `path=`.
             b'x' => {
-                if let Some(p) = pax_path(body) {
+                if let Some(p) = pax_path(&read_meta_body(&mut decoder, size, &mut total, cancel)?)
+                {
                     pending_name = Some(p);
                 }
             }
-            // Global PAX header: ignore.
-            b'g' => {}
+            // Global PAX header: ignored, but its body still occupies stream
+            // bytes and must be consumed (the old positional walker skipped it
+            // implicitly; the streaming walker must do so explicitly).
+            b'g' => {
+                discard_exact(&mut decoder, size, &mut total, cancel)?;
+            }
             b'0' | b'\0' | b'7' => {
                 let name = resolve_name(&pending_name, &raw_name, &prefix);
                 pending_name = None;
@@ -895,8 +1080,17 @@ pub fn extract_tarball_with_cancel(
                         AppError::Internal(format!("failed to create directory: {e}"))
                     })?;
                 }
-                std::fs::write(&path, body)
+                // Streamed straight to disk, never materialized: a huge member
+                // cannot amplify memory no matter what its header claims.
+                let mut file = std::fs::File::create(&path)
                     .map_err(|e| AppError::Internal(format!("failed to write file: {e}")))?;
+                if let Err(e) = stream_exact(&mut decoder, size, &mut file, &mut total, cancel) {
+                    // No half-written members: the fetch layer owns (and cleans)
+                    // the whole directory, but a bare `extract_tarball` caller
+                    // must not inherit a partial file either.
+                    let _ = std::fs::remove_file(&path);
+                    return Err(e);
+                }
             }
             b'5' => {
                 let name = resolve_name(&pending_name, &raw_name, &prefix);
@@ -908,6 +1102,9 @@ pub fn extract_tarball_with_cancel(
                     return Err(AppError::PayloadTooLarge);
                 }
                 let path = safe_join(dest, &name)?;
+                // A directory claims no body, but a hostile one might: consume
+                // any claimed bytes so the stream stays aligned.
+                discard_exact(&mut decoder, size, &mut total, cancel)?;
                 std::fs::create_dir_all(&path)
                     .map_err(|e| AppError::Internal(format!("failed to create directory: {e}")))?;
             }
@@ -917,13 +1114,26 @@ pub fn extract_tarball_with_cancel(
                     "repository archive contains a link entry; refusing to extract".into(),
                 ));
             }
-            // Everything else (devices, fifos, …) is skipped.
+            // Everything else (devices, fifos, …) is skipped — by consuming
+            // its bytes through the budget, so a giant skipped member cannot
+            // inflate for free.
             _ => {
+                discard_exact(&mut decoder, size, &mut total, cancel)?;
                 pending_name = None;
             }
         }
 
-        pos = data_end + pad(size as usize);
+        // Consume record padding (at most 511 bytes: bounded by construction,
+        // so it needs no budget charge and no cancel poll).
+        let mut padding = pad(size as usize);
+        let mut pbyte = [0u8; 1];
+        while padding > 0 {
+            match decoder.read(&mut pbyte) {
+                Ok(0) => return Err(AppError::Internal("truncated tar archive".into())),
+                Ok(_) => padding -= 1,
+                Err(e) => return Err(AppError::Internal(format!("gzip decode failed: {e}"))),
+            }
+        }
     }
 
     Ok(())

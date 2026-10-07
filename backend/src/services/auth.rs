@@ -58,42 +58,6 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
         .is_ok())
 }
 
-pub fn password_needs_rehash(hash: &str) -> bool {
-    // Parse the modular crypt format to extract argon2 parameters
-    // Format: $argon2id$v=19$m=65536,t=3,p=4$salt$hash
-    let parts: Vec<&str> = hash.split('$').collect();
-    if parts.len() < 6 {
-        // If we can't parse, assume it needs rehash (better safe)
-        return true;
-    }
-    // The parameter part is parts[3] (after $argon2id$v=19$)
-    let param_part = parts[3];
-    // Parse m=...,t=...,p=...
-    let mut m: Option<u32> = None;
-    let mut t: Option<u32> = None;
-    let mut p: Option<u32> = None;
-    for param in param_part.split(',') {
-        let kv: Vec<&str> = param.split('=').collect();
-        if kv.len() == 2 {
-            match kv[0] {
-                "m" => m = kv[1].parse().ok(),
-                "t" => t = kv[1].parse().ok(),
-                "p" => p = kv[1].parse().ok(),
-                _ => {}
-            }
-        }
-    }
-    // Current recommended parameters (matching Argon2::default() used in hash_password)
-    let current_m = 65536;
-    let current_t = 3;
-    let current_p = 1; // Note: Argon2::default() uses parallelism=1
-                       // If any parameter is less than current, recommend rehash
-
-    m.is_none_or(|val| val < current_m)
-        || t.is_none_or(|val| val < current_t)
-        || p.is_none_or(|val| val < current_p)
-}
-
 pub async fn check_login_lockout(
     pool: &sqlx::PgPool,
     key: &str,
@@ -185,7 +149,8 @@ pub fn create_refresh_token(
     let claims = TokenClaims {
         sub: user_id.into(),
         username: username.into(),
-        exp: (now + Duration::days(30)).timestamp(),
+        // Phase E (H4): Reduced from 30 days to 7 days with continuous rotation on every refresh.
+        exp: (now + Duration::days(7)).timestamp(),
         nbf: now.timestamp() - 5,
         iat: now.timestamp(),
         jti: jti.clone(),

@@ -45,14 +45,19 @@ impl axum::extract::FromRequestParts<Arc<crate::AppState>> for AuthenticatedUser
                     })
             })
             .or_else(|| {
-                // SSE / EventSource cannot set Authorization header — allow ?token= fallback.
-                // Query is `?token=<jwt>` or `?access_token=<jwt>` (both accepted).
+                // Query parameter auth is strictly restricted to SSE streaming endpoints
+                // (where standard EventSource cannot set Authorization headers in non-credentialed scenarios).
+                // It is strictly rejected on all standard REST endpoints (Phase E / H4 session security).
+                let path = parts.uri.path();
+                if !path.starts_with("/api/v1/sse/") && !path.starts_with("/sse/") {
+                    return None;
+                }
                 let q = parts.uri.query().unwrap_or("");
                 for pair in q.split('&') {
                     let mut kv = pair.splitn(2, '=');
                     let k = kv.next().unwrap_or("");
                     let v = kv.next().unwrap_or("");
-                    if k == "token" || k == "access_token" {
+                    if k == "token" || k == "access_token" || k == "ticket" {
                         let decoded = percent_encoding::percent_decode_str(v)
                             .decode_utf8()
                             .map(|s| s.into_owned())

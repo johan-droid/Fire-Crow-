@@ -74,6 +74,35 @@ pub async fn begin_execution(pool: &PgPool, job_id: &str) -> Result<ExecutionLea
         )));
     }
 
+    // Ensure the parent audit_job transitions legally to 'running'
+    let current_job: Option<(String,)> =
+        sqlx::query_as("SELECT status FROM audit_jobs WHERE id=$1")
+            .bind(job_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(AppError::Database)?;
+
+    if let Some((status,)) = current_job {
+        if matches!(
+            status.as_str(),
+            "failed" | "cancelled" | "partial" | "engine_unavailable"
+        ) {
+            // Legal retry transition: terminal -> queued
+            sqlx::query("UPDATE audit_jobs SET status='queued' WHERE id=$1")
+                .bind(job_id)
+                .execute(pool)
+                .await
+                .map_err(AppError::Database)?;
+        }
+        // Legal launch transition: queued -> running
+        let _ = sqlx::query(
+            "UPDATE audit_jobs SET status='running', started_at=COALESCE(started_at, NOW()) WHERE id=$1 AND status='queued'",
+        )
+        .bind(job_id)
+        .execute(pool)
+        .await;
+    }
+
     let owner_token = generate_uuid();
     for _ in 0..5 {
         let (next,): (i32,) = sqlx::query_as(

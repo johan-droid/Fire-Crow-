@@ -299,7 +299,17 @@ impl Scanner {
             timeout_secs: OSV_TIMEOUT_SECS,
             resource_limits: ResourceLimits::default(),
             extra_tmpfs: Vec::new(),
-            env: Vec::new(),
+            env: {
+                let mut env_vars = Vec::new();
+                if let Ok(proxy) = std::env::var("OSV_EGRESS_PROXY") {
+                    let trimmed = proxy.trim();
+                    if !trimmed.is_empty() {
+                        env_vars.push(("HTTPS_PROXY".into(), trimmed.to_string()));
+                        env_vars.push(("HTTP_PROXY".into(), trimmed.to_string()));
+                    }
+                }
+                env_vars
+            },
             extra_mounts: Vec::new(),
         }
     }

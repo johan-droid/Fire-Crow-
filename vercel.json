@@ -8,7 +8,7 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://api.firecrow.dev/api/:match*"
+      "destination": "https://firecrow-backend.onrender.com/api/:match*"
     },
     {
       "source": "/(.*)",

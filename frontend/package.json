@@ -8,8 +8,6 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "pages:dev": "wrangler pages dev dist",
-    "deploy": "npm run build && wrangler pages deploy dist --project-name=fire-crow",
     "vercel-build": "npm run build"
   },
   "dependencies": {
@@ -24,7 +22,6 @@
     "@vitejs/plugin-react": "^6.0.3",
     "oxlint": "^1.71.0",
     "typescript": "~6.0.2",
-    "vite": "^8.1.1",
-    "wrangler": "^3.100.0"
+    "vite": "^8.1.1"
   }
 }

@@ -62,7 +62,11 @@ pub fn api_router() -> Router<Arc<AppState>> {
             crate::api::routes_auth::router()
                 .layer(crate::middleware::rate_limit::rate_limiter("5/minute")),
         )
-        .nest("/audit", crate::api::routes_audit::router())
+        .nest(
+            "/audit",
+            crate::api::routes_audit::router()
+                .layer(crate::middleware::rate_limit::rate_limiter("10/minute")),
+        )
         .nest("/system", crate::api::routes_system::router())
         .nest("/storage", crate::api::routes_storage::router())
         .nest("/chat", crate::api::routes_chat::router())
@@ -136,6 +140,9 @@ pub fn build_app(state: Arc<AppState>, serve_frontend: bool) -> Router {
     // Innermost first. See the module docs on ordering.
     let app = app
         .layer(cors_layer(&settings))
+        .layer(axum::extract::DefaultBodyLimit::max(
+            settings.max_json_body_bytes as usize,
+        ))
         .layer(tower_http::limit::RequestBodyLimitLayer::new(
             settings.max_request_body_bytes as usize,
         ))

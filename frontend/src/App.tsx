@@ -119,23 +119,18 @@ interface MfaStatus {
 }
 
 const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
-  const token = localStorage.getItem('access_token');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {}),
   };
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
   const res = await fetch(`${API_BASE}${endpoint}`, {
     credentials: 'include',
     ...options,
     headers,
   });
 
-  // Auto purge tokens on 401 Unauthorized
+  // Auto purge cookies on 401 Unauthorized
   if (res.status === 401 && endpoint !== '/auth/login' && endpoint !== '/auth/register') {
-    localStorage.removeItem('access_token');
     document.cookie = 'access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
     document.cookie = 'refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
   }
@@ -488,14 +483,11 @@ function App() {
       }, 5000);
     };
 
-    // SSE: backend now accepts ?token= (EventSource can't send Bearer header)
-    const token = localStorage.getItem('access_token') || '';
-    const sseUrl = token
-      ? `${API_BASE}/sse/job/${targetJobId}?token=${encodeURIComponent(token)}`
-      : `${API_BASE}/sse/job/${targetJobId}`;
+    // SSE: Authenticate via HttpOnly credentials (withCredentials: true)
+    const sseUrl = `${API_BASE}/sse/job/${targetJobId}`;
 
     try {
-      sse = new EventSource(sseUrl);
+      sse = new EventSource(sseUrl, { withCredentials: true });
       const onUpdate = (ev: MessageEvent) => {
         try {
           const p = JSON.parse((ev as any).data);
@@ -587,7 +579,6 @@ function App() {
           navigate('/console/overview');
           fetchDashboardData(true, { force: true });
         } else {
-          localStorage.removeItem('access_token');
           document.cookie = 'access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
           document.cookie = 'refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
           setUser(null);
@@ -617,9 +608,6 @@ function App() {
         }
 
         const exchangeData = await exchangeRes.json();
-        if (exchangeData.access_token) {
-          localStorage.setItem('access_token', exchangeData.access_token);
-        }
 
         if (exchangeData.user_id && exchangeData.username) {
           setUser({
@@ -686,7 +674,6 @@ function App() {
     } catch (err) {
       console.error('Logout error:', err);
     } finally {
-      localStorage.removeItem('access_token');
       document.cookie = 'access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
       document.cookie = 'refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
       setUser(null);
@@ -903,13 +890,9 @@ function App() {
     );
   }
 
-  // Guard: unauthenticated console access -> redirect to login
+  // Guard: unauthenticated console access handled by checkSession
   if (isConsole && !user && !isLoading) {
-    // let checkSession try first; but immediate redirect if no token
-    const token = localStorage.getItem('access_token');
-    if (!token) {
-      // will be handled by checkSession; show loading briefly
-    }
+    // will be handled by checkSession; show loading briefly
   }
 
   // Render Dashboard View — per-function windows with proper navigation

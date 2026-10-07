@@ -212,6 +212,8 @@ pub struct Settings {
     pub default_budget_usd: f64,
     #[serde(default = "default_scanner_timeout")]
     pub scanner_command_timeout: i32,
+    #[serde(default)]
+    pub osv_egress_proxy: Option<String>,
     #[serde(default = "default_scanner_output_max")]
     pub scanner_output_max_length: i32,
     #[serde(default = "default_api_discovery_limit")]
@@ -358,6 +360,7 @@ impl std::fmt::Debug for Settings {
             .field("max_scan_duration", &self.max_scan_duration)
             .field("default_budget_usd", &self.default_budget_usd)
             .field("scanner_command_timeout", &self.scanner_command_timeout)
+            .field("osv_egress_proxy", &self.osv_egress_proxy)
             .field("scanner_output_max_length", &self.scanner_output_max_length)
             .field("api_discovery_limit", &self.api_discovery_limit)
             .field(

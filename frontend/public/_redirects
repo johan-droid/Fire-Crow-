@@ -1,7 +1,0 @@
-# Cloudflare Pages Redirect & SPA Routing Rules
-
-# Proxy API requests to the Fire Crow Axum backend
-/api/*  https://api.firecrow.dev/api/:splat  200
-
-# Single Page Application (SPA) Fallback
-/*  /index.html  200

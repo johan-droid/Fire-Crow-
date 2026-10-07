@@ -170,6 +170,59 @@ pub async fn delivery_state(pool: &PgPool, key: &DeliveryKey) -> Result<Option<D
     ))
 }
 
+/// Resolve the appropriate delivery_version for a delivery attempt (Phase F / M4).
+/// Stale `sending` rows (> 5 minutes old) are automatically reclaimed to `failed`.
+/// A failed attempt advances to `version + 1` so retry can proceed without blocking the channel.
+pub async fn resolve_delivery_version(
+    pool: &PgPool,
+    execution_id: &str,
+    channel: &'static str,
+    destination_ref: &str,
+) -> Result<i32> {
+    // Reclaim stale 'sending' deliveries orphaned by crashed workers (> 5 mins)
+    let _ = sqlx::query(
+        "UPDATE audit_deliveries
+            SET status = 'failed',
+                failure_class = 'timeout',
+                failure_reason = 'delivery attempt timed out in sending state'
+          WHERE execution_id = $1 AND channel = $2 AND destination_ref = $3
+            AND status = 'sending'
+            AND created_at < NOW() - INTERVAL '5 minutes'",
+    )
+    .bind(execution_id)
+    .bind(channel)
+    .bind(destination_ref)
+    .execute(pool)
+    .await;
+
+    let latest: Option<(i32, String)> = sqlx::query_as(
+        "SELECT delivery_version, status
+           FROM audit_deliveries
+          WHERE execution_id = $1 AND channel = $2 AND destination_ref = $3
+          ORDER BY delivery_version DESC LIMIT 1",
+    )
+    .bind(execution_id)
+    .bind(channel)
+    .bind(destination_ref)
+    .fetch_optional(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    match latest {
+        None => Ok(1),
+        Some((_, status)) if status == "sent" => Err(AppError::Conflict(format!(
+            "execution {execution_id} has already been delivered on {channel}"
+        ))),
+        Some((_, status)) if status == "sending" => Err(AppError::Conflict(format!(
+            "a delivery for execution {execution_id} on {channel} is already in progress"
+        ))),
+        Some((ver, _)) => {
+            // Prior attempt failed; advance version so retry can proceed while preserving audit history
+            Ok(ver + 1)
+        }
+    }
+}
+
 /// Claim a delivery attempt, or report that it cannot proceed.
 ///
 /// The claim is a single insert against the full idempotency key, so two
@@ -183,6 +236,23 @@ pub async fn delivery_state(pool: &PgPool, key: &DeliveryKey) -> Result<Option<D
 /// `sent`, and refuses rather than re-sending into a channel that may already have
 /// the message.
 async fn claim_delivery(pool: &PgPool, key: &DeliveryKey) -> Result<()> {
+    // Auto-reclaim stale 'sending' for this exact key if orphaned (> 5 mins)
+    let _ = sqlx::query(
+        "UPDATE audit_deliveries
+            SET status = 'failed',
+                failure_class = 'timeout',
+                failure_reason = 'delivery attempt timed out in sending state'
+          WHERE execution_id = $1 AND channel = $2 AND destination_ref = $3
+            AND delivery_version = $4 AND status = 'sending'
+            AND created_at < NOW() - INTERVAL '5 minutes'",
+    )
+    .bind(&key.execution_id)
+    .bind(key.channel)
+    .bind(&key.destination_ref)
+    .bind(key.delivery_version)
+    .execute(pool)
+    .await;
+
     let inserted = sqlx::query(
         "INSERT INTO audit_deliveries
              (execution_id, channel, destination_ref, delivery_version, status, attempts, created_at)
@@ -334,11 +404,29 @@ pub async fn deliver_execution_email(
     mailer: &crate::services::email::EmailService,
     artifact: &EmailArtifact,
 ) -> Result<DeliveryOutcome> {
+    let already_sent: Option<(i32,)> = sqlx::query_as(
+        "SELECT delivery_version FROM audit_deliveries
+          WHERE execution_id = $1 AND channel = $2 AND destination_ref = $3 AND status = 'sent'
+          LIMIT 1",
+    )
+    .bind(execution_id)
+    .bind(CHANNEL_EMAIL)
+    .bind(recipient)
+    .fetch_optional(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    if already_sent.is_some() {
+        return Ok(DeliveryOutcome::AlreadySent);
+    }
+
+    let delivery_version =
+        resolve_delivery_version(pool, execution_id, CHANNEL_EMAIL, recipient).await?;
     let key = DeliveryKey {
         execution_id: execution_id.to_string(),
         channel: CHANNEL_EMAIL,
         destination_ref: recipient.to_string(),
-        delivery_version: 1,
+        delivery_version,
     };
 
     if let Some(existing) = delivery_state(pool, &key).await? {

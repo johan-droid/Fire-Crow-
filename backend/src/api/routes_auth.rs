@@ -190,42 +190,70 @@ pub async fn register(
     let username = payload
         .get("username")
         .and_then(|v| v.as_str())
+        .map(str::trim)
         .ok_or_else(|| AppError::BadRequest("Missing username".into()))?;
+    if username.is_empty()
+        || username.len() > 64
+        || !username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(AppError::BadRequest(
+            "Username must be 1-64 alphanumeric characters, underscores, or hyphens".into(),
+        ));
+    }
+
     let password = payload
         .get("password")
         .and_then(|v| v.as_str())
         .ok_or_else(|| AppError::BadRequest("Missing password".into()))?;
     let email_input = payload.get("email").and_then(|v| v.as_str()).unwrap_or("");
     let email = if email_input.trim().is_empty() {
-        format!("{}@local.firecrow", username.trim().to_lowercase())
+        format!("{}@local.firecrow", username.to_lowercase())
     } else {
         email_input.trim().to_lowercase()
     };
 
-    if password.len() < 8 {
+    if password.len() < 10 {
         return Err(AppError::BadRequest(
-            "Password must be at least 8 characters".into(),
+            "Password must be at least 10 characters".into(),
         ));
     }
     let password_hash = crate::services::auth::hash_password(password)?;
     let user_id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().naive_utc();
-    sqlx::query("INSERT INTO users (id, username, email, password_hash, is_active, credit_balance, created_at) VALUES ($1,$2,$3,$4,true,0.0,$5)")
-        .bind(&user_id).bind(username).bind(&email).bind(password_hash).bind(now)
-        .execute(state.pool()).await.map_err(AppError::Database)?;
-    crate::services::security_log::record_security_event(
-        state.pool(),
-        Some(&user_id),
-        None,
-        "user_registered",
-        None,
-        None,
+    let insert_res = sqlx::query(
+        "INSERT INTO users (id, username, email, password_hash, is_active, credit_balance, created_at) VALUES ($1,$2,$3,$4,true,0.0,$5)",
     )
-    .await
-    .ok();
-    Ok(Json(
-        serde_json::json!({"user_id": user_id, "username": username, "email": email}),
-    ))
+    .bind(&user_id)
+    .bind(username)
+    .bind(&email)
+    .bind(password_hash)
+    .bind(now)
+    .execute(state.pool())
+    .await;
+
+    match insert_res {
+        Ok(_) => {
+            crate::services::security_log::record_security_event(
+                state.pool(),
+                Some(&user_id),
+                None,
+                "user_registered",
+                None,
+                None,
+            )
+            .await
+            .ok();
+            Ok(Json(
+                serde_json::json!({"user_id": user_id, "username": username, "email": email}),
+            ))
+        }
+        Err(sqlx::Error::Database(db_err)) if db_err.is_unique_violation() => Err(
+            AppError::Conflict("An account with this username or email already exists".into()),
+        ),
+        Err(e) => Err(AppError::Database(e)),
+    }
 }
 
 pub async fn login(
