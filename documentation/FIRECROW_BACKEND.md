@@ -23,30 +23,25 @@ Nothing is reported that did not come out of a scanner.
 
 ## 2. Security pipeline
 
-```text
-GitHub repository
-        ↓
-authenticated repository access (OAuth token or GitHub App installation token)
-        ↓
-immutable commit snapshot (pinned 40-hex SHA; tarball caps; no symlinks/`..`)
-        ↓
-sandboxed scanner execution (one container per tool)
-        ↓
-  Gitleaks (secrets) · OSV-Scanner (dependencies) · Semgrep (SAST)
-        ↓
-raw scanner JSON (file artifact, never log-mixed stdout)
-        ↓
-adapter parse → canonical Finding (evidence validated, redacted, bounded)
-        ↓
-exact-identity deduplication + correlation
-        ↓
-Canonical Audit v1 (provenance preserved; failure ≠ clean)
-        ↓
-deterministic report (JSON / Markdown / HTML, persisted per execution)
-        ↓
-optional validated AI narrative (explains only; never mutates facts)
-        ↓
-delivery (email, Telegram) · GitHub Check Run status
+```mermaid
+graph TD
+    Client[Browser / API Client] -->|HTTPS| Axum[Axum API Server :8000]
+    Axum -->|Job Queue & State| Postgres[(PostgreSQL)]
+    Axum -->|Claim Job| Worker[Worker Pool]
+    Worker -->|1. Intake & Fetch| Fetch[Fetch Pinned 40-Hex Commit SHA]
+    Fetch -->|2. Hardened Sandbox| Sandbox[Docker Sandbox Execution]
+    Sandbox -->|Secrets| Gitleaks[Gitleaks v8.18.4 --network=none]
+    Sandbox -->|Dependencies| OSV[OSV-Scanner v2.2.4 --network=bridge]
+    Sandbox -->|SAST| Semgrep[Semgrep 1.96.0 --network=none]
+    Gitleaks -->|Artifacts| Normalizer[3. Normalize & Deduplicate]
+    OSV -->|Artifacts| Normalizer
+    Semgrep -->|Artifacts| Normalizer
+    Normalizer -->|Canonical Findings| Canon[4. Canonical Audit v1]
+    Canon -->|Compute| Score[5. Security Score]
+    Score -->|Atomic Transaction| Commit[6. Finalize & Persist Execution]
+    Commit -->|Generate| Report[7. Deterministic Report JSON/MD/HTML]
+    Report -->|Optional Validate| AI[Optional AI Narrative Gemini]
+    Report -->|Dispatch| Delivery[Delivery SMTP / Telegram / Check Run]
 ```
 
 ## 3. Security boundary
@@ -98,16 +93,38 @@ unit-testable without Docker.
   null unless coverage is complete**; failure is explicit.
 - **Execution identity:** every audit belongs to exactly one execution.
 
-## 7. Execution lifecycle
+## 7. Execution lifecycle & Retries
 
-```text
-job → execution (attempt N) → fetch pinned SHA → scanner runs
-    → canonicalization → atomic finalization → report
-    → optional narrative → delivery / Check Run
+```mermaid
+graph TD
+    subgraph Execution Lifecycle
+        Job[Audit Job] --> Attempt[Execution Attempt N]
+        Attempt --> Fetch[1. Fetch Pinned Commit SHA]
+        Fetch --> Scan[2. Scanner Runs Gitleaks / OSV / Semgrep]
+        Scan --> Norm[3. Normalization Canonical Audit v1]
+        Norm --> Score[4. Deterministic Scoring]
+        Score --> Finalize[5. Atomic Finalization Single SQL Tx]
+        Finalize --> Report[6. Deterministic Report Generation]
+        Report --> Narrative[7. Optional AI Narrative]
+        Narrative --> Delivery[8. Delivery & GitHub Check Run]
+    end
 ```
 
-Retries create **separate execution identities** (attempt N+1). A retried
-job never mutates a previous attempt's rows.
+### Retry Invariant
+
+Retries create **separate execution identities** (attempt $N+1$). A retry never mutates a previous attempt's rows:
+
+```mermaid
+graph TD
+    Job[Audit Job]
+    Job --> Exec1["Execution 1 (Attempt 1) — Failed / Frozen"]
+    Job --> Exec2["Execution 2 (Attempt 2) — Cancelled / Frozen"]
+    Job --> Exec3["Execution 3 (Attempt 3) — Completed / Immutable"]
+
+    style Exec1 fill:#2d1515,stroke:#ff453a
+    style Exec2 fill:#2d2515,stroke:#ffd60a
+    style Exec3 fill:#152d15,stroke:#30d158
+```
 
 ## 8. Persistence guarantees
 

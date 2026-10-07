@@ -13,7 +13,7 @@ To enable GitHub login on your Fire Crow deployment, you must register a new OAu
 2. Click **Register a new application** (or **New OAuth App**).
 3. Fill out the application details:
    - **Application Name:** `Fire Crow (or your preferred name)`
-   - **Homepage URL:** The base URL of your frontend application (e.g., `http://localhost:5173` in development, or `https://app.firecrow.dev` in production).
+   - **Homepage URL:** The base URL of your frontend application (e.g., `http://localhost:3000` in development, or `https://app.firecrow.dev` in production).
    - **Application Description:** (Optional) Enter a brief description.
    - **Authorization callback URL:** The redirect endpoint on your backend application where GitHub sends the authorization code.
      - **Development default:** `http://localhost:8000/api/v1/auth/github/callback`
@@ -37,7 +37,7 @@ GITHUB_CLIENT_SECRET="your_copied_client_secret"
 
 # Redirect / callback routing configuration
 BACKEND_BASE_URL="http://localhost:8000" # Your Axum/Rust backend base URL
-FRONTEND_URL="http://localhost:5173"     # Your Vite+React frontend URL
+FRONTEND_URL="http://localhost:3000"     # Your Vite+React frontend URL
 ```
 
 ---

@@ -33,7 +33,7 @@ became of each entry.
 | `services/reporter.rs` | `Finding` (pre-Phase-13) | **Rewritten.** Now a pure function of `CanonicalAuditReport`. Accepts only a report model; no repository, no database, no findings query. |
 | `orchestrator/mod.rs` report step | raw `ScannerResult` + aggregated findings | **Demoted.** It *produces* the canonical audit and hands it to `build_report`; it is no longer a report source. Its output is committed by `finalize_execution`, not written separately. |
 | `api/routes_audit.rs` report routes | `audit_reports` table | **Kept, scoped.** Serves the persisted report; falls back to rebuilding from the execution's canonical document. Never queries findings independently. |
-| `api/routes_audit.rs` email route | `SELECT * FROM audit_reports WHERE job_id=$1` | **Corrected.** It silently returned an arbitrary attempt once reports became per-execution; it now joins `audit_executions` and takes the highest `attempt_number`. |
+| `api/routes_audit.rs` email route | `SELECT * FROM audit_reports WHERE job_id=$1` | **Replaced in Phase 17.** A job-level email route was ambiguous by construction; delivery is now strictly execution-scoped (`POST /audit/job/:job_id/execution/:execution_id/email`), taking no destination parameter in the request body and sending the finalized report to the account email address via SMTP. |
 | `services/attack_graph.rs` | `&[Finding]` | **Out of scope, unchanged.** Not the security report. Still reads findings directly. |
 | `services/remediation_planner.rs` | `&[Finding]` | **Out of scope, unchanged.** Not the security report. |
 | `services/llm.rs` | — | **Deliberately not wired in.** No call from any report path. |

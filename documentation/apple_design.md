@@ -100,14 +100,14 @@ The Bento Grid displays platform capabilities in asymmetric, modular glass conta
 - **Window Controls**: Triple traffic light buttons (Red `#ff5f56`, Amber `#ffbd2e`, Green `#27c93f`) with subtle inset shine.
 - **Segmented Control Tabs**: Cupertino capsule pill selector with animated sliding active indicator.
 - **Views**:
-  1. *Live Tokio Agent Stream*: Streaming log output with color-coded timestamps, phase names, and AST events.
-  2. *Attack Topology Map*: Clean SVG node graph representing ingress points, vulnerability nodes, and target clusters.
-  3. *AI Remediation Patch*: Side-by-side or unified diff block with green/red highlight lines and compiler verification badge.
+  1. *Live Execution Stream*: Streaming log output with color-coded timestamps, phase names, and execution events.
+  2. *Attack Topology Map*: Clean SVG node graph representing vulnerability nodes (edges unlinked in backend contract).
+  3. *Remediation Guidance*: Structured remediation cards explaining identified findings (prototype presentation; automated code patching is absent in the backend).
 
 ### 4.6 Interactive Scan Playground
 - **Repository Presets**: Capsule chips (`expressjs/express`, `tokio-rs/axum`, `fastapi`, `kubernetes`) for 1-click instant scans.
-- **Scan Pipeline Bar**: Smooth animated percentage bar with dynamic phase descriptions (`Cloning AST`, `Gemini Agentic Reasoning`, `Docker Sandbox Execution`, `Verification Complete`).
-- **Interactive Results Card**: Luminous discovery summary with direct CTA to launch the full console.
+- **Scan Pipeline Bar**: Smooth animated percentage bar with canonical phase descriptions (`Intake & Gate`, `Fetch Snapshot`, `Docker Sandboxes (Gitleaks, OSV, Semgrep)`, `Normalize & Dedupe`, `Score`, `Deterministic Report`, `Deliver`).
+- **Interactive Results Card**: Discovery summary with direct CTA to view the deterministic report.
 
 ---
 

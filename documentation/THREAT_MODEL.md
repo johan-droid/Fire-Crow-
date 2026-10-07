@@ -92,13 +92,8 @@ bounds/redaction → canonical validation → persistence.
 |---|---|
 | HTTP 5xx bodies | `error_sanitizer` middleware replaces detail in production (`src/app.rs:185`, `src/middleware/error_sanitizer.rs:10`) |
 | Application logs | URI query denylist incl. `client_secret` (`http_logger.rs:52`); JSON/text body redaction + 800-char UTF-8-safe truncation; response bodies redacted the same way |
-| Debug formatting | `Settings` and `ModelConfig` have secret-safe manual `Debug` impls (`config.rs`, `services/narrative.rs`); regression-tested |
+| Debug formatting | `Settings`, `ModelConfig`, and all credential-bearing database models (`User`, `GithubCredential`, `AuthExchangeCode`, `PushSubscription`, `UserSession`, `MfaConfiguration`, `SsoProvider`, `TurnstileVerifyRequest`) have secret-safe manual `Debug` impls (`redact_debug!` in `models/user.rs`; explicit impls elsewhere) masking password hashes, tokens, TOTP secrets, and client secrets; regression-tested (`tests/security_regressions.rs`) |
 | Delivery error rows | fixed failure classes only; provider bodies, prompts, findings never persisted (`src/orchestrator/delivery.rs:294-326`) |
-
-Known residual (accepted, documented): derived `Debug` on DB models
-(`User.github_access_token`, `GithubCredential.access_token`) — these are
-never formatted in code (no `{:?}` on models found); the write path for
-`SsoProvider.client_secret` nulls on read and skips serializing.
 
 ## 8. Resource budgets (exceeding → explicit state, never clean)
 

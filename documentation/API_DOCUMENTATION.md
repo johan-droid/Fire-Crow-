@@ -1,43 +1,54 @@
 # Fire Crow API Reference Manual 📖
 
-Welcome to the Fire Crow API documentation. This reference guide outlines all available REST endpoints, websocket/SSE streams, input schemas, authentication protocols, and integration guidelines.
+Welcome to the Fire Crow API documentation. This reference manual outlines all implemented REST endpoints, Server-Sent Events (SSE) streams, input schemas, authentication protocols, and integration contracts for the **Rust (Axum)** backend.
 
 ---
 
 ## 🔒 Authentication & Headers
 
-Fire Crow enforces a **secure-by-default** authentication strategy. Secure operations require either an HTTP Bearer Token, an API Key, or the `access_token` session cookie.
+Fire Crow enforces a **secure-by-default** authentication strategy. Requests to protected routes must provide credentials via an HTTP Bearer Token, an API Key, or the `fc_access_token` session cookie.
 
-### Headers Required for Authenticated Routes
+### Headers for Authenticated Routes
 | Header | Value | Description |
 | :--- | :--- | :--- |
 | `Authorization` | `Bearer <JWT_ACCESS_TOKEN>` | Required when JWT token authentication is used instead of session cookies. |
-| `X-API-Key` | `<SERVICE_ACCOUNT_API_KEY>` | Programmatic access key for CI/CD integrations & automated worker scripts. |
-| `X-Request-ID` | `<UUID>` | Optional trace ID. If omitted, the server generates and returns one in responses. |
+| `X-API-Key` | `<SERVICE_ACCOUNT_API_KEY>` | Programmatic access key for CI/CD integrations & automated worker scripts (`fc_sa_...` or `fc_svc_...`). |
+| `X-Request-ID` | `<UUID>` | Optional trace ID. If omitted, the server generates and returns a UUID in the response. |
 | `X-CSRF-Token` | `<CSRF_TOKEN>` | Required for state-changing operations (POST, PUT, DELETE) when `CSRF_ENABLED=true`. |
 
 ---
 
-## 🔑 API Keys, Service Accounts, & Environment Credentials Reference
+## 🔑 Environment Variables & Security Credentials
 
-Fire Crow integrates multiple external providers and security credentials. All sensitive API keys must be specified via environment variables or managed via the IAM Service Account API.
+All sensitive credentials and connection strings must be configured via environment variables (e.g., `backend/.env.local`).
 
-### Environment Variable & Provider Keys Table
+### Core Variables Table
 | Key Name | Type | Description | Mandatory |
 | :--- | :--- | :--- | :--- |
 | `SECRET_KEY` | String (min 32 chars) | HMAC secret key used for signing and verifying JWT access tokens. | **Yes** |
-| `ENCRYPTION_KEY` | String (min 32 chars) | AES encryption key used by `CryptoManager` for encrypting secrets in DB. | **Yes** |
-| `GITHUB_CLIENT_ID` | String | GitHub OAuth 2.0 Application Client ID. | **Yes (OAuth)** |
-| `GITHUB_CLIENT_SECRET` | String | GitHub OAuth 2.0 Application Client Secret. | **Yes (OAuth)** |
-| `GITHUB_TOKEN` | String (`ghp_...`) | Personal Access Token for GitHub repo scanning & agentic code analysis. | **Recommended** |
-| `GOOGLE_CLIENT_ID` | String | Google OpenID Connect (OIDC) Client ID. | Optional |
-| `GOOGLE_CLIENT_SECRET` | String | Google OpenID Connect (OIDC) Client Secret. | Optional |
-| `GEMINI_API_KEY` | String | Google Gemini Security LLM API Key for autonomous agent reasoning loops. | **Yes (AI Audits)** |
-| `SMTP_HOST` (see README) | String | Email delivery uses the SMTP transport via lettre (`services/email.rs`). `RESEND_API_KEY` is legacy/unused — documented as dead in `PRODUCTION_DEPLOYMENT.md`. | Optional |
-| `R2_ACCESS_KEY_ID` | String | Cloudflare R2 / S3 Storage Access Key ID for PDF audit reports. | Optional |
-| `R2_SECRET_ACCESS_KEY` | String | Cloudflare R2 / S3 Storage Secret Access Key. | Optional |
-| `DATABASE_URL` | String | PostgreSQL / Neon PostgreSQL connection string with SSL mode. | **Yes** |
-| `REDIS_URL` | String | Redis connection URL for token anti-replay revocation & rate limiting. | Optional |
+| `ENCRYPTION_KEY` | String (min 32 chars) | AES encryption key used by `CryptoManager` for encrypting secrets in DB. Must differ from `SECRET_KEY`. | **Yes** |
+| `DATABASE_URL` | String | PostgreSQL connection string (`postgresql://user:pass@host:5432/db`). | **Yes** |
+| `FRONTEND_URL` | String | Frontend URL for CORS (`http://localhost:3000` in dev, `https://app.firecrow.dev` in prod). | **Yes** |
+| `CORS_ORIGINS` | String | Permitted CORS origin list. | **Yes** |
+| `GITHUB_CLIENT_ID` | String | GitHub OAuth 2.0 Client ID. | Optional (OAuth login) |
+| `GITHUB_CLIENT_SECRET`| String | GitHub OAuth 2.0 Client Secret. | Optional (OAuth login) |
+| `GITHUB_TOKEN` | String (`ghp_...`) | Personal Access Token fallback for reading repositories. | Optional |
+| `GITHUB_APP_ID` | u64 | GitHub App ID for organization integrations (requires `GITHUB_APP_PRIVATE_KEY`). | Optional |
+| `GITHUB_APP_PRIVATE_KEY`| String (PEM) | RSA private key PEM for the GitHub App. | Optional |
+| `GITHUB_APP_WEBHOOK_SECRET`| String | HMAC secret for verifying GitHub App webhooks. | Optional |
+| `GEMINI_API_KEY` | String | Google Gemini API Key for optional narrative explanations. | Optional |
+| `GEMINI_MODEL` | String | Configured Gemini model name (e.g. `gemini-2.0-flash`). No silent fallback. | Optional |
+| `SMTP_HOST` | String | Hostname for SMTP email report delivery via `lettre`. | Optional |
+| `SMTP_PORT` | u16 (default 587) | Port for SMTP email delivery. | Optional |
+| `SMTP_USER` | String | Username for SMTP authentication. | Optional |
+| `SMTP_PASSWORD` | String | Password for SMTP authentication. | Optional |
+| `SENDER_EMAIL` | String | From address for audit report emails. | Optional |
+| `TELEGRAM_BOT_TOKEN` | String | Bot token for Telegram report delivery. | Optional |
+| `TELEGRAM_CHAT_ID` | String | Operator chat ID for Telegram report delivery. | Optional |
+| `REDIS_URL` | String | Optional Redis connection for session fast path and token revocation. | Optional |
+
+> [!NOTE]
+> `RESEND_API_KEY`, `BREVO_API_KEY`, and `GOOGLE_CLIENT_ID/SECRET` are dead/legacy configurations. The active email delivery transport is SMTP via `lettre`.
 
 ---
 
@@ -45,16 +56,16 @@ Fire Crow integrates multiple external providers and security credentials. All s
 1. [Authentication & Session Management](#1-authentication--session-management)
 2. [API Keys & Service Accounts (IAM)](#2-api-keys--service-accounts-iam)
 3. [Multi-Factor Authentication (MFA)](#3-multi-factor-authentication-mfa)
-4. [Single Sign-On (SSO) & OIDC/SAML](#4-single-sign-on-sso--oidcsaml)
+4. [Single Sign-On (SSO) & OIDC](#4-single-sign-on-sso--oidc)
 5. [Privileged Access Management (PAM)](#5-privileged-access-management-pam)
 6. [Identity & Access Management (IAM)](#6-identity--access-management-iam)
 7. [Multi-Tenancy](#7-multi-tenancy)
 8. [Domain Verification](#8-domain-verification)
-9. [Security Auditing & SSE Logging](#9-security-auditing--sse-logging)
-10. [Storage & Artifact Management](#10-storage--artifact-management)
-11. [Security Assistant (Chat)](#11-security-assistant-chat)
-12. [Leaderboard & Statistics](#12-leaderboard--statistics)
-13. [Push Notifications](#13-push-notifications)
+9. [Security Auditing & Execution Lifecycle](#9-security-auditing--execution-lifecycle)
+10. [GitHub App & Webhooks](#10-github-app--webhooks)
+11. [Server-Sent Events (SSE)](#11-server-sent-events-sse)
+12. [Storage & Artifact Management](#12-storage--artifact-management)
+13. [Non-Contract Stubs (Chat & Leaderboard)](#13-non-contract-stubs-chat--leaderboard)
 14. [User Management & GDPR Compliance](#14-user-management--gdpr-compliance)
 15. [Health & Diagnostics](#15-health--diagnostics)
 
@@ -62,10 +73,10 @@ Fire Crow integrates multiple external providers and security credentials. All s
 
 ## 1. Authentication & Session Management
 
-All auth routes are prefixed with `/api/v1/auth`.
+All authentication routes are mounted at `/api/v1/auth`.
 
 ### `POST /auth/register`
-Creates a new user account and returns credentials.
+Registers a new user account.
 - **Request Body (`RegisterRequest`):**
 ```json
 {
@@ -74,8 +85,8 @@ Creates a new user account and returns credentials.
   "email": "operator@company.com",
   "privacy_policy_accepted": true,
   "privacy_policy_version": "2026-06-06",
-  "timezone": "Asia/Kolkata",
-  "region": "IN"
+  "timezone": "UTC",
+  "region": "US"
 }
 ```
 - **Response (`TokenResponse`):**
@@ -89,7 +100,7 @@ Creates a new user account and returns credentials.
 ```
 
 ### `POST /auth/login`
-Authenticates user credentials. Enforces rate-limiting and account lockout policy.
+Authenticates credentials and sets the `fc_access_token` HTTP-only cookie.
 - **Request Body (`LoginRequest`):**
 ```json
 {
@@ -99,779 +110,356 @@ Authenticates user credentials. Enforces rate-limiting and account lockout polic
   "privacy_policy_version": "2026-06-06"
 }
 ```
-- **Response (`TokenResponse`):**
-```json
-{
-  "access_token": "ey...",
-  "token_type": "bearer",
-  "username": "operator_one",
-  "user_id": "usr_9f0a28b6"
-}
-```
-
-### `POST /auth/exchange`
-Verifies and exchanges GitHub OAuth code for a JWT.
-- **Request Body (`ExchangePayload`):**
-```json
-{
-  "code": "oauth_code_here"
-}
-```
-- **Response:** `200 OK` (JSON response containing session metadata or JWT).
 
 ### `GET /auth/github`
-Redirection endpoint initiating GitHub OAuth authentication.
-- **Query Parameters:**
-  - `privacy_policy_accepted` (boolean, Required)
-  - `privacy_policy_version` (string, Required)
-  - `timezone` (string, Optional)
-  - `region` (string, Optional)
-- **Response:** Redirects client to GitHub login screen.
+Initiates GitHub OAuth 2.0 redirect flow.
 
 ### `GET /auth/github/callback`
-GitHub OAuth callback landing point.
-- **Query Parameters:**
-  - `code` (string, Required)
-  - `state` (string, Required)
+Receives GitHub authorization code and state.
+
+### `POST /auth/exchange`
+Exchanges GitHub authorization code for a session token.
+- **Request Body:** `{ "code": "..." }`
 
 ### `GET /auth/me`
-Retrieves information about the current authenticated user.
+Retrieves the authenticated user profile.
 - **Requires Authentication**
-- **Response:**
-```json
-{
-  "user_id": "usr_9f0a28b6",
-  "username": "operator_one",
-  "email": "operator@company.com",
-  "role": "operator",
-  "tenant_id": "tenant_abc123"
-}
-```
 
 ### `POST /auth/logout`
-Clears HTTP-only cookies and revokes sessions.
-- **Response:** `{}`
+Revokes active session tokens and clears session cookies.
 
 ---
 
 ## 2. API Keys & Service Accounts (IAM)
 
-All IAM service account routes are prefixed with `/api/v1/iam`.
+Mounted at `/api/v1/iam`.
 
 ### `POST /iam/service-accounts`
-Creates a new programmatic API key / service account for CI/CD pipelines or background automated scripts.
-- **Requires Authentication** (Admin / Operator)
+Creates a programmatic service account key.
+- **Requires Authentication** (Admin)
 - **Request Body:**
 ```json
 {
   "name": "GitHub Actions CI Pipeline",
-  "description": "API key for automated static security analysis in PR workflows",
+  "description": "API key for automated repository auditing",
   "permissions": "audit:create,audit:read,report:read",
   "expires_at": "2027-01-01T00:00:00Z"
 }
 ```
-- **Response:**
-```json
-{
-  "id": "sa_8f9a2b1c",
-  "name": "GitHub Actions CI Pipeline",
-  "api_key": "fc_sa_live_9f0a8c7b6a5d4e3f2a1b0c9d8e7f6a5b",
-  "permissions": "audit:create,audit:read,report:read",
-  "created_by": "usr_9f0a28b6",
-  "is_active": true,
-  "created_at": "2026-08-10T21:45:00Z"
-}
-```
-> [!IMPORTANT]
-> The raw API key (`fc_sa_live_...`) is only returned ONCE upon creation. Store it securely in your deployment pipeline secret store.
+- **Response:** Returns the generated API key once.
 
 ### `POST /iam/service-accounts/:id/revoke`
-Immediately revokes an active API key / service account.
-- **Requires Authentication**
-- **Response:**
-```json
-{
-  "status": "revoked",
-  "id": "sa_8f9a2b1c"
-}
-```
+Revokes a service account key.
 
 ---
 
 ## 3. Multi-Factor Authentication (MFA)
 
-All MFA routes are prefixed with `/api/v1/mfa`.
+Mounted at `/api/v1/mfa`. Protected with a 5/minute rate limiter.
 
-### `POST /mfa/enroll`
-Initiates MFA enrollment, generating a new TOTP key, QR Code URI, and emergency recovery codes.
-- **Requires Authentication**
-- **Response:**
-```json
-{
-  "secret": "JBSWY3DPEHPK3PXP",
-  "uri": "otpauth://totp/Fire%20Crow:operator_one?secret=JBSWY3DPEHPK3PXP&issuer=Fire+Crow",
-  "recovery_codes": [
-    "abcd-1234-efgh",
-    "ijkl-5678-mnop",
-    "qrst-9012-uvwx",
-    "yzab-3456-cdef"
-  ]
-}
-```
-
-### `POST /mfa/activate`
-Activates enrolled MFA. Requires a valid token from the authenticator app.
-- **Request Body (`MFAActivateRequest`):**
-```json
-{
-  "token": "123456"
-}
-```
-- **Response:**
-```json
-{
-  "status": "activated",
-  "activated_at": "2026-07-13T02:00:00Z"
-}
-```
-
-### `POST /mfa/verify`
-Validates a one-time passcode.
-- **Request Body (`MFAVerifyRequest`):**
-```json
-{
-  "token": "654321"
-}
-```
-- **Response:**
-```json
-{
-  "verified": true
-}
-```
-
-### `POST /mfa/recovery`
-Uses one of the pre-generated recovery codes to log in when the TOTP device is lost.
-- **Request Body (`RecoveryCodeRequest`):**
-```json
-{
-  "code": "abcd-1234-efgh"
-}
-```
-- **Response:**
-```json
-{
-  "verified": true
-}
-```
-
-### `POST /mfa/disable`
-Disables multi-factor authentication for the active session.
-- **Requires Authentication**
-- **Response:**
-```json
-{
-  "status": "mfa_disabled"
-}
-```
-
-### `GET /mfa/status`
-Checks if MFA is configured and active for the logged-in operator.
-- **Response:**
-```json
-{
-  "mfa_enabled": true,
-  "activated_at": "2026-07-13T02:00:00Z"
-}
-```
-
-### `GET /mfa/admin/compliance`
-Lists administrators who haven't enabled MFA yet (Admin permission required).
-- **Response:**
-```json
-{
-  "requires_mfa": true,
-  "users_without_mfa": [
-    {
-      "user_id": "usr_00000000",
-      "username": "lazy_admin",
-      "email": "lazy@company.com"
-    }
-  ]
-}
-```
-
-### `POST /mfa/admin/enforce`
-Enforces MFA compliance by deactivating accounts of administrators who have not enabled MFA.
-- **Response:**
-```json
-{
-  "status": "enforced",
-  "deactivated_count": 1
-}
-```
+- `POST /mfa/enroll` — Generates a new TOTP secret, QR URI, and recovery codes.
+- `POST /mfa/activate` — Verifies first TOTP passcode and enables MFA.
+- `POST /mfa/verify` — Validates a TOTP code during session elevation.
+- `POST /mfa/recovery` — Validates emergency recovery code.
+- `POST /mfa/disable` — Disables MFA.
+- `GET /mfa/status` — Returns MFA configuration status.
+- `GET /mfa/admin/compliance` — (Admin) Lists admins lacking MFA.
+- `POST /mfa/admin/enforce` — (Admin) Enforces MFA policy.
 
 ---
 
-## 3. Single Sign-On (SSO) & OIDC/SAML
+## 4. Single Sign-On (SSO) & OIDC
 
-Prefixed with `/api/v1/sso`.
+Mounted at `/api/v1/sso`.
 
-### `GET /sso/providers`
-Lists configured SSO integrations.
-- **Response:** List of registered OIDC/SAML configurations.
-
-### `POST /sso/providers`
-Registers a new SSO Identity Provider (IdP).
-- **Request Body (`SSOProviderCreate`):**
-```json
-{
-  "name": "Okta SSO",
-  "provider_type": "oidc",
-  "issuer_url": "https://okta.company.com/oauth2/default",
-  "client_id": "client_id_guid",
-  "client_secret": "client_secret_hash",
-  "enforce_mfa": true,
-  "auto_provision": true,
-  "domains": ["company.com"]
-}
-```
-
-### `PUT /sso/providers/{provider_id}`
-Updates details of an existing identity provider.
-
-### `DELETE /sso/providers/{provider_id}`
-Removes an SSO provider integration.
-
-### `GET /sso/oidc/{provider_id}/login`
-Redirects the client to initiate OIDC Authorization Code Flow.
-
-### `GET /sso/oidc/callback`
-Consumes authentication tokens sent back by OIDC providers.
+- `GET /sso/providers` — Lists registered OIDC/SAML providers.
+- `POST /sso/providers` — Registers a new identity provider.
+- `PUT /sso/providers/:id` — Updates provider metadata.
+- `DELETE /sso/providers/:id` — Removes provider configuration.
+- `GET /sso/oidc/:id/login` — Initiates OIDC redirect.
+- `GET /sso/oidc/callback` — Handles provider authorization callback.
 
 ---
 
-## 4. Privileged Access Management (PAM)
+## 5. Privileged Access Management (PAM)
 
-Allows administrators to request time-bound elevated system authorizations. Routes are prefixed with `/api/v1/pam`.
+Mounted at `/api/v1/pam`.
 
-### `POST /pam/requests`
-Submits a request for temporary administrative privileges.
-- **Request Body:**
-```json
-{
-  "requested_role": "super_admin",
-  "duration_minutes": 120,
-  "reason": "Production hotfix deployment"
-}
-```
-- **Response:** Returns the request payload with a pending state status and unique request ID.
-
-### `GET /pam/requests/pending`
-Lists all unresolved requests (requires super admin authorization).
-
-### `POST /pam/requests/{request_id}/approve`
-Approves and starts the duration countdown on elevated privileges.
-
-### `POST /pam/requests/{request_id}/deny`
-Denies the active privilege escalation request.
-
-### `GET /pam/grants`
-Returns a list of actively running privilege elevations.
-
-### `POST /pam/grants/revoke`
-Immediately drops/revokes active elevated access credentials.
+- `POST /pam/requests` — Requests temporary privilege elevation.
+- `GET /pam/requests/pending` — Lists pending requests.
+- `POST /pam/requests/:id/approve` — Approves privilege escalation.
+- `POST /pam/requests/:id/deny` — Denies elevation request.
+- `GET /pam/grants` — Lists active privilege grants.
+- `POST /pam/grants/revoke` — Revokes active grant.
 
 ---
 
-## 5. Identity & Access Management (IAM)
+## 6. Identity & Access Management (IAM)
 
-Admin configurations for access rules. Prefixed with `/api/v1/iam`.
+Mounted at `/api/v1/iam`.
 
-### `GET /iam/policies`
-Lists all active system permission policies.
-
-### `POST /iam/policies`
-Creates a new Access Policy.
-- **Request Body (`PolicyCreate`):**
-```json
-{
-  "name": "S3Reader",
-  "effect": "allow",
-  "actions": ["storage.read"],
-  "resources": ["arn:aws:s3:::firecrow-reports/*"],
-  "priority": 1
-}
-```
-
-### `POST /iam/service-accounts`
-Creates a secure API service account.
-- **Request Body (`ServiceAccountCreate`):**
-```json
-{
-  "name": "CI-Scanner-Token",
-  "permissions": ["audit.submit", "audit.read"],
-  "description": "Token used for GitHub Actions CI scans",
-  "expires_in_days": 90
-}
-```
-- **Response:**
-```json
-{
-  "account_id": "svc_09a128cf",
-  "name": "CI-Scanner-Token",
-  "token": "fc_svc_3a2b1c...",
-  "expires_at": "2026-10-11T02:00:00Z"
-}
-```
-
-### `GET /iam/audit/dormant`
-Scans database and returns accounts inactive for longer than a specified threshold.
-- **Query Parameter:** `days` (integer, default `90`)
-
-### `GET /iam/audit/shared-accounts`
-Security check identifying users accessing accounts from multiple distinct IPs.
-- **Query Parameter:** `threshold_ips` (integer, default `5`)
+- `GET /iam/policies` — Lists active permission policies.
+- `POST /iam/policies` — Creates a permission policy.
+- `GET /iam/audit/dormant` — Scans for accounts inactive over `days` threshold.
+- `GET /iam/audit/shared-accounts` — Detects concurrent logins across distinct IPs.
 
 ---
 
-## 6. Multi-Tenancy
+## 7. Multi-Tenancy
 
-Routes prefixed with `/api/v1/tenants`. Enforces strict tenant logical scoping.
+Mounted at `/api/v1/tenant` (nested at `/tenant` in router).
 
-### `GET /tenants/me`
-Gets statistics and allocation variables for the active tenant.
-
-### `POST /tenants/`
-Creates a new isolated tenant namespace (Admin permission required).
-- **Request Body (`TenantCreate`):**
-```json
-{
-  "name": "Acme Corp",
-  "slug": "acme",
-  "domain": "acme.com",
-  "plan": "premium",
-  "max_users": 50,
-  "max_storage_gb": 100
-}
-```
+- `GET /tenant/me` — Fetches active tenant quota and allocation statistics.
+- `POST /tenant/` — Creates a new tenant organization (Admin required).
+- `GET /tenant/:id` — Retrieves tenant details by ID.
 
 ---
 
-## 7. Domain Verification
+## 8. Domain Verification
 
-Prefixed with `/api/v1/verify`. Validates domain ownership prior to enabling SSO or customized settings.
+Mounted at `/api/v1/verify`.
 
-### `POST /verify/domain`
-Registers a domain for verification.
-- **Request Body:**
-```json
-{
-  "domain": "company.com"
-}
-```
-- **Response:** Returns verification status and TXT record details.
-```json
-{
-  "id": "dom_12345",
-  "domain": "company.com",
-  "txt_record_host": "@",
-  "txt_record_value": "firecrow-verification=9f0a28b6...",
-  "verified": false
-}
-```
-
-### `POST /verify/domain/check`
-Requests the DNS resolver to crawl DNS settings and check for the presence of the validation TXT token.
-- **Request Body:**
-```json
-{
-  "domain": "company.com"
-}
-```
-- **Response:**
-```json
-{
-  "verified": true
-}
-```
+- `POST /verify/domain` — Registers domain and generates DNS TXT validation token.
+- `POST /verify/domain/check` — Probes DNS TXT records to confirm domain ownership.
 
 ---
 
-## 8. Security Auditing & SSE Logging
+## 9. Security Auditing & Execution Lifecycle
 
-All auditing routes are prefixed with `/api/v1/audit`.
+Mounted at `/api/v1/audit`. All audit endpoints are **execution-scoped** and owner-isolated (foreign requests return 404, never 403).
 
 ### `POST /audit/submit`
-Submits a Git repository link to begin a remote security audit job.
+Submits a GitHub repository to trigger an audit job.
 - **Requires Authentication**
+- **Concurrency Gate:** Enforces per-user active job limit via PostgreSQL transaction advisory lock (`pg_advisory_xact_lock`). Excess submissions return 409 Conflict.
 - **Request Body (`SubmitJobRequest`):**
 ```json
 {
-  "repo_url": "https://github.com/company/microservice",
+  "repo_url": "https://github.com/owner/repository",
   "repo_branch": "main",
-  "attestation_accepted": true,
-  "authorization_scope": "authorized_representative"
+  "commit_sha": "optional-40-hex-commit-sha"
 }
 ```
 - **Response (`JobResponse`):**
 ```json
 {
-  "id": "job_e5c6a78b",
+  "id": "e5c6a78b-1234-5678-90ab-cdef12345678",
   "user_id": "usr_9f0a28b6",
-  "repo_url": "https://github.com/company/microservice",
+  "tenant_id": null,
+  "repo_url": "https://github.com/owner/repository",
   "repo_branch": "main",
   "status": "queued",
-  "created_at": "2026-07-13T02:04:00Z",
-  "cancel_requested": false,
-  "report_pdf_url": null,
+  "security_score": null,
+  "created_at": "2026-10-04T12:00:00Z",
+  "finished_at": null,
   "error_message": null,
-  "security_score": null
+  "cancel_requested": false,
+  "execution_id": null
 }
 ```
 
 ### `GET /audit/jobs`
-Lists all security audit jobs submitted under the tenant.
+Lists all audit jobs owned by the authenticated user.
 - **Response:** Array of `JobResponse`.
 
-### `GET /audit/job/{job_id}`
-Returns details, status, and findings of the requested job.
+### `GET /audit/job/:job_id`
+Returns job status, findings for the active execution, and latest execution pointer.
 - **Response (`JobDetailResponse`):**
 ```json
 {
   "job": {
-    "id": "job_e5c6a78b",
+    "id": "e5c6a78b-...",
     "status": "completed",
-    "security_score": 8.5
+    "security_score": 8.5,
+    "commit_sha": "a1b2c3d4e5f6...",
+    "execution_id": "exec_12345"
   },
   "findings": [
     {
-      "id": "find_1",
-      "agent_source": "gemini_static_scanner",
-      "title": "SQL Injection vulnerability in Auth Handler",
-      "description": "Raw string concatenation detected in db.execute",
+      "id": "canonical-v1:9f0a...",
+      "agent_source": "gitleaks",
+      "scanner_mode": "secret",
+      "title": "generic-api-key",
+      "description": "Committed secret detected",
       "severity": "critical",
-      "cvss_score": 9.8,
-      "cvss_vector": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H"
+      "file_path": "config/keys.json",
+      "line_number": 12,
+      "evidence": "API_KEY = \"[REDACTED]\"",
+      "cwe_id": "CWE-798",
+      "owasp_category": null,
+      "confidence": "high",
+      "metadata_json": "{\"native_fingerprint\":\"...\"}"
     }
   ]
 }
 ```
 
-### `DELETE /audit/job/{job_id}`
-Sends cancellation requests for a queued or currently executing scanning task.
+### `DELETE /audit/job/:job_id`
+Requests cancellation of a running audit. Cancelled executions terminate with `status = "cancelled"`, never as success.
 
-### `GET /audit/job/{job_id}/report`
-Returns a binary file stream downloading the compiled PDF Security Report.
+### `POST /audit/job/:job_id/retry`
+Spawns attempt $N+1$ for the job under a new `execution_id`. The previous execution rows remain permanently immutable.
 
-### `POST /audit/job/{job_id}/email`
-Sends the compiled PDF Security Report to an email address.
-- **Request Body:**
+### `GET /audit/job/:job_id/executions`
+Returns the complete attempt history for the job:
 ```json
-{
-  "email": "security@company.com"
-}
-```
-
-### `GET /audit/job/{job_id}/insight`
-Generates LLM high-level executive dashboard summaries for this job.
-
-### `GET /audit/job/{job_id}/graph`
-Returns JSON attack path nodes representing the relational diagram.
-
-### `GET /audit/{job_id}/stream`
-Establishes a **Server-Sent Events (SSE)** connection to receive real-time execution logs from the auditing orchestrator and sandbox container.
-- **Event Names:** `log`, `status`, `complete`, `error`
-- **Output Stream Data Example:**
-```text
-event: log
-data: {"timestamp": "2026-07-13T02:04:05Z", "message": "Cloning repository..."}
-
-event: log
-data: {"timestamp": "2026-07-13T02:04:12Z", "message": "Running security analyzer inside Docker sandbox..."}
-```
-
----
-
-## 9. Storage & Artifact Management
-
-All routes are prefixed with `/api/v1/storage`.
-
-### `GET /storage/artifacts/{artifact_id}/download`
-Downloads raw logs, reports, or data artifacts generated during a containerized run.
-- **Requires Authentication (checked against tenant permission scopes).**
-- **Response:** Raw binary file stream download.
-
-### `POST /storage/artifacts/{artifact_id}/legal-hold`
-Applies or removes legal hold tags. Legal hold prevents database housekeeping cleanups from deleting critical log evidence files.
-- **Query Parameter:** `hold` (boolean, Required)
-- **Response:** `{}`
-
----
-
-## 10. Security Assistant (Chat)
-
-Allows operators to query agent findings using conversational LLM interfaces. Prefixed with `/api/v1/chat`.
-
-### `POST /chat/ask`
-Sends queries to the security assistant scoped to a specific audit job's findings.
-- **Request Body (`ChatRequest`):**
-```json
-{
-  "job_id": "job_e5c6a78b",
-  "message": "Where in the code is the SQL Injection, and how can I fix it?"
-}
-```
-- **Response:**
-```json
-{
-  "answer": "The vulnerability is located in `backend/app/api/routes_auth.py` at line 74. You can remediate this by changing...",
-  "referenced_files": ["backend/app/api/routes_auth.py"]
-}
-```
-
----
-
-## 11. Leaderboard & Statistics
-
-Prefixed with `/api/v1/leaderboard`.
-
-### `GET /leaderboard`
-Lists security performance scores and scan summaries across systems/repositories.
-
----
-
-## 12. Push Notifications
-
-Allows browsers to receive instant push alerts. Prefixed with `/api/v1/push`.
-
-### `GET /push/vapid-public-key`
-Retrieves the application's VAPID public key. Used to initialize web push subscriptions in client browsers.
-- **Response:**
-```json
-{
-  "public_key": "BEl69..."
-}
-```
-
-### `POST /push/subscribe`
-Saves user browser subscription parameters.
-- **Request Body (`SubscribeRequest`):**
-```json
-{
-  "endpoint": "https://fcm.googleapis.com/fcm/send/...",
-  "keys": {
-    "p256dh": "BLm...",
-    "auth": "Wd..."
-  }
-}
-```
-
----
-
-## 13. User Management & GDPR Compliance
-
-Prefixed with `/api/v1/user`.
-
-### `GET /user/export`
-Generates a complete JSON payload containing all active details, logins, and log traces associated with the requester (GDPR portability compliance).
-
-### `DELETE /user/delete`
-Permanently purges and deletes user records, audits, and settings from the database (GDPR right to be forgotten compliance).
-
----
-
-## 14. Health & Diagnostics & Key Validation Guide
-
-This section is a comprehensive developer manual for monitoring, testing backend connectivity, handling session cookies/API keys, and reporting system diagnostics in the frontend user interface.
-
-### 🔑 API Key & Token Authentication flow for Testing
-When building the frontend or executing programmatic checks, there are two primary methods to pass credentials:
-1. **User JWT Access Token (Cookie or Bearer):**
-   - After a successful `/auth/login` or OAuth callback exchange, the backend returns an access token and sets an HTTP-Only cookie `fc_access_token`.
-   - In frontend AJAX requests (e.g., using `axios` or `fetch`), make sure to include `credentials: "include"` (or equivalent CORS settings) so the cookie is forwarded automatically.
-   - Alternatively, you can supply it via the `Authorization: Bearer <token>` header.
-2. **Service Account Tokens (Long-lived API Keys):**
-   - Admin accounts can generate long-lived service tokens via `POST /iam/service-accounts`.
-   - These API keys always start with the prefix `fc_svc_` (e.g., `fc_svc_6c2a...`).
-   - Authenticate by adding the `Authorization: Bearer fc_svc_your_token_here` header.
-
----
-
-### 🚦 Health Probe Endpoints
-
-The backend exposes four health check endpoints. Each serves a specific infrastructure or application requirement:
-
-| Endpoint | Auth Required | Rate Limit | Purpose | HTTP Status Code |
-| :--- | :--- | :--- | :--- | :--- |
-| **`GET /health`** | None | 30/min | Lightweight check for uptime (probes Database). | `200` (Healthy) or `503` (Degraded) |
-| **`GET /health/live`** | None | 30/min | Kubernetes/Docker liveness probe (does not probe sub-services). | `200` (Live) |
-| **`GET /health/ready`** | None | 10/min | Readiness probe for ingress routers (probes Database + Redis). | `200` (Ready) or `503` (Degraded) |
-| **`GET /health/deep`** | None | 10/min | Full telemetry diagnostic check (DB + Local Storage + Cloudflare R2 + Circuit Breaker states). | `200` (All OK) or `503` (Service Degraded) |
-
----
-
-### 🔍 Endpoint Details & Payloads
-
-#### 1. Quick Health Check: `GET /health`
-Validates that the web server is responsive and the primary database can run a simple verification query (`SELECT 1`).
-- **Response (Healthy - HTTP 200):**
-```json
-{
-  "status": "up",
-  "database": "connected"
-}
-```
-- **Response (Degraded - HTTP 503):**
-```json
-{
-  "status": "degraded",
-  "database": "unavailable"
-}
-```
-
-#### 2. Liveness Check: `GET /health/live`
-Used strictly to determine if the backend process is running. Avoids database overhead.
-- **Response (HTTP 200):**
-```json
-{
-  "status": "live"
-}
-```
-
-#### 3. Readiness Check: `GET /health/ready`
-Ensures the backend and its state coordinators (database and Redis cache) are online before routing traffic.
-- **Response (Healthy - HTTP 200):**
-```json
-{
-  "status": "ready"
-}
-```
-- **Response (Degraded - HTTP 503):**
-```json
-{
-  "status": "degraded",
-  "database": "connected",
-  "cache": "unavailable"
-}
-```
-
-#### 4. Telemetry Diagnostics: `GET /health/deep`
-Designed for administrative status monitors, giving detailed metrics on storage engines, S3 compatibility layer, and external AI circuit breakers.
-- **Response (Healthy - HTTP 200):**
-```json
-{
-  "status": "healthy",
-  "database": "ok",
-  "local_storage": "ok",
-  "object_storage": "ok",
-  "circuit_breakers": {
-    "database": {
-      "state": "closed",
-      "failures": 0,
-      "last_failure": null
-    },
-    "gemini": {
-      "state": "closed",
-      "failures": 0,
-      "last_failure": null
-    }
+[
+  {
+    "execution_id": "exec_attempt_1",
+    "attempt_number": 1,
+    "status": "failed",
+    "commit_sha": "a1b2c3...",
+    "started_at": "2026-10-04T12:00:00Z",
+    "finished_at": "2026-10-04T12:05:00Z",
+    "finding_count": 0,
+    "has_report": false,
+    "has_narrative": false,
+    "deliveries": []
   },
-  "shutting_down": false
-}
+  {
+    "execution_id": "exec_attempt_2",
+    "attempt_number": 2,
+    "status": "completed",
+    "commit_sha": "a1b2c3...",
+    "started_at": "2026-10-04T12:06:00Z",
+    "finished_at": "2026-10-04T12:10:00Z",
+    "finding_count": 1,
+    "has_report": true,
+    "has_narrative": true,
+    "deliveries": [
+      { "channel": "email", "status": "sent", "failure_class": null }
+    ]
+  }
+]
 ```
 
-- **Response (Degraded - HTTP 503):**
+### `GET /audit/job/:job_id/phases`
+Returns the `phase_ledger` progress rows for the job (`intake`, `fetch`, `scan`, `normalize`, `score`, `report`, `deliver`).
+
+### `GET /audit/job/:job_id/report`
+Downloads the deterministic security report for the latest execution.
+- **Query Parameter:** `format` (`markdown` [default], `json`, or `html`).
+
+### `GET /audit/job/:job_id/execution/:execution_id/report`
+Downloads the deterministic report for a specific historical execution attempt.
+- **Query Parameter:** `format` (`markdown`, `json`, or `html`).
+
+### `GET /audit/job/:job_id/execution/:execution_id/narrative`
+Retrieves the stored validated AI narrative for this execution. Returns 404 if no narrative has been generated.
+
+### `POST /audit/job/:job_id/execution/:execution_id/narrative`
+Generates an AI narrative using Gemini. The output is validated strictly against the execution's deterministic report:
+- Every explained finding must exist in the report.
+- Severities, scores, and coverage cannot be altered.
+- Invented CVEs/CWEs or unredacted secrets cause rejection.
+- If rejected or if Gemini is unconfigured, returns error; deterministic report remains untouched.
+
+### `POST /audit/job/:job_id/execution/:execution_id/email`
+Dispatches the finalized report via SMTP to the authenticated user's account email address.
+- **No destination parameter accepted in request body** (prevents delivery hijacking).
+- Idempotency key: `(execution_id, "email", user_email, delivery_version)`.
+
+### `POST /audit/job/:job_id/execution/:execution_id/telegram`
+Dispatches the finalized report to the operator's configured Telegram chat ID.
+- **No destination parameter accepted in request body**.
+
+### `GET /audit/job/:job_id/insight`
+Returns derived summary insight structure: `{"insights": []}`.
+
+### `GET /audit/job/:job_id/graph`
+Returns vulnerability topology nodes. Edges are deliberately empty (`edges: []`) because no automated attack-chain correlation is performed.
+
+### `GET /audit/privacy-logs`
+Lists user privacy audit logs.
+
+---
+
+## 10. GitHub App & Webhooks
+
+Mounted at `/api/v1/github`.
+
+### `POST /github/webhook`
+Receives GitHub App webhooks (`push`, `pull_request`, `installation`).
+- **Authentication:** HMAC-SHA256 validated using `GITHUB_APP_WEBHOOK_SECRET` over the raw payload body.
+- **Deduplication:** Uses GitHub `X-GitHub-Delivery` ID with `ON CONFLICT DO NOTHING`. Redelivery returns the existing job.
+- **Audit Funnel:** Verified push and PR events funnel into `create_audit_job_attributed` behind the same backpressure gate.
+- **Check Run:** Completed audits post a status Check Run named `firecrow-security-audit` on the pinned commit SHA (conclusion, status, and summary counts only; no inline PR annotations).
+
+---
+
+## 11. Server-Sent Events (SSE)
+
+Mounted at `/api/v1/sse`.
+
+### `GET /sse/job/:job_id`
+Establishes a persistent SSE stream that yields job status and `phase_ledger` progress updates every 2.5 seconds. Replaces polling loops.
+- **Requires Authentication**
+- **Event Types:** `status`, `phase`, `error`.
+
+### `GET /sse/dashboard`
+Streams aggregate active audit statistics for authenticated dashboard views.
+
+---
+
+## 12. Storage & Artifact Management
+
+Mounted at `/api/v1/storage`.
+
+- `GET /storage/artifacts/:id/download` — Downloads raw logs or scanner output files.
+- `POST /storage/artifacts/:id/legal-hold` — Flags an artifact with legal hold to prevent housekeeping deletion (`?hold=true|false`).
+
+---
+
+## 13. Non-Contract Stubs (Chat & Leaderboard)
+
+These routes return valid HTTP 200 responses but are explicitly **stubs**:
+
+- `POST /api/v1/chat/ask` — Returns:
+  ```json
+  { "response": "Chat assistant is not yet implemented in the Rust backend." }
+  ```
+- `GET /api/v1/leaderboard` — Returns:
+  ```json
+  { "entries": [] }
+  ```
+
+---
+
+## 14. User Management & GDPR Compliance
+
+Mounted at `/api/v1/user`.
+
+- `GET /user/export` — Exports complete user records and activity logs in JSON format.
+- `DELETE /user/delete` — Permanently deletes user account and personal data.
+
+---
+
+## 15. Health & Diagnostics
+
+Mounted at root (`/health`) and `/api/v1/health`.
+
+| Endpoint | Auth | Purpose | Response |
+| :--- | :--- | :--- | :--- |
+| `GET /health` | None | Basic uptime and database connectivity probe (`SELECT 1`). | `{"status":"up","database":"connected"}` |
+| `GET /api/v1/health/live` | None | Container liveness probe (does not query database). | `{"status":"live"}` |
+| `GET /api/v1/health/ready`| None | Readiness probe checking database and Redis readiness. | `{"status":"ready"}` |
+| `GET /api/v1/health/deep` | None | Telemetry diagnostic inspecting storage, pool, and circuit breakers. | `{"status":"healthy",...}` |
+
+---
+
+## Rate Limiting & Error Codes
+
+Global rate limiting is enforced via `tower_governor` based on the verified TCP client peer:
+- **Default:** 20 requests/second with a burst allowance of 40 requests.
+- **Auth Routes (`/auth/*`, `/mfa/*`):** 5 requests/minute.
+- **Webhooks (`/github/webhook`, `/payments/dodo`):** 30 requests/minute.
+- When throttled, requests receive `HTTP 429 Too Many Requests`.
+
+Errors follow standardized JSON payloads:
 ```json
 {
-  "status": "unhealthy",
-  "database": "failed",
-  "local_storage": "ok",
-  "object_storage": "failed",
-  "circuit_breakers": {
-    "database": {
-      "state": "open",
-      "failures": 5,
-      "last_failure": "2026-07-13T02:05:12.182Z"
-    },
-    "gemini": {
-      "state": "closed",
-      "failures": 0,
-      "last_failure": null
-    }
-  },
-  "shutting_down": false
+  "error": "Error description",
+  "status_code": 400
 }
 ```
-
----
-
-### 💻 Developer Guide: Frontend Implementation
-
-#### A. Fetching Status & Visualizing Circuit Breakers
-For a premium frontend user experience, you should build an administrative status dashboard widget. Map the health outputs to these visual components:
-
-1. **Service status (Database, Object Storage, Local Storage):**
-   - `"ok"` / `"connected"` ➡️ Render **Green Dot (Healthy)**.
-   - `"failed"` / `"unavailable"` / `"degraded"` ➡️ Render **Red Pulsing Dot (Critical)**.
-   - `"disabled"` ➡️ Render **Grey Dot (Inactive)**.
-2. **Circuit Breakers (`closed`, `open`, `half-open`):**
-   - **`closed`:** Normal operational status. Render **Green Badge ("Active")**.
-   - **`open`:** The backend has automatically severed requests to this downstream service because of repeated failures. Render **Red Pulsing Badge ("Tripped / Fallback Active")** and show a developer notice.
-   - **`half-open`:** The backend is testing connectivity with small traffic limits to see if the service has recovered. Render **Amber Badge ("Reconnecting / Probe Mode")**.
-
-#### B. Handling Rate Limits (`HTTP 429 Too Many Requests`)
-The health checks and other endpoints are protected by `SlowAPI` and return standard rate-limiting headers. Ensure the frontend client intercepts these headers to manage retry intervals:
-
-| Header | Description |
-| :--- | :--- |
-| `X-RateLimit-Limit` | Maximum number of allowed requests in the active window. |
-| `X-RateLimit-Remaining` | Remaining requests allowed in the current window. |
-| `X-RateLimit-Reset` | Unix Epoch timestamp indicating when the rate limit window resets. |
-
-**Handling standard fetch exceptions:**
-```typescript
-async function fetchDeepStatus() {
-  try {
-    const response = await fetch('http://localhost:8000/health/deep');
-    
-    if (response.status === 429) {
-      const resetTime = response.headers.get('X-RateLimit-Reset');
-      console.warn(`Rate limited. Try again at timestamp: ${resetTime}`);
-      // Disable poll hooks / alert user
-      return;
-    }
-    
-    if (!response.ok) {
-      throw new Error(`API returned HTTP ${response.status}`);
-    }
-    
-    const data = await response.json();
-    updateDashboardUI(data);
-  } catch (error) {
-    console.error("Health check network failure:", error);
-    updateDashboardUI({ status: "network_failure" });
-  }
-}
-```
-
----
-
-### 🧪 Executing Health Endpoint Checks (CLI)
-
-Use these standard commands from your terminal to verify health check endpoints manually:
-
-```bash
-# 1. Quick ping (Checks if API server and SQLite/PostgreSQL are running)
-curl -i http://localhost:8000/health
-
-# 2. Liveness check (Used for container restart loops)
-curl -i http://localhost:8000/health/live
-
-# 3. Readiness check (Checks API, PostgreSQL, and Redis cache/broker)
-curl -i http://localhost:8000/health/ready
-
-# 4. Deep System telemetry (Checks S3, databases, local file writes, and AI models)
-curl -i http://localhost:8000/health/deep
-```
-
+In production mode, detailed database errors and internal backtraces are sanitized by `error_sanitizer` middleware to prevent information leakage.

@@ -1,7 +1,10 @@
 # Schema / model reconciliation matrix
 
+> **Resolution Status (Phase 4): RESOLVED.**
+> This document records the Phase 3 discovery inventory of schema-model drift. All missing columns and phantom tables below were reconciled by migration `20260901000000_schema_reconciliation.sql` (Phase 4). The continuous test gate `backend/tests/schema_reconciliation.rs` now asserts `KNOWN_MISSING = []` and `KNOWN_PHANTOM_TABLES = []` (0 missing).
+
 Generated during Phase 3 of the security remediation, by comparing every
-`#[derive(FromRow)]` struct against a database created solely by the 15
+`#[derive(FromRow)]` struct against a database created solely by the initial
 migrations in `backend/migrations/`. Regenerate with the commands in the
 commit message; the live gate is `backend/tests/schema_reconciliation.rs`.
 

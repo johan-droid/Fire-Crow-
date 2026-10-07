@@ -118,7 +118,7 @@ build — otherwise that build will keep failing on every push.
 
 ## 📦 2. Configure Cloudflare R2 Object Storage
 
-Cloudflare R2 provides zero-egress fee object storage for audit report PDFs, code scan zip archives, and attack graph JSON dumps.
+Cloudflare R2 provides zero-egress fee object storage for audit report artifacts (HTML, Markdown, JSON), scan logs, and raw scanner output dumps.
 
 ### Step 1: Create an R2 Bucket
 1. Open **Cloudflare Dashboard > R2 > Create bucket**.

@@ -13,15 +13,32 @@ cd backend
 `docker-compose.test.yml`, waits for both to report healthy, exports the
 connection strings, runs `cargo test`, and tears the containers down.
 
-## Layout
+## Layout & Test Categories
 
-| Suite | Needs a database | Purpose |
-|---|---|---|
-| `src/**` unit tests | no | pure functions, config validation, crypto |
-| `tests/config_security.rs` | no | secret validation, proxy-header trust |
-| `tests/security_regressions.rs` | no | named regressions for confirmed findings |
-| `tests/integration_harness.rs` | **yes** | proves the harness itself is sound |
-| `tests/support/mod.rs` | — | fixtures: seed users/tenants/jobs, build the app, mint tokens |
+The backend maintains 39 integration and unit test targets:
+
+| Test Category / Suite | Database Required | Target Files | Verification Scope |
+|---|---|---|---|
+| **Core & Unit** | No | `src/**` unit tests | Pure functions, cryptographic boundaries, `docker_argv`, redaction algorithms |
+| **Config & Security** | No | `tests/config_security.rs` | Fail-closed secret requirements, key lengths, known-insecure value rejection |
+| **Security Regressions** | No / Mixed | `tests/security_regressions.rs` | Named regressions for all confirmed findings (secret-safe `Debug`, path traversals) |
+| **Sandbox Hardening** | No | `tests/sandbox_hardening.rs` | Docker argument construction, resource ceilings, network flags, mount validation |
+| **Repo Intake & Fetch** | No / Mocked | `tests/repo_fetch.rs`, `tests/repo_intake.rs`, `tests/repo_inventory.rs` | Tarball extraction bounds, symlink rejection, traversal protection, SHA pinning |
+| **Scanner Runtimes** | No (Unit) / Docker (E2E) | `tests/scanner_runtime.rs`, `tests/gitleaks_integration.rs`, `tests/osv_integration.rs`, `tests/semgrep_integration.rs` | Scanner exit codes, output parsing, live Docker execution, failure semantics |
+| **Canonical Audit v1** | No | `tests/canonical_audit.rs`, `tests/scan_contract.rs`, `tests/scan_integrity.rs` | Canonical identity, deduplication, evidence bounds, quarantine, score invariants |
+| **Deterministic Reports** | No | `tests/report.rs` | Byte determinism, golden fixtures (Markdown, JSON, HTML), pure reconstruction |
+| **Report Persistence** | **Yes** | `tests/report_persistence.rs` | Atomic report insertion, byte-identical regeneration from `canonical_json` |
+| **Atomic Commit & Lifecycle** | **Yes** | `tests/atomic_audit_commit.rs`, `tests/audit_lifecycle.rs`, `tests/job_lifecycle.rs` | Single transaction finalization, execution leases (`owner_token`), trigger immutability |
+| **Concurrency & Backpressure** | **Yes** | `tests/submission.rs` | Per-user advisory lock gate, distinct user concurrency, webhook backpressure |
+| **AI Narrative & Validator** | No | `tests/ai_narrative.rs`, `tests/ai_narrative_generation.rs` | Schema enforcement, rejection of invented findings, score/severity preservation |
+| **Narrative Persistence** | **Yes** | `tests/ai_narrative_persistence.rs` | Execution-scoped narrative storage and immutability |
+| **LLM Provider Transport** | No / WireMock | `tests/llm_provider.rs` | Gemini transport, timeout handling, transient retries (429, 5xx), key hygiene |
+| **Delivery Channels** | **Yes** | `tests/email_delivery.rs`, `tests/telegram_delivery.rs` | SMTP and Telegram idempotency keys, destination immutability, state transitions |
+| **GitHub App & Webhooks** | **Yes** | `tests/github_app.rs` | HMAC-SHA256 verification, delivery deduplication, installation tokens, Check Runs |
+| **Migrations & Recovery** | **Yes** | `tests/startup_and_migrations.rs`, `tests/kill_recovery.rs` | 28 migrations fresh-apply & idempotent re-run, orphan reaper, dead worker recovery |
+| **Schema Reconciliation** | **Yes** | `tests/schema_reconciliation.rs` | Zero drift between Rust `FromRow` models and PostgreSQL database schema |
+| **Auth & IAM Security** | **Yes** | `tests/iam_authorization.rs`, `tests/system_authorization.rs` | RBAC authorization gates, admin permissions, MFA rules, session revocation |
+| **Test Fixtures & Support** | — | `tests/support/mod.rs` | Seed utilities, token minters, database pool test harnesses |
 
 ## How isolation works
 
