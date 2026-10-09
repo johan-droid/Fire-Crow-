@@ -767,3 +767,94 @@ where
 fn default_dodo_env() -> String {
     "test_mode".to_string()
 }
+
+// Phase 24: platform-port contract. Render injects PORT at runtime; the
+// service must listen wherever the platform says (config crate Environment
+// source, no prefix, layered over the 8000 default), defaulting to 8000
+// locally. These tests replay that exact layering with isolated builders —
+// no process-env mutation, no dotenv files, no secrets — plus static guards
+// over the two files that caused the Phase 23 contradiction.
+#[cfg(test)]
+mod port_contract_tests {
+    use super::Settings;
+
+    /// Deserialize Settings the way `Settings::new()` does: defaults first,
+    /// then one environment layer on top. `injected_port` stands in for the
+    /// platform's PORT injection; `None` is a local run with no injection.
+    fn settings_from_env(injected_port: Option<&str>) -> Settings {
+        let mut builder = config::Config::builder()
+            .set_default("port", super::default_port())
+            .expect("port default")
+            .set_default("host", super::default_host())
+            .expect("host default")
+            // Required string fields with no serde defaults: dummy values only.
+            // They are irrelevant to the port contract; `validate()` is never
+            // called here, so they carry no semantic weight.
+            .set_default("secret_key", "port-contract-dummy")
+            .expect("secret default")
+            .set_default("encryption_key", "port-contract-dummy")
+            .expect("encryption default")
+            .set_default("frontend_url", "http://localhost:3000")
+            .expect("frontend default")
+            .set_default("cors_origins", "http://localhost:3000")
+            .expect("cors default")
+            .set_default("database_url", "postgres://localhost/firecrow")
+            .expect("db default");
+        if let Some(v) = injected_port {
+            // Same precedence position as the Environment source in
+            // `Settings::new()`: an override beats the default, exactly as a
+            // platform-injected PORT beats the compiled-in 8000.
+            builder = builder.set_override("port", v).expect("port override");
+        }
+        let s: Settings = builder
+            .build()
+            .expect("config builds")
+            .try_deserialize()
+            .expect("port/host deserialize");
+        s
+    }
+
+    #[test]
+    fn port_defaults_to_8000_without_platform_injection() {
+        let s = settings_from_env(None);
+        assert_eq!(s.port, 8000, "local default must stay 8000");
+        assert_eq!(s.host, "0.0.0.0", "bind must be externally reachable");
+    }
+
+    #[test]
+    fn platform_injected_port_wins_over_the_default() {
+        let s = settings_from_env(Some("10000"));
+        assert_eq!(
+            s.port, 10000,
+            "platform PORT must be honored, not the default"
+        );
+    }
+
+    #[test]
+    fn render_yaml_must_not_pin_a_conflicting_port() {
+        let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../render.yaml"))
+            .expect("render.yaml must be readable");
+        assert!(
+            !text.lines().any(|l| l.trim_start().starts_with("- key: PORT")),
+            "render.yaml must not pin PORT: Render injects it and a pinned value fights the platform"
+        );
+    }
+
+    #[test]
+    fn docker_healthcheck_must_follow_the_runtime_port() {
+        let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Dockerfile"))
+            .expect("Dockerfile must be readable");
+        let probe = text
+            .lines()
+            .find(|l| l.trim_start().starts_with("CMD") && l.contains("/health"))
+            .expect("Dockerfile needs a /health probe");
+        assert!(
+            probe.contains("${PORT"),
+            "healthcheck must expand $PORT at runtime, not hardcode a port: {probe}"
+        );
+        assert!(
+            !probe.contains("localhost:8000/health"),
+            "healthcheck must not hardcode :8000: {probe}"
+        );
+    }
+}

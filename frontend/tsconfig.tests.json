@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["es2022"],
+    "module": "node16",
+    "moduleResolution": "node16",
+    "strict": true,
+    "skipLibCheck": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "outDir": "dist-tests",
+    "rootDir": ".",
+    "types": ["node"]
+  },
+  "include": ["tests", "src/api/types.ts", "src/api/errors.ts", "src/api/validation.ts", "src/api/sse.ts", "src/api/routes.ts"]
+}

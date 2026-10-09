@@ -80,42 +80,30 @@
 ## ⚡ Quick Start (Local Development)
 
 ### Prerequisites
-- Docker & Docker Compose
+- Docker (daemon running)
 - Node.js 20+ & `npm`
 - Rust 1.85+ (`cargo`)
 
-### 1. Clone & Start Infrastructure
+### 1. Setup & Start (launcher)
 ```bash
 git clone https://github.com/johan-droid/Fire-Crow-.git
 cd Fire-Crow-
 
-# Start local PostgreSQL instance
-docker run -d --name firecrow-postgres \
-  -e POSTGRES_DB=firecrow_dev \
-  -e POSTGRES_USER=firecrow \
-  -e POSTGRES_PASSWORD=firecrow_pass \
-  -p 55433:5432 postgres:16-alpine
+./scripts/dev.sh check   # tools, config, ports, prerequisites
+./scripts/dev.sh setup   # safe first-time setup (never overwrites *.env.local)
+./scripts/dev.sh start   # isolated postgres (loopback-only 55433) + backend (:8000) + frontend (:3000)
 ```
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-### 2. Run Backend
+### 2. Verify & Stop
 ```bash
-cd backend
-export DATABASE_URL="postgres://firecrow:firecrow_pass@127.0.0.1:55433/firecrow_dev"
-export SECRET_KEY="local_dev_secret_key_minimum_32_bytes_long_change_me!"
-export ENCRYPTION_KEY="local_dev_encryption_key_minimum_32_bytes_long!"
-export FRONTEND_URL="http://localhost:5173"
-export CORS_ORIGINS="http://localhost:5173"
-
-cargo run
+./scripts/dev.sh status
+./scripts/dev.sh logs [backend|frontend|db]   # secrets redacted
+./scripts/dev.sh smoke   # safe local checks (no scans, no deliveries)
+./scripts/dev.sh stop    # stops only what the launcher started
 ```
 
-### 3. Run Frontend
-```bash
-cd ../frontend
-npm install
-npm run dev
-```
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+See [📘 Unified Developer & Deployment Guide](documentation/DEVELOPER_GUIDE.md) (section 6) for the full local-development reference, including OAuth/scanner limits and failure remedies.
 
 ---
 
@@ -125,8 +113,8 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 1. Import repository into [Vercel](https://vercel.com).
 2. Set **Framework Preset** to `Vite`.
 3. Set **Environment Variable**:
-   - `VITE_API_URL`: Your deployed Render backend URL (e.g. `https://firecrow-backend.onrender.com`).
-4. Vercel automatically proxies `/api/*` to the Render backend via `vercel.json`.
+   - `VITE_API_URL`: Your API base **including** the version prefix (e.g. `https://firecrow-backend.onrender.com/api/v1`). A bare origin without `/api/v1` makes every API call 404.
+4. API routing is explicit per environment via `Vercel Dashboard → Project → Settings → Environment Variables`: the committed `vercel.json` files intentionally declare **no** `/api` rewrite (fail-closed — see `frontend/src/api/deploy.ts`). A Preview deployment therefore cannot silently route API traffic to production; set `VITE_API_URL` separately for Production and Preview, or leave a Preview without one (its API calls fail loudly, never against the wrong backend). Never rely on rewrites interpolating env vars — Vercel does not support that.
 
 ### Deploying Backend to Render
 1. Create a **New Blueprint Instance** on [Render](https://render.com) using `render.yaml` OR create a **Web Service**:

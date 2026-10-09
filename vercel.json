@@ -7,10 +7,6 @@
   "trailingSlash": false,
   "rewrites": [
     {
-      "source": "/api/:match*",
-      "destination": "https://firecrow-backend.onrender.com/api/:match*"
-    },
-    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

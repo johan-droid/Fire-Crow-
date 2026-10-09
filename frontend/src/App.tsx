@@ -1,10 +1,27 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { AuroraBackdrop } from './scene';
 import LandingPage from './LandingPage';
 import LoginPage from './LoginPage';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { api } from './api/client';
+import { ApiError } from './api/errors';
+import { parseSsePayload } from './api/sse';
+import { BackendStatusIndicator } from './api/BackendStatusIndicator';
+import { useToasts } from './api/toast';
+import { ToastHost } from './api/toast-host';
+import { transitionToast, TOAST_COPY } from './api/health';
+import { filterFindings, fromDetailFindings, fromReportFindings, isSafeExternalUrl } from './api/explorer';
+import { buildSubmitRequest, isValidCommitSha } from './api/validation';
+import type {
+  CanonicalAuditReport,
+  ExecutionHistoryEntry,
+  GithubRepo,
+  JobResponse,
+  PhaseLedgerEntry,
+  ReportNarrative,
+} from './api/types';
 import {
-  PanelState, ScoreRing, SeverityBars, HealthWidget, jobStatusInfo, severityClass,
+  PanelState, ScoreRing, HealthWidget, jobStatusInfo, severityClass,
   fmtUtc, timeAgo, type LoadState, type DeepHealth,
 } from './dash';
 
@@ -45,18 +62,7 @@ interface Finding {
   route?: string | null;
 }
 
-/* Matches backend JobResponse (API_DOCUMENTATION.md §8) */
-interface AuditJob {
-  id: string;
-  repo_url: string;
-  repo_branch: string;
-  status: string;
-  created_at: string;
-  security_score?: number | null;
-  error_message?: string | null;
-  report_pdf_url?: string | null;
-  cancel_requested?: boolean;
-}
+/* Single job contract: canonical JobResponse from ./api/types (backend audit_api.rs). */
 
 interface SsoProvider {
   id: string;
@@ -129,12 +135,8 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
     headers,
   });
 
-  // Auto purge cookies on 401 Unauthorized
-  if (res.status === 401 && endpoint !== '/auth/login' && endpoint !== '/auth/register') {
-    document.cookie = 'access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-    document.cookie = 'refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-  }
-
+  // Session cookies are HttpOnly: only the server's logout response can clear
+  // them, never JavaScript. 401s surface to callers as responses.
   return res;
 };
 
@@ -145,9 +147,15 @@ const DASH_CACHE_TTL = 5000;
 function App() {
   const [view, setView] = useState<'landing' | 'login' | 'dashboard'>('landing');
   void view; void setView;
+  // Toasts: connection-state changes and user-facing errors. Never throws.
+  const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  // Explicit session lifecycle: initializing (blocking splash) → signed_out |
+  // authenticated | error. Distinct from data-loading flags elsewhere.
+  type AuthState = 'initializing' | 'signed_out' | 'authenticated' | 'error';
+  const [authState, setAuthState] = useState<AuthState>('initializing');
 
   // Dashboard Tab state
   type ConsoleWindow = 'overview' | 'jobs' | 'sso' | 'pam' | 'iam' | 'domains' | 'mfa' | 'activity';
@@ -179,8 +187,38 @@ function App() {
   }, [themeAccent]);
 
   // Live Backend Data States
-  const [jobs, setJobs] = useState<AuditJob[]>([]);
-  const [selectedJobDetail, setSelectedJobDetail] = useState<{ job: AuditJob; findings: Finding[] } | null>(null);
+  const [jobs, setJobs] = useState<JobResponse[]>([]);
+  const [selectedJobDetail, setSelectedJobDetail] = useState<{ job: JobResponse; findings: Finding[] } | null>(null);
+  // Execution-aware inspector: one selected attempt drives report, narrative
+  // and delivery. Defaults to the latest attempt on open, never mid-view.
+  const [executions, setExecutions] = useState<ExecutionHistoryEntry[]>([]);
+  const [execLoading, setExecLoading] = useState(false);
+  const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
+  const [execReport, setExecReport] = useState<CanonicalAuditReport | null>(null);
+  const [reportState, setReportState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [reportError, setReportError] = useState('');
+  const [narrative, setNarrative] = useState<ReportNarrative | null>(null);
+  const [narrativeState, setNarrativeState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [narrativeError, setNarrativeError] = useState('');
+  const [findingQuery, setFindingQuery] = useState('');
+  const [findingSev, setFindingSev] = useState('all');
+  const [deliveryMsg, setDeliveryMsg] = useState('');
+  const [deliveryBusy, setDeliveryBusy] = useState<string | null>(null);
+  const [cancelNote, setCancelNote] = useState('');
+  const [retryBusy, setRetryBusy] = useState(false);
+  const inspectReqRef = useRef(0);
+  // Closing invalidates in-flight execution loads so they can't populate a reopened view.
+  const closeInspector = () => { inspectReqRef.current++; setSelectedJobDetail(null); };
+
+  // Findings explorer source: the selected attempt's report when loaded,
+  // otherwise the job's latest-execution findings (labeled as such below).
+  const explorerFindings = useMemo(() => {
+    const rows =
+      reportState === 'ready' && execReport
+        ? fromReportFindings(execReport.findings)
+        : fromDetailFindings(selectedJobDetail?.findings ?? []);
+    return filterFindings(rows, findingQuery, findingSev);
+  }, [reportState, execReport, selectedJobDetail, findingQuery, findingSev]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [_selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [ssoProviders, setSsoProviders] = useState<SsoProvider[]>([]);
@@ -191,7 +229,7 @@ function App() {
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [mfaStatus, setMfaStatus] = useState<MfaStatus>({ enabled: false, backup_codes_remaining: 0 });
   const [activeMonitorJobId, setActiveMonitorJobId] = useState<string | null>(null);
-  const [monitorPhases, setMonitorPhases] = useState<any[]>([]);
+  const [monitorPhases, setMonitorPhases] = useState<PhaseLedgerEntry[]>([]);
 
   // Dashboard state machine: loading → ready | error, with sync + health telemetry
   const [dashLoad, setDashLoad] = useState<LoadState>('loading');
@@ -209,8 +247,13 @@ function App() {
   const [isScanModalOpen, setIsScanModalOpen] = useState(false);
   const [newRepoUrl, setNewRepoUrl] = useState('');
   const [newRepoBranch, setNewRepoBranch] = useState('main');
-  const [userRepos, setUserRepos] = useState<any[]>([]);
+  const [newCommitSha, setNewCommitSha] = useState('');
+  const [userRepos, setUserRepos] = useState<GithubRepo[]>([]);
   const [isLoadingRepos, setIsLoadingRepos] = useState(false);
+  // GitHub connection is distinct from an empty list: HTTP 200 can still mean
+  // not_connected / github_error / network_error (backend routes_user.rs).
+  const [reposStatus, setReposStatus] = useState<'idle' | 'loading' | 'ready' | 'not_connected' | 'github_error' | 'network_error'>('idle');
+  const [reposMessage, setReposMessage] = useState('');
 
   const lastRepoFetchRef = useRef<number>(0);
   const reposInflightRef = useRef(false);
@@ -222,16 +265,24 @@ function App() {
     lastRepoFetchRef.current = now;
     reposInflightRef.current = true;
     setIsLoadingRepos(true);
+    setReposStatus('loading');
     try {
-      const res = await apiFetch('/user/repos');
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.repositories) {
-          setUserRepos(data.repositories);
-        }
+      const data = await api.repos();
+      if (data.status === 'ok') {
+        setUserRepos(data.repositories ?? []);
+        setReposStatus('ready');
+        setReposMessage('');
+      } else {
+        // Connected HTTP, failed GitHub link: never present as an empty account.
+        setUserRepos([]);
+        setReposStatus(data.status);
+        setReposMessage(data.message || '');
       }
     } catch (err) {
       console.error('Failed to fetch user repos', err);
+      setUserRepos([]);
+      setReposStatus('network_error');
+      setReposMessage(err instanceof ApiError ? err.message : 'Network error reaching the API.');
     } finally {
       setIsLoadingRepos(false);
       reposInflightRef.current = false;
@@ -330,10 +381,11 @@ function App() {
       ]) as PromiseSettledResult<Response>[];
       const [jobsRes, ssoRes, pamReqRes, pamGrantRes, iamRes, domainRes, actRes, mfaRes] = results;
       let jobsOk = false;
+      const jobsHttp = jobsRes.status === 'fulfilled' ? jobsRes.value.status : null;
       if (jobsRes.status === 'fulfilled' && jobsRes.value.ok) { setJobs(await jobsRes.value.json()); jobsOk = true; }
       else if (jobsRes.status === 'rejected') { throw jobsRes.reason; }
-      else if ((jobsRes as any).value?.status === 401) { throw new Error('Session expired — please sign in again.'); }
-      else { throw new Error(`Audit API returned HTTP ${(jobsRes as any).value?.status}`); }
+      else if (jobsHttp === 401) { throw new Error('Session expired — please sign in again.'); }
+      else { throw new Error(`Audit API returned HTTP ${jobsHttp}`); }
       if (ssoRes.status === 'fulfilled' && ssoRes.value.ok) setSsoProviders(await ssoRes.value.json());
       if (pamReqRes.status === 'fulfilled' && pamReqRes.value.ok) setPamRequests(await pamReqRes.value.json());
       if (pamGrantRes.status === 'fulfilled' && pamGrantRes.value.ok) setPamGrants(await pamGrantRes.value.json());
@@ -353,21 +405,26 @@ function App() {
   // Saves ~7/8 requests per tick vs full fetchDashboardData.
   const fetchJobsLite = useCallback(async () => {
     try {
-      const res = await apiFetch('/dashboard/jobs-lite');
-      if (res.ok) {
-        const d = await res.json();
-        setJobs(d.jobs || []);
+      const d = await api.jobsLite();
+      setJobs(d.jobs ?? []);
+      setLastSync(new Date());
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) { setAuthState('signed_out'); return; }
+      try {
+        // Fallback for backends predating /dashboard/jobs-lite.
+        setJobs(await api.listJobs());
         setLastSync(new Date());
-      } else {
-        const r = await apiFetch('/audit/jobs');
-        if (r.ok) { setJobs(await r.json()); setLastSync(new Date()); }
+      } catch (fallbackErr) {
+        if (fallbackErr instanceof ApiError && fallbackErr.status === 401) setAuthState('signed_out');
+        /* else silent — next tick will retry */
       }
-    } catch { /* silent — next tick will retry */ }
+    }
   }, []);
 
-  // Deep health telemetry (public endpoint, per API docs §14)
+  // Deep health telemetry (public endpoint). Operational status only: a healthy
+  // database never implies any particular scan succeeded.
   useEffect(() => {
-    if (view !== 'dashboard') return;
+    if (!location.pathname.startsWith('/console')) return;
     let alive = true;
     const probe = async () => {
       try {
@@ -385,22 +442,44 @@ function App() {
     probe();
     const t = setInterval(probe, 30000);
     return () => { alive = false; clearInterval(t); };
-  }, [view]);
+  }, [location.pathname]);
 
-  // Cancel an active job via DELETE /audit/job/{id}
+  // Cancel requests finalization; the worker owns the terminal write.
   const handleCancelJob = async (jobId: string) => {
     setCancellingIds((ids) => [...ids, jobId]);
+    setCancelNote('');
     try {
-      const res = await apiFetch(`/audit/job/${jobId}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        setModalError(body.detail || `Cancel failed (HTTP ${res.status})`);
-      }
-    } catch {
-      setModalError('Network error while cancelling job.');
+      await api.cancelJob(jobId);
+      setCancelNote('Cancellation requested — the worker is finalizing. Watch the live monitor for the terminal state.');
+    } catch (err) {
+      setModalError(err instanceof ApiError ? err.message : 'Network error while cancelling job.');
     } finally {
       setCancellingIds((ids) => ids.filter((id) => id !== jobId));
       fetchDashboardData(false, { force: true });
+    }
+  };
+
+  // Retry queues a new attempt; history stays immutable. 409 when ineligible.
+  const handleRetryJob = async (jobId: string) => {
+    if (retryBusy) return;
+    setRetryBusy(true);
+    setModalError('');
+    try {
+      await api.retryJob(jobId);
+      const req = inspectReqRef.current;
+      try {
+        const execs = await api.jobExecutions(jobId);
+        if (inspectReqRef.current === req) {
+          setExecutions(execs);
+          const latest = [...execs].sort((a, b) => b.attempt_number - a.attempt_number)[0];
+          if (latest) void selectExecution(jobId, latest.execution_id);
+        }
+      } catch { /* executions refresh is best-effort */ }
+      fetchDashboardData(false, { force: true });
+    } catch (err) {
+      setModalError(err instanceof ApiError ? err.message : 'Network error requesting retry.');
+    } finally {
+      setRetryBusy(false);
     }
   };
 
@@ -449,7 +528,7 @@ function App() {
   useEffect(() => { jobsRef.current = jobs; }, [jobs]);
 
   useEffect(() => {
-    if (view !== 'dashboard') return;
+    if (!location.pathname.startsWith('/console')) return;
     const targetJobId = activeMonitorJobId || (jobsRef.current.length > 0 ? jobsRef.current[0].id : null);
     if (!targetJobId) return;
 
@@ -460,9 +539,13 @@ function App() {
 
     const fetchPhases = async () => {
       try {
-        const res = await apiFetch(`/audit/job/${targetJobId}/phases`);
-        if (res.ok) setMonitorPhases(await res.json());
-      } catch (err) { console.warn('Error fetching job phases:', err); }
+        const phases = await api.jobPhases(targetJobId);
+        if (!cancelled) setMonitorPhases(phases);
+      } catch (err) {
+        // Expired session must surface as signed-out, not poll forever.
+        if (err instanceof ApiError && err.status === 401) setAuthState('signed_out');
+        else console.warn('Error fetching job phases:', err);
+      }
     };
     const isJobActive = () => {
       const j = jobsRef.current.find(x => x.id === targetJobId);
@@ -489,29 +572,30 @@ function App() {
     try {
       sse = new EventSource(sseUrl, { withCredentials: true });
       const onUpdate = (ev: MessageEvent) => {
-        try {
-          const p = JSON.parse((ev as any).data);
-          if (Array.isArray(p.phases)) setMonitorPhases(p.phases);
-          if (p.job) setJobs(prev => {
-            const exists = prev.some(x => x.id === p.job.id);
-            return exists ? prev.map(x => x.id === p.job.id ? { ...x, ...p.job } : x) : prev;
-          });
-        } catch {}
+        const p = parseSsePayload(ev.data);
+        if (!p) return;
+        if (Array.isArray(p.phases)) setMonitorPhases(p.phases);
+        if (p.job) setJobs(prev => {
+          const exists = prev.some(x => x.id === p.job!.id);
+          return exists ? prev.map(x => x.id === p.job!.id ? { ...x, ...p.job! } : x) : prev;
+        });
       };
       const onDone = (ev: MessageEvent) => {
-        try {
-          const p = JSON.parse((ev as any).data);
+        const p = parseSsePayload(ev.data);
+        if (p) {
           if (Array.isArray(p.phases)) setMonitorPhases(p.phases);
-          if (p.job) setJobs(prev => prev.map(x => x.id === p.job.id ? { ...x, ...p.job } : x));
-        } catch {}
+          if (p.job) setJobs(prev => prev.map(x => x.id === p.job!.id ? { ...x, ...p.job! } : x));
+        }
         try { sse?.close(); } catch {}
         sse = null;
         void fetchJobsLite(); // final sync
       };
       const onErrorEvent = (ev: MessageEvent) => {
-        console.warn('SSE job error event', (ev as any).data);
-        // error payload is still useful — try to apply it before fallback
-        try { const p = JSON.parse((ev as any).data); if (p.phases) setMonitorPhases(p.phases); } catch {}
+        const p = parseSsePayload(ev.data);
+        // error payload is still useful — try to apply it before fallback.
+        // A stream error never means completion: only a done event does.
+        if (p?.error) console.warn('SSE job error event', p.error);
+        if (p && Array.isArray(p.phases)) setMonitorPhases(p.phases);
       };
       sse.addEventListener('update', onUpdate as EventListener);
       sse.addEventListener('done', onDone as EventListener);
@@ -543,7 +627,7 @@ function App() {
       try { sse?.close(); } catch {}
       if (pollTimer) clearInterval(pollTimer);
     };
-  }, [view, activeMonitorJobId, fetchJobsLite]);
+  }, [location.pathname, activeMonitorJobId, fetchJobsLite]);
 
 
 
@@ -567,25 +651,22 @@ function App() {
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const res = await apiFetch('/auth/me');
-        if (res.ok) {
-          const data = await res.json();
-          setUser({
-            user_id: data.user_id,
-            username: data.username,
-            email: data.email,
-            credit_balance: data.credit_balance,
-          });
-          navigate('/console/overview');
-          fetchDashboardData(true, { force: true });
-        } else {
-          document.cookie = 'access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-          document.cookie = 'refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-          setUser(null);
-        }
+        const data = await api.me();
+        setUser({
+          user_id: data.user_id,
+          username: data.username,
+          email: data.email,
+          credit_balance: data.credit_balance,
+        });
+        setAuthState('authenticated');
+        navigate('/console/overview');
+        fetchDashboardData(true, { force: true });
       } catch (err) {
+        // No session (401) or unreachable backend: stay signed out, never
+        // fabricate a user from a failed response.
         console.warn('No active session found:', err);
         setUser(null);
+        setAuthState('signed_out');
       } finally {
         setIsLoading(false);
       }
@@ -593,21 +674,10 @@ function App() {
 
     const handleOAuthCallback = async (code: string) => {
       setIsLoading(true);
+      setAuthState('initializing');
       setError('');
       try {
-        const exchangeRes = await fetch(`${API_BASE}/auth/exchange`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code }),
-        });
-
-        if (!exchangeRes.ok) {
-          const errData = await exchangeRes.json().catch(() => ({}));
-          throw new Error(errData.message || errData.error || `Failed to exchange authorization code (HTTP ${exchangeRes.status})`);
-        }
-
-        const exchangeData = await exchangeRes.json();
+        const exchangeData = await api.exchangeCode(code);
 
         if (exchangeData.user_id && exchangeData.username) {
           setUser({
@@ -615,27 +685,27 @@ function App() {
             username: exchangeData.username,
             email: exchangeData.email || null,
           });
+          setAuthState('authenticated');
           navigate('/console/overview');
           fetchDashboardData(false, { force: true });
         }
 
         try {
-          const meRes = await apiFetch('/auth/me');
-          if (meRes.ok) {
-            const data = await meRes.json();
-            setUser({
-              user_id: data.user_id,
-              username: data.username,
-              email: data.email,
-              credit_balance: data.credit_balance,
-            });
-            navigate('/console/overview');
-          }
+          const data = await api.me();
+          setUser({
+            user_id: data.user_id,
+            username: data.username,
+            email: data.email,
+            credit_balance: data.credit_balance,
+          });
+          setAuthState('authenticated');
+          navigate('/console/overview');
         } catch {
           // If background meRes fails, remain logged in via exchangeData
         }
-      } catch (err: any) {
-        setError(err.message || 'Authentication failed. Please try again.');
+      } catch (err) {
+        setAuthState('error');
+        setError(err instanceof ApiError ? err.message : 'Authentication failed. Please try again.');
         navigate('/login');
       } finally {
         setIsLoading(false);
@@ -647,6 +717,7 @@ function App() {
     const oauthError = params.get('oauth_error');
 
     if (oauthError) {
+      setAuthState('error');
       setError(`OAuth login failed: ${decodeURIComponent(oauthError)}`);
       navigate('/login');
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -654,6 +725,9 @@ function App() {
     } else if (code) {
       if (oauthHandledRef.current) return;
       oauthHandledRef.current = true;
+      // Single-use code: strip it from the URL immediately so it never lingers
+      // in history, logs, or shared links.
+      window.history.replaceState({}, document.title, window.location.pathname);
       handleOAuthCallback(code);
     } else {
       if (sessionCheckedRef.current) return;
@@ -670,13 +744,13 @@ function App() {
   const handleLogout = async () => {
     setIsLoading(true);
     try {
-      await apiFetch('/auth/logout', { method: 'POST' });
+      // Server response clears the HttpOnly session cookies.
+      await api.logout();
     } catch (err) {
       console.error('Logout error:', err);
     } finally {
-      document.cookie = 'access_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
-      document.cookie = 'refresh_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
       setUser(null);
+      setAuthState('signed_out');
       setJobs([]);
       setSelectedJobDetail(null);
       setSelectedFinding(null);
@@ -692,39 +766,35 @@ function App() {
     }
   };
 
-  // Submit real audit job
+  // Submit real audit job — only SubmitJobRequest fields. Backend validates the
+  // URL/branch/SHA and enforces the per-user active-job cap (409) itself.
+  const openScanModal = () => { setModalError(''); setIsScanModalOpen(true); };
   const handleStartScan = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newRepoUrl || !newRepoUrl.trim()) return;
+    const repoUrl = newRepoUrl.trim();
+    const branch = newRepoBranch.trim() || 'main';
+    const sha = newCommitSha.trim();
+    if (!repoUrl) return;
+    if (sha && !isValidCommitSha(sha)) {
+      setModalError('Commit SHA must be a 40-character lowercase hex digest, or left empty to scan the branch head.');
+      return;
+    }
+    if (isSubmitting) return; // duplicate-click guard
 
     setModalError('');
     setIsSubmitting(true);
 
     try {
-      const res = await apiFetch('/audit/submit', {
-        method: 'POST',
-        body: JSON.stringify({
-          repo_url: newRepoUrl.trim(),
-          repo_branch: newRepoBranch.trim() || 'main',
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setIsScanModalOpen(false);
-        setNewRepoUrl('');
-        if (data && data.job_id) {
-          setActiveMonitorJobId(data.job_id);
-        }
-        navigate('/console/overview');
-        navigate('/console/overview');
-        fetchDashboardData(false, { force: true });
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        setModalError(errData.message || errData.error || errData.detail || 'Failed to submit audit job.');
-      }
-    } catch (err: any) {
-      setModalError(err.message || 'Network error submitting scan job.');
+      const job = await api.submitJob(buildSubmitRequest({ repoUrl, repoBranch: branch, commitSha: sha }));
+      setIsScanModalOpen(false);
+      setNewRepoUrl('');
+      setNewCommitSha('');
+      setActiveMonitorJobId(job.id);
+      navigate('/console/jobs');
+      fetchDashboardData(false, { force: true });
+    } catch (err) {
+      // Values retained; no success screen on failure. 409 names the cap.
+      setModalError(err instanceof ApiError ? err.message : 'Network error submitting scan job.');
     } finally {
       setIsSubmitting(false);
     }
@@ -824,28 +894,176 @@ function App() {
     }
   };
 
-  // Fetch specific job details
-  const handleViewJobDetail = async (jobId: string) => {
-    setSelectedJobDetail({ job: { id: jobId } as AuditJob, findings: [] });
-    setDetailLoading(true);
+  // Execution-scoped report + narrative for one attempt. Stale responses (a
+  // newer attempt selected mid-flight) are dropped, never applied.
+  const loadExecutionData = async (jobId: string, executionId: string, req: number) => {
+    setReportState('loading');
+    setReportError('');
+    setNarrative(null);
+    setNarrativeState('loading');
+    setNarrativeError('');
     try {
-      const res = await apiFetch(`/audit/job/${jobId}`);
-      if (res.ok) {
-        const detail = await res.json();
-        setSelectedJobDetail(detail);
-        if (detail.findings && detail.findings.length > 0) {
-          setSelectedFinding(detail.findings[0]);
-        }
+      const rep = await api.executionReportJson(jobId, executionId);
+      if (inspectReqRef.current !== req) return;
+      setExecReport(rep);
+      setReportState('ready');
+    } catch (err) {
+      if (inspectReqRef.current !== req) return;
+      setExecReport(null);
+      setReportState('error');
+      setReportError(err instanceof ApiError ? err.message : 'Network error loading report.');
+    }
+    try {
+      const n = await api.getNarrative(jobId, executionId);
+      if (inspectReqRef.current !== req) return;
+      setNarrative(n.narrative);
+      setNarrativeState('ready');
+    } catch (err) {
+      if (inspectReqRef.current !== req) return;
+      // 404 = no narrative yet: offer generation. Anything else surfaces.
+      if (err instanceof ApiError && err.status === 404) {
+        setNarrativeState('idle');
       } else {
-        setModalError(`Failed to load job details (HTTP ${res.status}).`);
-        setSelectedJobDetail(null);
+        setNarrativeState('error');
+        setNarrativeError(err instanceof ApiError ? err.message : 'Network error loading narrative.');
+      }
+    }
+  };
+
+  const selectExecution = async (jobId: string, executionId: string) => {
+    const req = ++inspectReqRef.current;
+    setSelectedExecutionId(executionId);
+    setDeliveryMsg('');
+    await loadExecutionData(jobId, executionId, req);
+  };
+
+  // Fetch specific job details + attempt history
+  const handleViewJobDetail = async (jobId: string) => {
+    const req = ++inspectReqRef.current;
+    setSelectedJobDetail({ job: { id: jobId } as JobResponse, findings: [] });
+    setDetailLoading(true);
+    setModalError('');
+    setExecutions([]);
+    setSelectedExecutionId(null);
+    setExecReport(null);
+    setReportState('idle');
+    setReportError('');
+    setNarrative(null);
+    setNarrativeState('idle');
+    setNarrativeError('');
+    setFindingQuery('');
+    setFindingSev('all');
+    setDeliveryMsg('');
+    setCancelNote('');
+    try {
+      const detail = await api.jobDetail(jobId);
+      if (inspectReqRef.current !== req) return;
+      setSelectedJobDetail(detail);
+      if (detail.findings && detail.findings.length > 0) {
+        setSelectedFinding(detail.findings[0]);
       }
     } catch (err) {
+      if (inspectReqRef.current !== req) return;
       console.error('Fetch job detail error:', err);
-      setModalError('Network error while loading job details.');
-      setSelectedJobDetail(null);
-    } finally {
+      setModalError(err instanceof ApiError ? err.message : 'Network error while loading job details.');
+      closeInspector();
       setDetailLoading(false);
+      return;
+    } finally {
+      if (inspectReqRef.current === req) setDetailLoading(false);
+    }
+    try {
+      setExecLoading(true);
+      const execs = await api.jobExecutions(jobId);
+      if (inspectReqRef.current !== req) return;
+      setExecutions(execs);
+      // Default to the latest attempt only on open — never switch mid-view.
+      const latest = [...execs].sort((a, b) => b.attempt_number - a.attempt_number)[0];
+      if (latest) {
+        setSelectedExecutionId(latest.execution_id);
+        await loadExecutionData(jobId, latest.execution_id, req);
+      }
+    } catch {
+      if (inspectReqRef.current === req) setExecutions([]);
+    } finally {
+      if (inspectReqRef.current === req) setExecLoading(false);
+    }
+  };
+
+  // AI narrative is optional annotation: failure never touches the report.
+  const handleGenerateNarrative = async () => {
+    const d = selectedJobDetail;
+    if (!d || !selectedExecutionId || narrativeState === 'loading') return;
+    setNarrativeState('loading');
+    setNarrativeError('');
+    const req = inspectReqRef.current;
+    try {
+      const n = await api.generateNarrative(d.job.id, selectedExecutionId);
+      if (inspectReqRef.current !== req) return;
+      setNarrative(n.narrative);
+      setNarrativeState('ready');
+      try {
+        const execs = await api.jobExecutions(d.job.id);
+        if (inspectReqRef.current === req) setExecutions(execs);
+      } catch { /* flag refresh is best-effort */ }
+    } catch (err) {
+      if (inspectReqRef.current !== req) return;
+      setNarrativeState('error');
+      setNarrativeError(err instanceof ApiError ? err.message : 'Network error generating narrative.');
+    }
+  };
+
+  // Delivery reports the backend's persisted outcome — never claims sent on request.
+  const handleDeliver = async (channel: 'email' | 'telegram') => {
+    const d = selectedJobDetail;
+    if (!d || !selectedExecutionId || deliveryBusy) return;
+    const label = channel === 'email' ? 'account email' : 'configured Telegram chat';
+    if (!window.confirm(`Send this attempt's report to the ${label}?`)) return;
+    setDeliveryBusy(channel);
+    setDeliveryMsg('');
+    // A closed dialog invalidates the request: late responses must not write
+    // into a reopened view, same lifecycle as report/narrative loads.
+    const req = inspectReqRef.current;
+    try {
+      const res = channel === 'email'
+        ? await api.emailReport(d.job.id, selectedExecutionId)
+        : await api.telegramReport(d.job.id, selectedExecutionId);
+      if (inspectReqRef.current !== req) return;
+      setDeliveryMsg(res.status === 'already_sent' ? 'Already delivered.' : `Delivered (${res.status}).`);
+    } catch (err) {
+      if (inspectReqRef.current !== req) return;
+      setDeliveryMsg(err instanceof ApiError ? err.message : 'Network error requesting delivery.');
+    } finally {
+      if (inspectReqRef.current === req) setDeliveryBusy(null);
+    }
+  };
+
+  const downloadTextFile = (name: string, text: string, mime: string) => {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Execution-scoped downloads. HTML is a file download, never injected.
+  const handleDownloadExecutionReport = async (format: 'markdown' | 'json' | 'html') => {
+    const d = selectedJobDetail;
+    if (!d || !selectedExecutionId) return;
+    const ext = format === 'json' ? 'json' : format === 'html' ? 'html' : 'md';
+    try {
+      const text = format === 'json'
+        ? JSON.stringify(await api.executionReportJson(d.job.id, selectedExecutionId), null, 2)
+        : await api.executionReportText(d.job.id, selectedExecutionId, format);
+      downloadTextFile(
+        `firecrow-report-${d.job.id.substring(0, 8)}-attempt-${ext}.${ext}`,
+        text,
+        format === 'html' ? 'text/html' : 'text/plain;charset=utf-8',
+      );
+    } catch (err) {
+      setModalError(err instanceof ApiError ? err.message : 'Network error downloading report.');
     }
   };
 
@@ -853,7 +1071,14 @@ function App() {
   const isLogin = location.pathname === '/login';
   const isConsole = location.pathname.startsWith('/console');
 
-  if (isLoading) {
+  // Guard: unauthenticated console access returns to login (401 contract).
+  useEffect(() => {
+    if (isConsole && !user && (authState === 'signed_out' || authState === 'error')) {
+      navigate('/login');
+    }
+  }, [isConsole, user, authState, navigate]);
+
+  if (authState === 'initializing' || isLoading) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.25rem' }}>
@@ -888,11 +1113,6 @@ function App() {
         clearErrors={() => { setError(''); setAuthFormError(''); }}
       />
     );
-  }
-
-  // Guard: unauthenticated console access handled by checkSession
-  if (isConsole && !user && !isLoading) {
-    // will be handled by checkSession; show loading briefly
   }
 
   // Render Dashboard View — per-function windows with proper navigation
@@ -990,10 +1210,16 @@ function App() {
           </div>
 
           <div className="topbar-right">
-            <div className="status-indicator">
-              <div className="status-dot status-dot-live" />
-              <span>LIVE</span>
-            </div>
+            {/* Live backend status: reporting-only, no scanner claim. */}
+            <BackendStatusIndicator
+              onTransition={(prev, next) => {
+                const decision = transitionToast(prev, next);
+                if (decision === 'none') return;
+                pushToast(TOAST_COPY[decision].tone, TOAST_COPY[decision].message);
+              }}
+            />
+
+            <ToastHost toasts={toasts} onDismiss={dismissToast} />
 
             {/* Dynamic Theme Picker */}
             <div className={`theme-picker ${themeMenuOpen ? 'open' : ''}`} onMouseLeave={() => setThemeMenuOpen(false)}>
@@ -1032,7 +1258,7 @@ function App() {
               </div>
             </div>
 
-            <button onClick={() => setIsScanModalOpen(true)} className="btn btn-primary btn-sm">
+            <button onClick={() => { openScanModal(); }} className="btn btn-primary btn-sm">
               + New Audit Job
             </button>
 
@@ -1156,7 +1382,7 @@ function App() {
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
                       Audit Jobs
                     </div>
-                    <button onClick={() => setIsScanModalOpen(true)} className="btn btn-secondary btn-sm">+ New</button>
+                    <button onClick={() => { openScanModal(); }} className="btn btn-secondary btn-sm">+ New</button>
                   </div>
                   <div className="panel-body" style={{ padding: '0.75rem' }}>
                     <PanelState state={dashLoad} error={dashError} empty={jobs.length === 0} emptyIcon="🛡" rows={3} onRetry={() => fetchDashboardData(true, { force: true })}>
@@ -1165,6 +1391,7 @@ function App() {
                       ) : (
                         jobs.slice(0, 8).map(j => {
                           const st = jobStatusInfo(j.status);
+                          const sha = j.commit_sha || j.requested_commit_sha;
                           return (
                             <div
                               key={j.id}
@@ -1175,7 +1402,7 @@ function App() {
                               <ScoreRing score={j.security_score ?? null} size={34} />
                               <div className="list-item-info">
                                 <div className="list-item-title">{j.repo_url.split('/').slice(-2).join('/') || j.repo_url}</div>
-                                <div className="list-item-sub">{j.repo_branch} · {j.id.substring(0, 8)} · {timeAgo(j.created_at)}</div>
+                                <div className="list-item-sub">{j.repo_branch} · {j.id.substring(0, 8)} · {timeAgo(j.created_at)}{sha ? ` · ⏺ ${sha.substring(0, 8)}` : ''}</div>
                                 {(j.status === 'failed' || j.status === 'cancelled') && j.error_message && (
                                   <div className="list-item-sub" style={{ color: 'var(--apple-red)' }} title={j.error_message}>
                                     {j.error_message.length > 55 ? `${j.error_message.slice(0, 55)}…` : j.error_message}
@@ -1224,7 +1451,7 @@ function App() {
                   <button onClick={() => fetchDashboardData(true, { force: true })} className="btn btn-secondary btn-sm" disabled={dashLoad === 'loading'}>
                     {dashLoad === 'loading' ? 'Syncing…' : '↻ Refresh'}
                   </button>
-                  <button onClick={() => setIsScanModalOpen(true)} className="btn btn-primary btn-sm">
+                  <button onClick={() => { openScanModal(); }} className="btn btn-primary btn-sm">
                     + Trigger Scan
                   </button>
                 </div>
@@ -1248,7 +1475,7 @@ function App() {
                   {jobs.length === 0 ? (
                     <>
                       <p style={{ marginBottom: '0.75rem' }}>No audit jobs registered in PostgreSQL yet.</p>
-                      <button onClick={() => setIsScanModalOpen(true)} className="btn btn-primary btn-sm">
+                      <button onClick={() => { openScanModal(); }} className="btn btn-primary btn-sm">
                         Submit Repo for Scan
                       </button>
                     </>
@@ -1276,6 +1503,9 @@ function App() {
                                 <td>
                                   <div style={{ fontWeight: 600 }}>{j.repo_url.split('/').slice(-2).join('/') || j.repo_url}</div>
                                   <code style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>⎇ {j.repo_branch}</code>
+                                  {(j.commit_sha || j.requested_commit_sha) ? (
+                                    <code style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }} title={`Pinned snapshot ${j.commit_sha || j.requested_commit_sha}`}>⏺ {((j.commit_sha || j.requested_commit_sha) ?? '').substring(0, 8)}</code>
+                                  ) : null}
                                 </td>
                                 <td>
                                   <span className={`badge ${st.cls}`}>{st.pulse && <span className="badge-pulse" />} {st.label}</span>
@@ -1501,7 +1731,7 @@ function App() {
                       if (e.target.value) {
                         const repo = userRepos.find(r => (r.clone_url || r.html_url) === e.target.value);
                         if (repo) {
-                          setNewRepoUrl(repo.clone_url || repo.html_url);
+                          setNewRepoUrl(repo.clone_url || repo.html_url || '');
                           setNewRepoBranch(repo.default_branch || 'main');
                         }
                       }
@@ -1509,14 +1739,20 @@ function App() {
                     defaultValue=""
                   >
                     <option value="" disabled>-- Select a GitHub Repository to Audit --</option>
-                    {userRepos.map((r: any) => (
-                      <option key={r.id} value={r.clone_url || r.html_url}>
+                    {userRepos.map((r) => (
+                      <option key={r.id} value={r.clone_url || r.html_url || ''}>
                         {r.private ? '🔒 Private' : '🌐 Public'}: {r.full_name} ({r.default_branch || 'main'})
                       </option>
                     ))}
                   </select>
                   <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                    {userRepos.length > 0 ? `${userRepos.length} repositories synchronized from your GitHub account.` : 'Click "Sync Account Repos" to load your public & private GitHub repositories.'}
+                    {reposStatus === 'not_connected'
+                      ? 'GitHub not connected — sign in with GitHub to sync repositories, or paste a public URL below.'
+                      : reposStatus === 'github_error' || reposStatus === 'network_error'
+                        ? `Repository sync failed${reposMessage ? `: ${reposMessage}` : '.'} You can still paste a URL below.`
+                        : userRepos.length > 0
+                          ? `${userRepos.length} repositories synchronized from your GitHub account.`
+                          : 'Click "Sync Account Repos" to load your public & private GitHub repositories.'}
                   </div>
                 </div>
 
@@ -1541,6 +1777,20 @@ function App() {
                     onChange={e => setNewRepoBranch(e.target.value)}
                   />
                 </div>
+
+                <div className="form-group">
+                  <label className="form-label">Pinned commit (optional)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="40-char lowercase hex, or empty for branch head"
+                    value={newCommitSha}
+                    onChange={e => setNewCommitSha(e.target.value)}
+                    maxLength={40}
+                  />
+                </div>
+
+                {modalError && <div className="error-box" style={{ marginBottom: '1rem' }}>{modalError}</div>}
               </div>
 
               <div className="modal-footer">
@@ -1554,10 +1804,10 @@ function App() {
         </div>
       )}
 
-      {/* Modal: Job Findings Detail */}
+      {/* Modal: Job Inspector (execution-aware) */}
       {selectedJobDetail && (
-        <div className="modal-backdrop" onClick={() => setSelectedJobDetail(null)}>
-          <div className="modal" style={{ maxWidth: '680px' }} onClick={e => e.stopPropagation()}>
+        <div className="modal-backdrop" onClick={() => closeInspector()} onKeyDown={e => { if (e.key === 'Escape') closeInspector(); }}>
+          <div className="modal" style={{ maxWidth: '760px' }} role="dialog" aria-modal="true" aria-label={`Audit ${selectedJobDetail.job.id.substring(0, 8)}`} onClick={e => e.stopPropagation()}>
             <div className="modal-head">
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem' }}>
                 <ScoreRing score={detailLoading ? null : (selectedJobDetail.job.security_score ?? null)} size={54} />
@@ -1575,7 +1825,7 @@ function App() {
                   </div>
                 </div>
               </div>
-              <button onClick={() => setSelectedJobDetail(null)} className="btn btn-ghost btn-icon">✕</button>
+              <button onClick={() => closeInspector()} className="btn btn-ghost btn-icon">✕</button>
             </div>
 
             <div className="modal-body" style={{ maxHeight: '440px', overflowY: 'auto' }}>
@@ -1585,112 +1835,162 @@ function App() {
                 </div>
               ) : (
                 <>
-                  {/* Severity distribution */}
-                  <div className="detail-summary-row">
-                    <div style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
-                      Findings ({selectedJobDetail.findings.length})
-                    </div>
-                    {selectedJobDetail.findings.length > 0 && <SeverityBars findings={selectedJobDetail.findings} />}
-                  </div>
+                  {modalError && <div className="error-box" role="alert" style={{ marginBottom: '0.75rem' }}>{modalError}</div>}
+                  {cancelNote && <div style={{ marginBottom: '0.75rem', fontSize: '0.78rem', color: '#ffd60a' }}>{cancelNote}</div>}
 
-                  {selectedJobDetail.findings.length === 0 ? (
-                    <div className="panel-empty">
-                      {/*
-                        security_p0_c: `engine_unavailable` must never read as
-                        "no vulnerabilities found". It means no analysis was
-                        performed at all. The previous fallback rendered it as
-                        "No findings yet", which implies a scan is still pending.
-                      */}
-                      {selectedJobDetail.job.status === 'engine_unavailable' ? (
-                        <>
-                          <strong>No analysis was performed.</strong>
-                          <div style={{ marginTop: '0.4rem', fontSize: '0.78rem' }}>
-                            No vulnerability analysis engine is installed in this build, so this
-                            repository was never fetched, read, or analyzed. This is
-                            <strong> not</strong> a clean result and
-                            <strong> not</strong> a score of 0 vulnerabilities.
-                          </div>
-                          {selectedJobDetail.job.error_message && (
-                            <div
-                              style={{ marginTop: '0.4rem', fontSize: '0.72rem', opacity: 0.75 }}
-                            >
-                              {selectedJobDetail.job.error_message}
-                            </div>
-                          )}
-                        </>
-                      ) : selectedJobDetail.job.status === 'completed' ? (
-                        'Clean audit — no vulnerabilities reported.'
-                      ) : (
-                        `No findings yet — job is ${selectedJobDetail.job.status}.`
-                      )}
+                  {/* Attempt history: each retry is a separate immutable execution */}
+                  <div style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>
+                    Attempts{execLoading ? ' (loading…)' : ''}
+                  </div>
+                  {execLoading ? (
+                    <div className="state-skeleton"><div className="skeleton-row" style={{ width: '60%' }} /></div>
+                  ) : executions.length === 0 ? (
+                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+                      No attempt history — showing the latest result below.
                     </div>
                   ) : (
-                    selectedJobDetail.findings.map(f => (
-                      <div key={f.id} className="finding-card">
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
+                      {[...executions].sort((a, b) => a.attempt_number - b.attempt_number).map(ex => (
+                        <button
+                          key={ex.execution_id}
+                          onClick={() => void selectExecution(selectedJobDetail.job.id, ex.execution_id)}
+                          className={`btn btn-sm ${ex.execution_id === selectedExecutionId ? 'btn-primary' : 'btn-secondary'}`}
+                          title={`${ex.status} • ${ex.finding_count} findings${ex.has_report ? ' • report' : ''}${ex.has_narrative ? ' • narrative' : ''}`}
+                        >
+                          #{ex.attempt_number} {ex.status}{ex.has_report ? ' • R' : ''}{ex.has_narrative ? ' • AI' : ''}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Deterministic report for the selected attempt */}
+                  {selectedExecutionId && (
+                    <>
+                      {reportState === 'loading' && (
+                        <div className="state-skeleton"><div className="skeleton-row" style={{ width: '80%' }} /></div>
+                      )}
+                      {reportState === 'error' && (
+                        <div className="error-box" role="alert" style={{ marginBottom: '0.75rem' }}>
+                          {reportError || 'Report unavailable.'}{' '}
+                          <button className="btn btn-secondary btn-sm" onClick={() => void selectExecution(selectedJobDetail.job.id, selectedExecutionId)}>Retry</button>
+                        </div>
+                      )}
+                      {reportState === 'ready' && execReport && (
+                        <div style={{ marginBottom: '0.75rem', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '0.3rem' }}>
+                            Attempt #{execReport.identity.attempt_number} • exec {execReport.identity.execution_id.substring(0, 8)} • snapshot {(execReport.identity.snapshot_commit ?? '').substring(0, 8) || 'branch head'}
+                          </div>
+                          {execReport.coverage.state === 'NO_FILES_ANALYZED' ? (
+                            <div><strong>No files were analyzed — coverage is unknown, not clean.</strong></div>
+                          ) : execReport.coverage.state === 'SUCCESS_CLEAN' ? (
+                            <div>All scanners completed — no findings.</div>
+                          ) : execReport.coverage.state === 'SUCCESS_FINDINGS' ? (
+                            <div>{execReport.summary.headline}</div>
+                          ) : (
+                            <div><strong>Coverage {execReport.coverage.state}:</strong> this attempt did not fully cover the snapshot.</div>
+                          )}
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
+                            Findings: {execReport.summary.finding_count} • Invalid quarantined: {execReport.summary.invalid_finding_count} • Score: {execReport.summary.security_score ?? 'Unknown'}
+                          </div>
+                          {Object.entries(execReport.summary.findings_by_severity).length > 0 && (
+                            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
+                              {Object.entries(execReport.summary.findings_by_severity).map(([sev, n]) => (
+                                <span key={sev} className={`badge ${severityClass(sev)}`}>{sev.toUpperCase()} {n}</span>
+                              ))}
+                            </div>
+                          )}
+                          {Object.entries(execReport.coverage.unsuccessful_scanners).length > 0 && (
+                            <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.3rem' }}>
+                              Unsuccessful scanners:{' '}
+                              {Object.entries(execReport.coverage.unsuccessful_scanners).map(([name, why]) => (
+                                <span key={name} className="badge badge-medium" title={why} style={{ marginRight: '0.3rem' }}>{name}</span>
+                              ))}
+                            </div>
+                          )}
+                          {execReport.limitations.length > 0 && (
+                            <details style={{ marginTop: '0.35rem', fontSize: '0.76rem' }}>
+                              <summary>Limitations ({execReport.limitations.length})</summary>
+                              <ul style={{ margin: '0.3rem 0 0', paddingLeft: '1.1rem' }}>
+                                {execReport.limitations.map((l, i) => <li key={i}>{l}</li>)}
+                              </ul>
+                            </details>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* Findings explorer */}
+                  <div className="detail-summary-row">
+                    <div style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
+                      Findings ({explorerFindings.length}{reportState === 'ready' ? '' : ' • latest result'})
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.4rem' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder="Search title, description, path…"
+                        value={findingQuery}
+                        onChange={e => setFindingQuery(e.target.value)}
+                        style={{ flex: 1 }}
+                        aria-label="Search findings"
+                      />
+                      <select className="form-input" value={findingSev} onChange={e => setFindingSev(e.target.value)} aria-label="Filter by severity" style={{ maxWidth: '130px' }}>
+                        {['all', 'critical', 'high', 'medium', 'low', 'info', 'unknown'].map(s => (
+                          <option key={s} value={s}>{s === 'all' ? 'All severities' : s}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {reportState !== 'ready' && selectedJobDetail.job.status === 'engine_unavailable' && (
+                      <div style={{ marginTop: '0.4rem', fontSize: '0.78rem' }}>
+                        <strong>No analysis was performed.</strong> No engine is installed in this build — this is <strong>not</strong> a clean result.
+                      </div>
+                    )}
+                  </div>
+
+                  {explorerFindings.length === 0 ? (
+                    <div className="panel-empty">
+                      {reportState === 'ready' && execReport && execReport.coverage.state !== 'SUCCESS_CLEAN' && execReport.coverage.state !== 'SUCCESS_FINDINGS'
+                        ? `No findings shown — coverage ${execReport.coverage.state}: this attempt is not a complete audit, not a clean result.`
+                        : selectedJobDetail.job.status === 'completed' && reportState !== 'loading'
+                          ? 'Clean audit — no vulnerabilities reported.'
+                          : `No findings match — job is ${selectedJobDetail.job.status}.`}
+                    </div>
+                  ) : (
+                    explorerFindings.map(f => (
+                      <div key={f.key} className="finding-card">
                         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.35rem', flexWrap: 'wrap' }}>
                           <span className={`badge ${severityClass(f.severity)}`}>{(f.severity || 'info').toUpperCase()}</span>
-                          {f.cvss_score != null && (
-                            <span className="badge badge-neutral" title={f.cvss_vector || ''}>CVSS {f.cvss_score.toFixed(1)}</span>
-                          )}
-                          <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{f.cwe_id || ''}</span>
-                          {f.file_path && (
+                          {f.cvss != null && <span className="badge badge-neutral">CVSS {f.cvss.toFixed(1)}</span>}
+                          {f.cwe && <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{f.cwe}</span>}
+                          {f.file && (
                             <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>
-                              {f.file_path}{f.line_number != null ? `:${f.line_number}` : ''}
+                              {f.file}{f.line != null ? `:${f.line}` : ''}
                             </span>
-                          )}
-                          {f.id && (
-                            <button
-                              onClick={(e) => {
-                                navigator.clipboard.writeText(f.id);
-                                const btn = e.currentTarget;
-                                const originalTitle = btn.title;
-                                btn.title = 'Copied!';
-                                setTimeout(() => {
-                                  btn.title = originalTitle;
-                                }, 1500);
-                              }}
-                              title="Copy finding ID"
-                              style={{
-                                padding: '0.2rem 0.4rem',
-                                fontSize: '0.65rem',
-                                background: 'rgba(255,255,255,0.05)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '3px',
-                                color: 'var(--text-muted)',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              📄 ID
-                            </button>
-                          )}
-                          {f.remediation && (
-                            <button
-                              onClick={(e) => {
-                                navigator.clipboard.writeText(f.remediation || '');
-                                const btn = e.currentTarget;
-                                const originalTitle = btn.title;
-                                btn.title = 'Copied!';
-                                setTimeout(() => {
-                                  btn.title = originalTitle;
-                                }, 1500);
-                              }}
-                              title="Copy remediation"
-                              style={{
-                                padding: '0.2rem 0.4rem',
-                                fontSize: '0.65rem',
-                                background: 'rgba(255,255,255,0.05)',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                borderRadius: '3px',
-                                color: 'var(--text-muted)',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              📋 Fix
-                            </button>
                           )}
                         </div>
                         <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{f.title}</div>
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', margin: '0.4rem 0' }}>{f.description}</div>
+                        {f.evidence && (
+                          <details className="remediation-details">
+                            <summary>View evidence{f.evidenceTruncated ? ' (truncated by scanner)' : ''}</summary>
+                            <pre className="code-block"><code>{f.evidence}</code></pre>
+                          </details>
+                        )}
+                        {f.references.length > 0 && (
+                          <div style={{ fontSize: '0.74rem', marginTop: '0.3rem' }}>
+                            {f.references.map(r => (
+                              <div key={r.url}>
+                                <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>[{r.reference_type}] </span>
+                                {isSafeExternalUrl(r.url) ? (
+                                  <a href={r.url} target="_blank" rel="noreferrer">{r.url}</a>
+                                ) : (
+                                  <span>{r.url}</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         {f.remediation && (
                           <details className="remediation-details">
                             <summary>View remediation</summary>
@@ -1700,15 +2000,98 @@ function App() {
                       </div>
                     ))
                   )}
+
+                  {/* Optional AI narrative for the selected attempt */}
+                  {selectedExecutionId && (
+                    <div style={{ marginTop: '0.75rem' }}>
+                      <div style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '0.4rem' }}>
+                        AI explanation (optional)
+                      </div>
+                      {narrativeState === 'loading' && (
+                        <div className="state-skeleton"><div className="skeleton-row" style={{ width: '70%' }} /></div>
+                      )}
+                      {narrativeState === 'error' && (
+                        <div className="error-box" role="alert" style={{ marginBottom: '0.5rem' }}>
+                          {narrativeError || 'Narrative unavailable.'} The deterministic report above is unchanged.{' '}
+                          <button className="btn btn-secondary btn-sm" onClick={() => void handleGenerateNarrative()}>Retry</button>
+                        </div>
+                      )}
+                      {narrativeState === 'ready' && narrative && (
+                        <div style={{ fontSize: '0.8rem', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                          <p style={{ margin: '0 0 0.5rem' }}>{narrative.executive_summary}</p>
+                          {narrative.finding_explanations.map(e => (
+                            <div key={e.finding_id} style={{ marginBottom: '0.4rem' }}>
+                              <strong style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem' }}>{e.finding_id}</strong>
+                              <div>{e.explanation}</div>
+                            </div>
+                          ))}
+                          {narrative.remediation_guidance.map(g => (
+                            <div key={g.finding_id} style={{ marginBottom: '0.4rem' }}>
+                              <strong> Suggested fix for {g.finding_id} (unverified advice):</strong>
+                              <div>{g.guidance}</div>
+                            </div>
+                          ))}
+                          {narrative.limitations.length > 0 && (
+                            <div style={{ color: 'var(--text-muted)' }}>Limitations: {narrative.limitations.join('; ')}</div>
+                          )}
+                        </div>
+                      )}
+                      {narrativeState === 'idle' && reportState === 'ready' && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => void handleGenerateNarrative()}>
+                          Generate AI explanation
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Delivery of the selected attempt's report */}
+                  {selectedExecutionId && reportState === 'ready' && (
+                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap', marginTop: '0.75rem' }}>
+                      <button className="btn btn-secondary btn-sm" disabled={deliveryBusy !== null} onClick={() => void handleDeliver('email')}>
+                        {deliveryBusy === 'email' ? 'Sending…' : '@ Email report'}
+                      </button>
+                      <button className="btn btn-secondary btn-sm" disabled={deliveryBusy !== null} onClick={() => void handleDeliver('telegram')}>
+                        {deliveryBusy === 'telegram' ? 'Sending…' : '✈ Telegram report'}
+                      </button>
+                      {deliveryMsg && <span style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>{deliveryMsg}</span>}
+                    </div>
+                  )}
                 </>
               )}
             </div>
 
             <div className="modal-footer">
-              {selectedJobDetail.job.status === 'completed' && (
+              {(() => {
+                const st = selectedJobDetail.job.status;
+                const isActive = st === 'queued' || st === 'running';
+                const retryable = st === 'failed' || st === 'cancelled' || st === 'partial' || st === 'engine_unavailable';
+                const busy = cancellingIds.includes(selectedJobDetail.job.id);
+                return (
+                  <>
+                    {isActive && (
+                      <button onClick={() => void handleCancelJob(selectedJobDetail.job.id)} className="btn btn-danger btn-sm" disabled={busy}>
+                        {busy ? 'Cancelling…' : selectedJobDetail.job.cancel_requested ? 'Cancel requested…' : 'Cancel audit'}
+                      </button>
+                    )}
+                    {retryable && (
+                      <button onClick={() => void handleRetryJob(selectedJobDetail.job.id)} className="btn btn-secondary btn-sm" disabled={retryBusy}>
+                        {retryBusy ? 'Queuing…' : '↻ Retry as new attempt'}
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
+              {selectedExecutionId && (
+                <>
+                  <button onClick={() => void handleDownloadExecutionReport('markdown')} className="btn btn-secondary btn-sm" title="Download this attempt's report">↓ MD</button>
+                  <button onClick={() => void handleDownloadExecutionReport('json')} className="btn btn-secondary btn-sm" title="Download this attempt's report">↓ JSON</button>
+                  <button onClick={() => void handleDownloadExecutionReport('html')} className="btn btn-secondary btn-sm" title="Download this attempt's report">↓ HTML</button>
+                </>
+              )}
+              {selectedJobDetail.job.status === 'completed' && !selectedExecutionId && (
                 <button onClick={() => handleDownloadReport(selectedJobDetail.job.id)} className="btn btn-secondary">↓ Download Report</button>
               )}
-              <button onClick={() => setSelectedJobDetail(null)} className="btn btn-primary">Close</button>
+              <button onClick={() => closeInspector()} className="btn btn-primary" autoFocus>Close</button>
             </div>
           </div>
         </div>

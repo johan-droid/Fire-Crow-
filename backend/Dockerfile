@@ -50,13 +50,19 @@ COPY --from=builder /app/migrations /app/migrations
 COPY --from=builder /app/scanners /app/scanners
 
 ENV HOST=0.0.0.0
+# Default only: Render injects the real runtime PORT at deploy time and the
+# Rust service reads it (config crate Environment source, no prefix). Local
+# `docker run`/compose without an explicit -e PORT keeps working on 8000.
 ENV PORT=8000
 ENV WORKSPACE_DIR=/app
 
 EXPOSE 8000
 
+# Shell form (not exec/JSON form) so $PORT expands at container runtime:
+# the probe follows wherever the platform told the app to listen. Render's
+# own healthCheckPath (/health, see render.yaml) probes independently of this.
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/health || exit 1
+  CMD sh -c 'curl -f http://localhost:${PORT:-8000}/health || exit 1'
 
 # Phase A (F1): never root. Port 8000 needs no privilege; the workspace the
 # backend writes to is owned by this user (see above).

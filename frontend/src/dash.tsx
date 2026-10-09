@@ -20,6 +20,8 @@ export function jobStatusInfo(status: string): JobStatusInfo {
     case 'failed': return { label: 'FAILED', cls: 'badge-critical' };
     case 'cancelled': return { label: 'CANCELLED', cls: 'badge-medium' };
     case 'partial': return { label: 'PARTIAL', cls: 'badge-medium' };
+    // Ran but no scan engine executed: coverage unknown, never "clean".
+    case 'engine_unavailable': return { label: 'NO ENGINE', cls: 'badge-medium' };
     default: return { label: status.toUpperCase(), cls: 'badge-neutral' };
   }
 }
@@ -208,6 +210,7 @@ export interface DeepHealth {
   status: string;
   database: string;
   local_storage?: string;
+  version?: string;
   object_storage?: string;
   circuit_breakers?: Record<string, { state: string; failures: number; last_failure?: string | null }>;
   shutting_down?: boolean;
