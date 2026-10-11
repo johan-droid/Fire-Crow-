@@ -274,7 +274,32 @@ impl Scanner {
     /// needs the network: matching runs against the live OSV database over
     /// HTTPS. That egress is declared here, confined to this scanner, and
     /// asserted in tests — the secret scanner stays fully offline.
+    ///
+    /// V3: bridge egress is only ever used behind the mandatory filtering
+    /// proxy. [`Scanner::osv_with_proxy`] (used by the real run path) takes
+    /// an already-validated proxy URL; [`run_dependency_scan`] refuses to
+    /// execute without one, reporting unknown coverage instead of scanning
+    /// with unfettered egress. `NO_PROXY` is deliberately never set, so every
+    /// destination — including redirect targets — goes through the proxy, and
+    /// repository content cannot influence the proxy address: it comes only
+    /// from operator configuration (`OSV_EGRESS_PROXY`), never from the tree.
     pub fn osv() -> Self {
+        let proxy = std::env::var("OSV_EGRESS_PROXY")
+            .ok()
+            .and_then(|raw| crate::services::egress_policy::validate_osv_proxy_url(&raw).ok());
+        Self::osv_inner(proxy.as_deref())
+    }
+
+    /// OSV descriptor bound to an already-validated filtering-proxy URL.
+    /// The run path resolves the proxy with
+    /// [`crate::services::egress_policy::resolve_osv_egress_proxy`] (fail
+    /// closed) and passes it here, so there is exactly one env read on the
+    /// enforced path instead of two racy ones.
+    pub fn osv_with_proxy(proxy_url: &str) -> Self {
+        Self::osv_inner(Some(proxy_url))
+    }
+
+    fn osv_inner(proxy: Option<&str>) -> Self {
         Self {
             name: OSV_SCANNER_NAME,
             version: "2.2.4",
@@ -299,16 +324,14 @@ impl Scanner {
             timeout_secs: OSV_TIMEOUT_SECS,
             resource_limits: ResourceLimits::default(),
             extra_tmpfs: Vec::new(),
-            env: {
-                let mut env_vars = Vec::new();
-                if let Ok(proxy) = std::env::var("OSV_EGRESS_PROXY") {
-                    let trimmed = proxy.trim();
-                    if !trimmed.is_empty() {
-                        env_vars.push(("HTTPS_PROXY".into(), trimmed.to_string()));
-                        env_vars.push(("HTTP_PROXY".into(), trimmed.to_string()));
-                    }
-                }
-                env_vars
+            env: match proxy {
+                Some(url) => vec![
+                    ("HTTPS_PROXY".into(), url.to_string()),
+                    ("HTTP_PROXY".into(), url.to_string()),
+                    ("https_proxy".into(), url.to_string()),
+                    ("http_proxy".into(), url.to_string()),
+                ],
+                None => Vec::new(),
             },
             extra_mounts: Vec::new(),
         }
@@ -1790,12 +1813,39 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
 }
 
 /// Run the dependency scanner over `input` and return its result.
+///
+/// V3 enforcement point: the OSV container keeps `--network=bridge` (it must
+/// reach the proxy), but it never runs without a validated filtering proxy.
+/// A missing or malformed `OSV_EGRESS_PROXY` yields `Failed` with zero
+/// findings — unknown coverage, never "clean" — before Docker is touched.
+/// The proxy itself must allowlist `api.osv.dev:443`/`osv.dev:443` and deny
+/// everything else (metadata, loopback, RFC 1918, redirects to elsewhere);
+/// the machine-readable rule is
+/// [`crate::services::egress_policy::evaluate_egress_target`]. The Docker
+/// socket proxy is *not* egress control: it filters Docker API calls, not
+/// container network traffic.
 pub async fn run_dependency_scan(
     input: &ScanInput,
     sandbox: &SandboxManager,
     cancel: &(dyn Fn() -> bool + Sync),
 ) -> ScannerResult {
-    execute(&Scanner::osv(), input, sandbox, cancel).await
+    let proxy = match crate::services::egress_policy::resolve_osv_egress_proxy() {
+        Ok(proxy) => proxy,
+        Err(reason) => {
+            // Fail closed before any container exists: no proxy means no
+            // verifiable network boundary, so there is no safe way to run.
+            return failed_result(
+                &Scanner::osv(),
+                input,
+                reason.to_string(),
+                serde_json::json!({
+                    "egress_enforced": false,
+                    "egress_proxy_configured": false,
+                }),
+            );
+        }
+    };
+    execute(&Scanner::osv_with_proxy(&proxy), input, sandbox, cancel).await
 }
 
 /// Base fields shared by every execution record: what ran, against what, with

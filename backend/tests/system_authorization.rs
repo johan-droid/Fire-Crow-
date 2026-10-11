@@ -334,9 +334,16 @@ async fn system_endpoints_ignore_privileged_looking_jwt_claims(pool: PgPool) {
         (uname.as_str(), "admin", ""),
         (uname.as_str(), "access", "ops-admin"),
     ] {
-        let token = create_access_token(&user.id, username, support::TEST_SECRET_KEY, tenant, 60)
-            .expect("mint token")
-            .0;
+        let token = create_access_token(
+            &user.id,
+            username,
+            support::TEST_SECRET_KEY,
+            tenant,
+            &uuid::Uuid::new_v4().to_string(),
+            60,
+        )
+        .expect("mint token")
+        .0;
 
         let res = app
             .post(HOUSEKEEPING)
@@ -376,6 +383,7 @@ async fn system_endpoints_reject_forged_and_wrong_key_tokens(pool: PgPool) {
         &admin.username,
         "attacker-controlled-key-that-is-long-enough-1234",
         "",
+        &uuid::Uuid::new_v4().to_string(),
         60,
     )
     .expect("mint")

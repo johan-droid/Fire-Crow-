@@ -590,9 +590,11 @@ pub fn validate_pinned_image(image: &str) -> Result<()> {
 ///
 /// The pairs mirror the scanner descriptors (`Scanner::gitleaks/osv/semgrep`);
 /// `docker_host_boundary` tests assert they cannot drift apart. OSV keeps its
-/// declared `bridge` exception (H2 stays OPEN and is out of scope for Phase A);
-/// nothing else gets egress because nothing stronger is representable —
-/// [`NetworkMode`] has no host/pid option by construction.
+/// declared `bridge` exception, but since V3 the bridge is only ever used
+/// behind the mandatory filtering proxy: `run_dependency_scan` refuses to
+/// execute without a validated `OSV_EGRESS_PROXY`, so an unproxied container
+/// never exists. Nothing else gets egress because nothing stronger is
+/// representable — [`NetworkMode`] has no host/pid option by construction.
 pub const APPROVED_SCANNER_EXECUTIONS: [(&str, NetworkMode); 3] = [
     ("ghcr.io/gitleaks/gitleaks:v8.18.4", NetworkMode::None),
     ("ghcr.io/google/osv-scanner:v2.2.4", NetworkMode::Bridge),

@@ -36,6 +36,7 @@ fn access_token_lifetime_remains_strictly_bounded() {
         "alice",
         SECRET,
         "tenant-1",
+        "family-1",
         24 * 60, // 24 hours in minutes
     )
     .expect("must create access token");

@@ -21,10 +21,24 @@ import type {
   ReportNarrative,
 } from './api/types';
 import {
-  PanelState, ScoreRing, HealthWidget, jobStatusInfo, jobStatusMix, severityClass,
-  fmtUtc, timeAgo, MetricCard, StatusPill, AuditRow, EmptyState, repoLabel,
+  PanelState, ScoreRing, HealthWidget, jobStatusInfo, severityClass,
+  fmtUtc, timeAgo, StatusPill, EmptyState, repoLabel,
   type LoadState, type DeepHealth,
 } from './dash';
+import {
+  MetricCard,
+  SecurityTrendChart,
+  SeverityBreakdown,
+  AuditTable,
+  ActionSidebar,
+} from './dashboard';
+import {
+  ShieldCheck,
+  Flame,
+  FileText,
+  AlertTriangle,
+  Plus,
+} from 'lucide-react';
 
 const getApiBase = (): string => {
   const viteApiUrl = import.meta.env.VITE_API_URL;
@@ -1068,20 +1082,6 @@ function App() {
   // Overview derivations — counts only from jobs[]; findings live per audit.
   const completedCount = jobs.filter(j => j.status === 'completed').length;
   const reportsReady = jobs.filter(j => j.status === 'completed' && j.report_pdf_url).length;
-  // Latest audits that actually produced a result — the only place a
-  // dashboard-wide "outcome" list can be honest.
-  const latestResults = jobs.filter(j => j.status === 'completed').slice(0, 3);
-  // GitHub connection state as the backend reports it (never invented).
-  const repoConnectionText = () => {
-    switch (reposStatus) {
-      case 'loading': return 'Syncing your GitHub repositories…';
-      case 'ready': return `${userRepos.length} ${userRepos.length === 1 ? 'repository' : 'repositories'} available to audit.`;
-      case 'not_connected': return 'GitHub is not connected — connect GitHub, or paste a public repository URL.';
-      case 'github_error': return 'Repository sync failed — you can still paste a public repository URL.';
-      case 'network_error': return 'Repository sync is unreachable — you can still paste a public repository URL.';
-      default: return 'Paste a repository URL, or pick a synced GitHub repository.';
-    }
-  };
 
   const isLanding = location.pathname === '/' ;
   const isLogin = location.pathname === '/login';
@@ -1318,7 +1318,7 @@ function App() {
               <header className="page-head">
                 <div className="page-head-main">
                   <p className="page-eyebrow">Security workspace</p>
-                  <h1 className="page-head-title">Security Overview</h1>
+                  <h1 className="page-head-title">Overview</h1>
                   <p className="page-head-sub">
                     Track repository audits, review findings and reports, and start the next audit.
                   </p>
@@ -1338,43 +1338,54 @@ function App() {
                       pushToast(TOAST_COPY[decision].tone, TOAST_COPY[decision].message);
                     }}
                   />
-                  <button onClick={() => { openScanModal(); }} className="btn btn-primary">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  <button onClick={() => { openScanModal(); }} className="fc-btn-primary">
+                    <Plus size={15} />
                     New audit
                   </button>
                 </div>
               </header>
 
-              {/* Metrics — real security-workflow counts only. No trends,
-                  no invented scores or findings totals: every value is derived
-                  from jobs[] fields the backend actually returns. Findings are
-                  reported per audit, so no dashboard-wide finding count exists. */}
-              <div className="metrics-grid">
+              {/* Summary Metrics: Truthful, enterprise-grade indicators */}
+              <div className="fc-metrics-grid">
                 <MetricCard
-                  icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>}
+                  icon={<ShieldCheck size={16} />}
                   label="Audits completed"
-                  value={jobs.filter(j => j.status === 'completed').length}
+                  value={completedCount}
                   hint="finished audit runs"
+                  tone={completedCount > 0 ? 'health' : 'neutral'}
                 />
                 <MetricCard
-                  icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>}
+                  icon={<Flame size={16} />}
                   label="Running now"
                   value={jobs.filter(j => j.status === 'running' || j.status === 'queued').length}
                   hint="queued or scanning"
                   tone={jobs.some(j => j.status === 'running' || j.status === 'queued') ? 'accent' : 'neutral'}
                 />
                 <MetricCard
-                  icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>}
+                  icon={<FileText size={16} />}
                   label="Reports ready"
-                  value={jobs.filter(j => j.status === 'completed' && j.report_pdf_url).length}
+                  value={reportsReady}
                   hint="available to download"
+                  tone="neutral"
                 />
                 <MetricCard
-                  icon={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>}
+                  icon={<AlertTriangle size={16} />}
                   label="Needs attention"
                   value={jobs.filter(j => j.status === 'failed' || j.status === 'cancelled').length}
                   hint="failed or cancelled audits"
                   tone={jobs.some(j => j.status === 'failed' || j.status === 'cancelled') ? 'crit' : 'neutral'}
+                />
+              </div>
+
+              {/* Data Visualization Grid: Security Score Trend & Severity Breakdown */}
+              <div className="fc-charts-grid">
+                <SecurityTrendChart
+                  jobs={jobs}
+                  onSelectAudit={(jobId) => { handleViewJobDetail(jobId); setActiveMonitorJobId(jobId); }}
+                />
+                <SeverityBreakdown
+                  findings={selectedJobDetail?.findings ?? []}
+                  auditTitle={selectedJobDetail ? `Audit: ${repoLabel(selectedJobDetail.job.repo_url)}` : undefined}
                 />
               </div>
 
@@ -1461,170 +1472,30 @@ function App() {
                 );
               })()}
 
-              {/* Primary operational surface: audits + the guided path to a result */}
-              <div className="overview-grid">
-                <div className="overview-main">
-                  <section className="panel">
-                    <div className="panel-header">
-                      <div>
-                        <h2 className="panel-title">Recent audits</h2>
-                        <p className="panel-sub">
-                          {jobs.length > 0
-                            ? `Latest ${Math.min(jobs.length, 8)} of ${jobs.length}`
-                            : 'Your repository audits appear here'}
-                        </p>
-                      </div>
-                      {jobs.length > 0 && (
-                        <button onClick={() => navigate('/console/jobs')} className="btn btn-ghost btn-sm panel-link">
-                          View all
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
-                        </button>
-                      )}
-                    </div>
-                    <div className="panel-body">
-                      {jobs.length > 0 && (
-                        <div className="status-mix">
-                          {jobStatusMix(jobs).map(({ status, n }) => {
-                            const info = jobStatusInfo(status);
-                            return (
-                              <span key={status} className={`status-pill status-${status}`}>
-                                <span className="status-dot" aria-hidden="true" />
-                                {n} {info.label.toLowerCase()}
-                              </span>
-                            );
-                          })}
-                        </div>
-                      )}
-                      <PanelState state={dashLoad} error={dashError} empty={jobs.length === 0} rows={4} onRetry={() => fetchDashboardData(true, { force: true })}>
-                        {jobs.length === 0 ? (
-                          <EmptyState
-                            title="No audits yet"
-                            body="Submit a repository to run your first audit. Findings, scores and reports appear here as each audit completes."
-                            action={
-                              <button onClick={() => { openScanModal(); }} className="btn btn-primary btn-sm">Start an audit</button>
-                            }
-                          />
-                        ) : (
-                          <div className="audit-list">
-                            {jobs.slice(0, 8).map(j => (
-                              <AuditRow
-                                key={j.id}
-                                job={j}
-                                active={activeMonitorJobId === j.id}
-                                onOpen={() => { handleViewJobDetail(j.id); setActiveMonitorJobId(j.id); }}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </PanelState>
-                    </div>
-                  </section>
+              {/* Operational Surface: Audit Table + Actions Sidebar */}
+              <div className="fc-main-grid">
+                <AuditTable
+                  jobs={jobs}
+                  activeJobId={activeMonitorJobId}
+                  onSelectJob={(jobId) => { handleViewJobDetail(jobId); setActiveMonitorJobId(jobId); }}
+                  onStartAudit={(preset) => {
+                    if (preset && preset.startsWith('http')) {
+                      setNewRepoUrl(preset);
+                    }
+                    openScanModal();
+                  }}
+                  onDownloadReport={handleDownloadReport}
+                />
 
-                  {/* Findings & outcomes — findings exist per audit attempt, so
-                      this section routes to the existing results experience
-                      instead of inventing a dashboard-wide findings feed. */}
-                  <section className="panel">
-                    <div className="panel-header">
-                      <div>
-                        <h2 className="panel-title">Findings &amp; results</h2>
-                        <p className="panel-sub">Severity, evidence and remediation are reported per audit.</p>
-                      </div>
-                    </div>
-                    <div className="panel-body results-body">
-                      {latestResults.length > 0 ? (
-                        <>
-                          <div className="result-list">
-                            {latestResults.map(j => (
-                              <div key={j.id} className="result-row">
-                                <div className="result-row-main">
-                                  <span className="result-row-repo">{repoLabel(j.repo_url)}</span>
-                                  <span className="result-row-meta">
-                                    <span className="audit-row-branch">{j.repo_branch}</span>
-                                    <span aria-hidden="true">·</span>
-                                    <span>{timeAgo(j.created_at) || 'just now'}</span>
-                                  </span>
-                                </div>
-                                {j.security_score != null && (
-                                  <span className="result-score" title={`Security score ${j.security_score}/10`}>
-                                    {j.security_score.toFixed(1)}
-                                  </span>
-                                )}
-                                <button
-                                  onClick={() => { handleViewJobDetail(j.id); setActiveMonitorJobId(j.id); }}
-                                  className="btn btn-secondary btn-sm"
-                                >
-                                  Open findings
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                          <p className="panel-note">
-                            Open an audit to review its findings in full: severity, file and line, evidence,
-                            and the deterministic report for each attempt.
-                          </p>
-                        </>
-                      ) : (
-                        <p className="panel-note">
-                          Open an audit to review its findings: severity, file and line, evidence,
-                          and the deterministic report for each attempt.
-                        </p>
-                      )}
-                      <div className="results-actions">
-                        <button onClick={() => navigate('/console/jobs')} className="btn btn-ghost btn-sm">
-                          Browse all audits
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
-                        </button>
-                      </div>
-                    </div>
-                  </section>
-                </div>
-
-                {/* Aside: the path from repository → audit → result, with real
-                    GitHub connection state. No invented repositories or statuses. */}
-                <aside className="overview-side">
-                  <section className="panel flow-panel">
-                    <div className="panel-header">
-                      <h2 className="panel-title">Your next step</h2>
-                    </div>
-                    <div className="panel-body">
-                      <ol className="flow-steps">
-                        <li className="flow-step">
-                          <div className="flow-step-head">
-                            <span className="flow-num" aria-hidden="true">1</span>
-                            <h3 className="flow-step-title">Pick a repository</h3>
-                          </div>
-                          <p className="flow-step-text">{repoConnectionText()}</p>
-                          <button onClick={() => { openScanModal(); }} className="btn btn-primary btn-sm">New audit</button>
-                        </li>
-                        <li className="flow-step">
-                          <div className="flow-step-head">
-                            <span className="flow-num" aria-hidden="true">2</span>
-                            <h3 className="flow-step-title">Review the findings</h3>
-                          </div>
-                          <p className="flow-step-text">
-                            Every audit reports severity, evidence and remediation for each confirmed finding.
-                          </p>
-                        </li>
-                        <li className="flow-step">
-                          <div className="flow-step-head">
-                            <span className="flow-num" aria-hidden="true">3</span>
-                            <h3 className="flow-step-title">Keep the record</h3>
-                          </div>
-                          <p className="flow-step-text">
-                            {reportsReady} of {completedCount} completed audits have a downloadable report.
-                          </p>
-                        </li>
-                      </ol>
-                      <div className="flow-foot">
-                        <span>Service internals and health detail</span>
-                        <button onClick={() => navigate('/console/diagnostics')} className="btn btn-ghost btn-sm">
-                          Service status
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
-                        </button>
-                      </div>
-                    </div>
-                  </section>
-                </aside>
+                <ActionSidebar
+                  jobs={jobs}
+                  userRepos={userRepos}
+                  reposStatus={reposStatus}
+                  deepHealth={deepHealth}
+                  onStartAudit={openScanModal}
+                  onNavigate={(route) => navigate(route)}
+                  onViewJobDetail={(jobId) => { handleViewJobDetail(jobId); setActiveMonitorJobId(jobId); }}
+                />
               </div>
             </>
           )}

@@ -52,12 +52,15 @@ pub async fn exchange_token(
         .and_then(|u| u.tenant_id.clone())
         .unwrap_or_default();
 
+    // V2: one session family shared by both tokens, so revoking the family
+    // (logout, rotation, reuse containment) kills the whole session.
     let token_family = uuid::Uuid::new_v4().to_string();
     let (access_token_str, _) = crate::services::auth::create_access_token(
         &user_id,
         &username,
         &state.settings().secret_key,
         &tenant_id,
+        &token_family,
         state.settings().jwt_access_token_expire_minutes,
     )?;
     let (refresh_token_str, _) = crate::services::auth::create_refresh_token(
@@ -108,34 +111,43 @@ pub async fn refresh_token(
     jar: CookieJar,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<(CookieJar, Json<serde_json::Value>)> {
+    // The refresh cookie is written as `{cookie}_refresh`; the literal
+    // `refresh_token` name is accepted as a legacy fallback so sessions
+    // minted before the cookie-name fix keep refreshing.
+    let derived_name = format!("{}_refresh", state.settings().auth_cookie_name);
     let token = payload
         .get("refresh_token")
         .and_then(|v| v.as_str())
+        .or_else(|| jar.get(&derived_name).map(|c| c.value()))
         .or_else(|| jar.get("refresh_token").map(|c| c.value()))
         .unwrap_or("");
-    // Use the anti-replay validator so an already-rotated/revoked refresh token
-    // is rejected (HIGH-02/HIGH-03).
-    let claims = crate::services::auth::validate_token_with_anti_replay(
+    // V1+V2: signature, `Refresh` purpose, single-use rotation, and session
+    // liveness are enforced atomically. Replays fail closed (rotated families
+    // are already retired; consumed jtis never re-validate); access tokens
+    // presented here are rejected.
+    let claims = crate::services::auth::consume_refresh_token(
         token,
         &state.settings().secret_key,
         state.redis(),
         state.pool(),
     )
     .await?;
-    if claims.claims.token_type != crate::services::auth::TokenType::Refresh {
-        return Err(AppError::InvalidToken);
-    }
 
-    let ttl = state.settings().jwt_access_token_expire_minutes * 60;
-    let old_jti = claims.claims.jti.clone();
+    // Rotation retires the whole predecessor family (including the previous
+    // access token, which shares it since V2) with a TTL covering the
+    // longest-lived token the family can hold.
     let old_family = claims.claims.token_family.clone();
+    let family_ttl = crate::services::auth::REFRESH_TOKEN_TTL_SECONDS + 3600;
     if let Some(redis) = state.redis() {
-        let _ = crate::services::auth::revoke_token_jti(redis, &old_jti, ttl).await;
-        let _ = crate::services::auth::revoke_token_family(redis, &old_family, ttl).await;
-    } else {
-        let _ = crate::services::auth::revoke_token_in_db(state.pool(), &old_jti, &old_family, ttl)
-            .await;
+        let _ = crate::services::auth::revoke_token_family(redis, &old_family, family_ttl).await;
     }
+    let _ = crate::services::auth::revoke_token_in_db(
+        state.pool(),
+        &claims.claims.jti,
+        &old_family,
+        family_ttl,
+    )
+    .await;
 
     let new_family = uuid::Uuid::new_v4().to_string();
     let tenant_id = claims.claims.tenant_id.clone();
@@ -144,6 +156,7 @@ pub async fn refresh_token(
         &claims.claims.username,
         &state.settings().secret_key,
         &tenant_id,
+        &new_family,
         state.settings().jwt_access_token_expire_minutes,
     )?;
     let (refresh_token_str, _) = crate::services::auth::create_refresh_token(
@@ -305,6 +318,7 @@ pub async fn login(
         return Err(AppError::InvalidCredentials);
     }
     crate::services::auth::clear_login_failures(state.pool(), &lockout_key).await?;
+    // V2: one session family shared by both tokens (see exchange_token).
     let token_family = uuid::Uuid::new_v4().to_string();
     let tenant_id = user.tenant_id.clone().unwrap_or_default();
     let (access_token_str, _) = crate::services::auth::create_access_token(
@@ -312,6 +326,7 @@ pub async fn login(
         &user.username,
         &state.settings().secret_key,
         &tenant_id,
+        &token_family,
         state.settings().jwt_access_token_expire_minutes,
     )?;
     let (refresh_token_str, _) = crate::services::auth::create_refresh_token(
@@ -362,19 +377,28 @@ pub async fn logout(
     jar: CookieJar,
     user: crate::middleware::auth::AuthenticatedUser,
 ) -> Result<(CookieJar, Json<serde_json::Value>)> {
-    let ttl = state.settings().jwt_access_token_expire_minutes * 60;
+    // V2: logout revokes the whole session family, not just the presenting
+    // token. The family TTL must cover the refresh lifetime (7 days), not
+    // just the access lifetime — otherwise a logged-out refresh token would
+    // resurrect the session after the record expired. Both stores are
+    // written so revocation survives a Redis failover in either direction.
+    // Post-V2 sessions share one family across both tokens; pre-V2 sessions
+    // have disjoint families, so their refresh token is only killed when it
+    // next rotates into a shared family (bounded by its 7-day expiry).
+    let access_ttl = state.settings().jwt_access_token_expire_minutes * 60;
+    let family_ttl = crate::services::auth::REFRESH_TOKEN_TTL_SECONDS + 3600;
     if let Some(redis) = state.redis() {
-        let _ = crate::services::auth::revoke_token_jti(redis, &user.jti, ttl).await;
-        let _ = crate::services::auth::revoke_token_family(redis, &user.token_family, ttl).await;
-    } else {
-        let _ = crate::services::auth::revoke_token_in_db(
-            state.pool(),
-            &user.jti,
-            &user.token_family,
-            ttl,
-        )
-        .await;
+        let _ = crate::services::auth::revoke_token_jti(redis, &user.jti, access_ttl).await;
+        let _ =
+            crate::services::auth::revoke_token_family(redis, &user.token_family, family_ttl).await;
     }
+    let _ = crate::services::auth::revoke_token_in_db(
+        state.pool(),
+        &user.jti,
+        &user.token_family,
+        family_ttl,
+    )
+    .await;
 
     let cookie_name = state.settings().auth_cookie_name.clone();
     let mut access_cookie = Cookie::build((cookie_name.clone(), ""))
@@ -740,11 +764,15 @@ pub async fn github_callback(
         }
     };
 
+    // V2: the refresh token below shares this family (declared next), so
+    // logout/rotation revokes the whole GitHub-login session.
+    let token_family = uuid::Uuid::new_v4().to_string();
     let access_token_str = match crate::services::auth::create_access_token(
         &user.id,
         &user.username,
         &state.settings().secret_key,
         user.tenant_id.as_deref().unwrap_or(""),
+        &token_family,
         state.settings().jwt_access_token_expire_minutes,
     ) {
         Ok((tok, _)) => tok,
@@ -769,7 +797,6 @@ pub async fn github_callback(
         );
     }
 
-    let token_family = uuid::Uuid::new_v4().to_string();
     let refresh_token_str = match crate::services::auth::create_refresh_token(
         &user.id,
         &user.username,

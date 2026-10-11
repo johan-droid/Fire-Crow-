@@ -47,27 +47,7 @@ export function StatusPill({ status }: { status: string }) {
   );
 }
 
-/** Metric card: label, value, hint. Values are counted from real job data. */
-export function MetricCard({
-  icon, label, value, hint, tone = 'neutral',
-}: {
-  icon?: React.ReactNode;
-  label: string;
-  value: number | string;
-  hint: string;
-  tone?: 'neutral' | 'accent' | 'health' | 'crit';
-}) {
-  return (
-    <div className="metric-card">
-      <div className="metric-top">
-        {icon && <span className="metric-icon" aria-hidden="true">{icon}</span>}
-        <span className="metric-label">{label}</span>
-      </div>
-      <div className={`metric-value tone-${tone}`}>{value}</div>
-      <div className="metric-sub">{hint}</div>
-    </div>
-  );
-}
+export { MetricCard, type MetricCardProps } from './dashboard/MetricCard';
 
 /** Empty state that explains the next action instead of showing a blank box. */
 export function EmptyState({

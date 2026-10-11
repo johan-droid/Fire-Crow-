@@ -212,6 +212,11 @@ pub struct Settings {
     pub default_budget_usd: f64,
     #[serde(default = "default_scanner_timeout")]
     pub scanner_command_timeout: i32,
+    /// Filtering proxy the OSV scanner must egress through (same operator
+    /// knob as `OSV_EGRESS_PROXY`; the prefix-less environment source maps
+    /// that variable here). Since V3 the dependency scan refuses to run
+    /// without a valid value — unfettered bridge egress stays disabled
+    /// rather than silently allowed.
     #[serde(default)]
     pub osv_egress_proxy: Option<String>,
     #[serde(default = "default_scanner_output_max")]

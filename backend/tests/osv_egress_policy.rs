@@ -11,7 +11,7 @@
 
 use firecrow_backend::agents::scanner::Scanner;
 use firecrow_backend::services::egress_policy::{
-    evaluate_egress_target, evaluate_ip, EgressDecision,
+    evaluate_egress_target, evaluate_ip, validate_osv_proxy_url, EgressDecision,
 };
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
@@ -97,6 +97,159 @@ fn non_standard_ports_are_blocked() {
         evaluate_egress_target("api.osv.dev", 22),
         EgressDecision::Block(_)
     ));
+}
+
+/// V3: alternative IP spellings must be judged as the address they denote,
+/// not as hostnames. `0x7f.0.0.1`, `2130706433`, and `0177.0.0.1` are all
+/// 127.0.0.1 and must carry the loopback reason, not merely fail the
+/// allowlist.
+#[test]
+fn alternative_ip_spellings_are_canonicalized_then_blocked() {
+    for host in [
+        "0x7f.0.0.1",
+        "0X7F.0.0.1",
+        "2130706433",
+        "0x7f000001",
+        "0177.0.0.1",
+        "0x0a.0.0.1",
+        "167772161",
+    ] {
+        assert!(
+            matches!(evaluate_egress_target(host, 443), EgressDecision::Block(_)),
+            "alt-form IP {host} must be blocked"
+        );
+    }
+    // The loopback reason specifically, proving canonicalization ran.
+    assert_eq!(
+        evaluate_egress_target("0x7f.0.0.1", 443),
+        EgressDecision::Block("loopback blocked")
+    );
+    assert_eq!(
+        evaluate_egress_target("2130706433", 443),
+        EgressDecision::Block("loopback blocked")
+    );
+    assert_eq!(
+        evaluate_egress_target("0x0a.0.0.1", 443),
+        EgressDecision::Block("RFC1918 private network blocked")
+    );
+}
+
+/// V3: authority-smuggling spellings (`user@host`, `host:port`, paths,
+/// brackets, whitespace) never reach the allowlist comparison.
+#[test]
+fn authority_smuggling_is_blocked() {
+    for host in [
+        "evil.com@api.osv.dev",
+        "api.osv.dev:443",
+        "api.osv.dev/path",
+        "[::1]",
+        // Inner whitespace is smuggling; leading/trailing whitespace is
+        // trimmed before comparison (see below), so it is not listed here.
+        "api osv.dev",
+    ] {
+        assert!(
+            matches!(evaluate_egress_target(host, 443), EgressDecision::Block(_)),
+            "smuggled host {host:?} must be blocked"
+        );
+    }
+    // A trailing dot is the same FQDN, not smuggling: still allowed.
+    assert_eq!(
+        evaluate_egress_target("api.osv.dev.", 443),
+        EgressDecision::Allow
+    );
+}
+
+/// V3: redirect targets are evaluated with the same rule — a redirect from
+/// an allowlisted host to anywhere else is `Block`, which is what the
+/// filtering proxy must enforce for every CONNECT, not just the first one.
+#[test]
+fn redirect_targets_use_the_same_policy() {
+    assert_eq!(
+        evaluate_egress_target("api.osv.dev", 443),
+        EgressDecision::Allow
+    );
+    for redirected in [
+        "evil.attacker.com",
+        "169.254.169.254",
+        "10.0.0.1",
+        "0x7f.0.0.1",
+        "storage.googleapis.com",
+    ] {
+        assert!(
+            matches!(
+                evaluate_egress_target(redirected, 443),
+                EgressDecision::Block(_)
+            ),
+            "redirect target {redirected} must be blocked"
+        );
+    }
+}
+
+/// V3: IPv6 ranges beyond loopback/unspecified — link-local, unique-local,
+/// multicast, and documentation — are blocked.
+#[test]
+fn ipv6_scopes_are_blocked() {
+    for host in [
+        "fe80::1",
+        "fc00::1",
+        "fd00::1",
+        "ff02::1",
+        "2001:db8::1",
+        "::ffff:127.0.0.1",
+        "::ffff:10.0.0.1",
+        "::ffff:169.254.169.254",
+    ] {
+        assert!(
+            matches!(evaluate_egress_target(host, 443), EgressDecision::Block(_)),
+            "IPv6 host {host} must be blocked"
+        );
+    }
+}
+
+/// V3: reserved IPv4 ranges — software-scope 0/8 and documentation nets.
+#[test]
+fn reserved_ipv4_ranges_are_blocked() {
+    for host in ["0.1.2.3", "192.0.2.1", "198.51.100.7", "203.0.113.9"] {
+        assert!(
+            matches!(evaluate_egress_target(host, 443), EgressDecision::Block(_)),
+            "reserved IP {host} must be blocked"
+        );
+    }
+}
+
+/// V3: proxy configuration validation — shape only (the proxy host is
+/// operator infrastructure and may be internal), but strict about scheme,
+/// credentials, and smuggling.
+#[test]
+fn proxy_url_validation_is_strict_about_shape() {
+    assert_eq!(
+        validate_osv_proxy_url("http://egress-proxy:3128"),
+        Ok("http://egress-proxy:3128".into())
+    );
+    assert_eq!(
+        validate_osv_proxy_url("https://proxy.internal:8080"),
+        Ok("https://proxy.internal:8080".into())
+    );
+    // Internal proxy hosts are legitimate operator infrastructure.
+    assert!(validate_osv_proxy_url("http://10.0.0.5:3128").is_ok());
+    for bad in [
+        "",
+        "   ",
+        "gopher://proxy:70",
+        "ftp://proxy:21",
+        "http://",
+        "://no-scheme",
+        "http://user:pass@proxy:3128",
+        "http://user@proxy:3128",
+        "http://proxy:3128/path",
+        "http://proxy:3128\nX-Injected: 1",
+        "http://pro xy:3128",
+    ] {
+        assert!(
+            validate_osv_proxy_url(bad).is_err(),
+            "proxy URL {bad:?} must be rejected"
+        );
+    }
 }
 
 #[test]

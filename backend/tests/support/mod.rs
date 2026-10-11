@@ -125,6 +125,7 @@ impl SeededUser {
             &self.username,
             TEST_SECRET_KEY,
             &self.tenant_id,
+            &uuid::Uuid::new_v4().to_string(),
             60,
         )
         .expect("mint token")
@@ -230,6 +231,7 @@ pub async fn bearer_for(pool: &PgPool, user_id: &str) -> String {
         &username,
         TEST_SECRET_KEY,
         tenant_id.as_deref().unwrap_or_default(),
+        &uuid::Uuid::new_v4().to_string(),
         60,
     )
     .expect("mint token");

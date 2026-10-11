@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use crate::services::auth::validate_token_with_anti_replay;
+use crate::services::auth::validate_access_token;
 use axum::http::request::Parts;
 use std::sync::Arc;
 use tracing::warn;
@@ -73,7 +73,9 @@ impl axum::extract::FromRequestParts<Arc<crate::AppState>> for AuthenticatedUser
         let token = token_opt
             .ok_or_else(|| AppError::Unauthorized("Missing authentication token".into()))?;
 
-        let claims = validate_token_with_anti_replay(
+        // V1: REST and SSE share this extractor, so both enforce the
+        // `Access` purpose. Refresh tokens presented here are rejected.
+        let claims = validate_access_token(
             &token,
             &state.settings().secret_key,
             state.redis(),

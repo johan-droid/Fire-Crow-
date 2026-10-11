@@ -1,3 +1,5 @@
+@import './dashboard.css';
+
 :root {
   /* Apple Cupertino Color System & Glass Tokens */
   --apple-canvas: #000000;

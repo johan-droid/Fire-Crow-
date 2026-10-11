@@ -1,0 +1,1058 @@
+/* ════════════════════════════════════════════════════════════════
+   FIRE CROW — MINIMAL-DARK ENTERPRISE DASHBOARD DESIGN SYSTEM
+   Colors:
+     Canvas:           #09090b
+     Surface:          #141418
+     Elevated surface: #1a1a22
+     Border:           rgba(255, 255, 255, 0.08)
+     Border hover:     rgba(255, 255, 255, 0.16)
+     Text primary:     #fafafa
+     Text secondary:   #a1a1aa
+     Text muted:       #71717a
+     Brand accent:     #f97316
+     Critical:         #ef4444
+     High:             #f97316
+     Medium:           #f59e0b
+     Low:              #3b82f6
+   ════════════════════════════════════════════════════════════════ */
+
+:root {
+  --fc-canvas: #09090b;
+  --fc-surface: #141418;
+  --fc-surface-elevated: #1a1a22;
+  --fc-border: rgba(255, 255, 255, 0.08);
+  --fc-border-hover: rgba(255, 255, 255, 0.16);
+
+  --fc-text-primary: #fafafa;
+  --fc-text-secondary: #a1a1aa;
+  --fc-text-muted: #71717a;
+
+  --fc-accent: #f97316;
+  --fc-accent-hover: #ea580c;
+  --fc-accent-dim: rgba(249, 115, 22, 0.12);
+
+  --fc-critical: #ef4444;
+  --fc-high: #f97316;
+  --fc-medium: #f59e0b;
+  --fc-low: #3b82f6;
+
+  --fc-radius: 8px;
+  --fc-radius-card: 10px;
+}
+
+/* ─── Standard Buttons ────────────────────────── */
+.fc-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  background-color: var(--fc-accent);
+  color: #ffffff !important;
+  font-weight: 500;
+  font-size: 0.82rem;
+  padding: 0.48rem 0.95rem;
+  border-radius: var(--fc-radius);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.fc-btn-primary:hover {
+  background-color: var(--fc-accent-hover);
+}
+.fc-btn-primary:active {
+  transform: scale(0.98);
+}
+
+.fc-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background-color: rgba(255, 255, 255, 0.04);
+  color: var(--fc-text-primary) !important;
+  font-weight: 500;
+  font-size: 0.8rem;
+  padding: 0.44rem 0.85rem;
+  border-radius: var(--fc-radius);
+  border: 1px solid var(--fc-border);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.fc-btn-secondary:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: var(--fc-border-hover);
+}
+
+.fc-btn-sm {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.76rem;
+}
+
+/* ─── Metric Cards Grid ──────────────────────── */
+.fc-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 1024px) {
+  .fc-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 600px) {
+  .fc-metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fc-metric-card {
+  background-color: var(--fc-surface);
+  border: 1px solid var(--fc-border);
+  border-radius: var(--fc-radius-card);
+  padding: 1rem 1.15rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.6rem;
+  transition: border-color 0.15s ease;
+}
+
+.fc-metric-card:hover {
+  border-color: var(--fc-border-hover);
+}
+
+.fc-metric-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fc-metric-label-group {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.fc-metric-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fc-text-muted);
+}
+
+.tone-accent .fc-metric-icon { color: var(--fc-accent); }
+.tone-health .fc-metric-icon { color: #34d399; }
+.tone-crit .fc-metric-icon { color: #f87171; }
+
+.fc-metric-label {
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fc-text-secondary);
+}
+
+.fc-metric-status-badge {
+  font-size: 0.68rem;
+  font-weight: 500;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+}
+
+.fc-metric-status-badge.tone-accent {
+  background-color: var(--fc-accent-dim);
+  color: var(--fc-accent);
+}
+
+.fc-metric-status-badge.tone-crit {
+  background-color: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+}
+
+.fc-metric-body {
+  display: flex;
+  align-items: baseline;
+}
+
+.fc-metric-value {
+  font-size: 1.85rem;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--fc-text-primary);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.fc-metric-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  padding-top: 0.45rem;
+}
+
+.fc-metric-hint {
+  font-size: 0.72rem;
+  color: var(--fc-text-muted);
+}
+
+/* ─── Standard Surface Panels ────────────────── */
+.fc-panel {
+  background-color: var(--fc-surface);
+  border: 1px solid var(--fc-border);
+  border-radius: var(--fc-radius-card);
+  padding: 1.15rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s ease;
+}
+
+.fc-panel:hover {
+  border-color: var(--fc-border-hover);
+}
+
+.fc-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.fc-panel-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--fc-text-primary);
+}
+
+.fc-panel-subtitle {
+  font-size: 0.74rem;
+  color: var(--fc-text-secondary);
+  margin-top: 0.15rem;
+}
+
+/* ─── Charts Row (Trend + Severity) ──────────── */
+.fc-charts-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  gap: 1.15rem;
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 1024px) {
+  .fc-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fc-chart-header-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.fc-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--fc-border);
+  border-radius: 4px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.72rem;
+}
+
+.fc-stat-pill-label {
+  color: var(--fc-text-secondary);
+}
+
+.fc-stat-pill-val {
+  color: var(--fc-text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.fc-svg-chart-container {
+  position: relative;
+  width: 100%;
+}
+
+.fc-svg-chart {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.fc-chart-gridline {
+  stroke: rgba(255, 255, 255, 0.05);
+  stroke-dasharray: 2 3;
+}
+
+.fc-chart-gridtext {
+  fill: var(--fc-text-muted);
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+}
+
+.fc-chart-crosshair {
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+
+.fc-chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background-color: var(--fc-surface-elevated);
+  border: 1px solid var(--fc-border-hover);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.74rem;
+  transform: translate(-50%, -100%);
+  white-space: nowrap;
+  z-index: 10;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.fc-tooltip-title {
+  font-weight: 600;
+  color: var(--fc-text-primary);
+}
+
+.fc-tooltip-score-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.2rem;
+}
+
+.fc-tooltip-score-val {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--fc-accent);
+}
+
+.fc-tooltip-score-scale {
+  font-size: 0.68rem;
+  color: var(--fc-text-secondary);
+}
+
+.fc-tooltip-meta {
+  font-size: 0.68rem;
+  color: var(--fc-text-secondary);
+}
+
+.fc-tooltip-sha {
+  font-size: 0.68rem;
+  color: var(--fc-text-muted);
+  font-family: var(--font-mono);
+}
+
+.fc-chart-empty,
+.fc-chart-single-audit {
+  padding: 1.5rem 1rem;
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.01);
+  text-align: center;
+}
+
+.fc-chart-single-audit {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  text-align: left;
+}
+
+.fc-single-audit-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background-color: var(--fc-accent-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.fc-single-audit-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--fc-text-primary);
+}
+
+.fc-single-audit-desc {
+  font-size: 0.74rem;
+  color: var(--fc-text-secondary);
+  margin-top: 0.2rem;
+  line-height: 1.4;
+}
+
+.fc-chart-empty-text {
+  font-size: 0.78rem;
+  color: var(--fc-text-muted);
+  line-height: 1.5;
+}
+
+/* ─── Severity Breakdown Panel ───────────────── */
+.fc-severity-total-badge {
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--fc-border);
+  color: var(--fc-text-secondary);
+}
+
+.fc-severity-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.fc-stacked-bar {
+  display: flex;
+  height: 6px;
+  background-color: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+  gap: 1px;
+}
+
+.fc-stacked-bar-seg {
+  height: 100%;
+  transition: width 0.2s ease;
+}
+
+.fc-severity-pills-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.fc-severity-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.72rem;
+}
+
+.fc-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.fc-pill-label {
+  color: var(--fc-text-secondary);
+}
+
+.fc-pill-count {
+  font-weight: 600;
+  color: var(--fc-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.fc-pill-pct {
+  color: var(--fc-text-muted);
+  font-size: 0.68rem;
+}
+
+.fc-severity-empty {
+  padding: 1.5rem 1rem;
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  text-align: center;
+}
+
+.fc-severity-empty-text {
+  font-size: 0.76rem;
+  color: var(--fc-text-muted);
+  line-height: 1.5;
+}
+
+/* ─── Main Operational Grid (Audits + Sidebar) ── */
+.fc-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 1.15rem;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .fc-main-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─── Recent Audits Panel ────────────────────── */
+.fc-audits-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.fc-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.fc-search-icon {
+  position: absolute;
+  left: 0.55rem;
+  color: var(--fc-text-muted);
+  pointer-events: none;
+}
+
+.fc-search-input {
+  background-color: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--fc-border);
+  border-radius: var(--fc-radius);
+  padding: 0.35rem 0.65rem 0.35rem 1.7rem;
+  font-size: 0.78rem;
+  color: var(--fc-text-primary);
+  outline: none;
+  width: 190px;
+  transition: border-color 0.15s ease;
+}
+
+.fc-search-input:focus {
+  border-color: var(--fc-accent);
+}
+
+.fc-view-switcher {
+  display: flex;
+  background-color: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--fc-border);
+  border-radius: var(--fc-radius);
+  padding: 2px;
+}
+
+.fc-view-btn {
+  background: transparent;
+  border: none;
+  color: var(--fc-text-muted);
+  padding: 0.28rem 0.45rem;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.fc-view-btn:hover {
+  color: var(--fc-text-primary);
+}
+
+.fc-view-btn.is-active {
+  background-color: rgba(255, 255, 255, 0.09);
+  color: var(--fc-text-primary);
+}
+
+.fc-filter-tabs-bar {
+  display: flex;
+  gap: 0.35rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 0.65rem;
+  overflow-x: auto;
+}
+
+.fc-filter-tab {
+  background: transparent;
+  border: none;
+  color: var(--fc-text-secondary);
+  font-size: 0.74rem;
+  font-weight: 500;
+  padding: 0.28rem 0.55rem;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.15s ease;
+}
+
+.fc-filter-tab:hover {
+  color: var(--fc-text-primary);
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.fc-filter-tab.is-active {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--fc-text-primary);
+  font-weight: 600;
+}
+
+.fc-filter-tab-count {
+  font-size: 0.68rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 9999px;
+  background-color: rgba(255, 255, 255, 0.06);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Table View Styling ─────────────────────── */
+.fc-table-responsive-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.fc-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.78rem;
+}
+
+.fc-table th {
+  padding: 0.55rem 0.75rem;
+  color: var(--fc-text-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.fc-table td {
+  padding: 0.7rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  vertical-align: middle;
+}
+
+.fc-table-row {
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.fc-table-row:hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.fc-table-row.is-selected {
+  background-color: rgba(249, 115, 22, 0.06);
+}
+
+.fc-repo-cell {
+  display: flex;
+  flex-direction: column;
+}
+
+.fc-repo-name {
+  font-weight: 500;
+  color: var(--fc-text-primary);
+}
+
+.fc-repo-error-hint {
+  font-size: 0.68rem;
+  color: #f87171;
+  margin-top: 0.1rem;
+}
+
+.fc-branch-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.fc-branch-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.72rem;
+  color: var(--fc-text-secondary);
+}
+
+.fc-sha-tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  color: var(--fc-text-muted);
+}
+
+.fc-score-cell {
+  display: flex;
+  align-items: center;
+}
+
+.fc-score-null {
+  color: var(--fc-text-muted);
+}
+
+.fc-date-cell {
+  display: flex;
+  align-items: center;
+  color: var(--fc-text-secondary);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.fc-actions-group {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.fc-btn-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--fc-border);
+  color: var(--fc-text-primary);
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 0.28rem 0.55rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.fc-btn-action:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: var(--fc-border-hover);
+}
+
+.fc-btn-action-icon {
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--fc-border);
+  color: var(--fc-text-secondary);
+  padding: 0.3rem;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s ease;
+}
+
+.fc-btn-action-icon:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--fc-text-primary);
+}
+
+/* ─── List View Styling ──────────────────────── */
+.fc-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.fc-audit-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem;
+  background-color: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--fc-border);
+  border-radius: var(--fc-radius);
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.fc-audit-list-item:hover {
+  background-color: rgba(255, 255, 255, 0.025);
+  border-color: var(--fc-border-hover);
+}
+
+.fc-audit-list-item.is-active {
+  border-color: rgba(249, 115, 22, 0.35);
+  background-color: rgba(249, 115, 22, 0.04);
+}
+
+.fc-list-item-left {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.fc-score-ring-placeholder {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fc-text-muted);
+  font-size: 0.74rem;
+}
+
+.fc-list-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.fc-list-item-repo {
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--fc-text-primary);
+}
+
+.fc-list-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--fc-text-secondary);
+}
+
+.fc-meta-sep {
+  color: rgba(255, 255, 255, 0.15);
+}
+
+.fc-list-item-error {
+  font-size: 0.7rem;
+  color: #f87171;
+}
+
+.fc-list-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* ─── Honest Minimal Empty State ─────────────── */
+.fc-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 2.5rem 1.5rem;
+}
+
+.fc-empty-icon-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--fc-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.fc-empty-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--fc-text-primary);
+  margin-bottom: 0.35rem;
+}
+
+.fc-empty-desc {
+  font-size: 0.78rem;
+  color: var(--fc-text-secondary);
+  max-width: 460px;
+  line-height: 1.5;
+  margin-bottom: 1.25rem;
+}
+
+/* ─── Action Sidebar (Workflow + Telemetry) ──── */
+.fc-action-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.fc-sidebar-panel {
+  gap: 0.85rem;
+}
+
+.fc-workflow-step-tag {
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--fc-text-muted);
+}
+
+.fc-workflow-steps {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.fc-workflow-step {
+  display: flex;
+  gap: 0.75rem;
+  position: relative;
+}
+
+.fc-step-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 20px;
+  flex-shrink: 0;
+}
+
+.fc-step-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--fc-border);
+  font-size: 0.68rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fc-text-secondary);
+}
+
+.fc-workflow-step.is-completed .fc-step-dot {
+  background-color: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.fc-workflow-step.is-active .fc-step-dot {
+  background-color: var(--fc-accent-dim);
+  border-color: rgba(249, 115, 22, 0.3);
+  color: var(--fc-accent);
+}
+
+.fc-step-track {
+  flex: 1;
+  width: 1px;
+  background-color: rgba(255, 255, 255, 0.07);
+  margin: 3px 0;
+  min-height: 20px;
+}
+
+.fc-step-body {
+  flex: 1;
+  padding-bottom: 1rem;
+}
+
+.fc-step-heading {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--fc-text-primary);
+}
+
+.fc-step-copy {
+  font-size: 0.72rem;
+  color: var(--fc-text-secondary);
+  line-height: 1.4;
+  margin: 0.2rem 0 0.45rem;
+}
+
+.fc-step-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: transparent;
+  border: none;
+  color: var(--fc-accent);
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+}
+
+.fc-step-trigger:hover {
+  text-decoration: underline;
+}
+
+/* ─── Service Telemetry Sidebar Section ──────── */
+.fc-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+}
+
+.fc-status-pill.is-ok {
+  background-color: rgba(16, 185, 129, 0.1);
+  color: #34d399;
+}
+
+.fc-status-pill.is-degraded {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+}
+
+.fc-status-pill.is-probe {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--fc-text-muted);
+}
+
+.fc-status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+.fc-telemetry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.fc-telemetry-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  background-color: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.fc-telemetry-label {
+  font-size: 0.74rem;
+  color: var(--fc-text-secondary);
+}
+
+.fc-telemetry-val {
+  font-size: 0.72rem;
+  color: var(--fc-text-primary);
+  font-family: var(--font-mono);
+}
+
+.fc-telemetry-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+  padding-top: 0.55rem;
+  margin-top: 0.25rem;
+}
+
+.fc-telemetry-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--fc-text-secondary);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.fc-telemetry-link:hover {
+  color: var(--fc-text-primary);
+}
