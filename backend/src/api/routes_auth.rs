@@ -357,13 +357,6 @@ pub async fn login(
     ))
 }
 
-pub async fn demo_login(
-    State(_state): State<Arc<crate::AppState>>,
-    jar: CookieJar,
-) -> Result<(CookieJar, Json<serde_json::Value>)> {
-    Err(AppError::Unauthorized("Demo endpoint disabled".into()))
-}
-
 pub async fn logout(
     State(state): State<Arc<crate::AppState>>,
     jar: CookieJar,

@@ -3,6 +3,8 @@
  * Typed against the Fire Crow REST API (documentation/API_DOCUMENTATION.md).
  */
 
+import type { JobResponse } from './api/types';
+
 export type LoadState = 'loading' | 'ready' | 'error';
 
 export interface JobStatusInfo {
@@ -14,16 +16,134 @@ export interface JobStatusInfo {
 /** Map API job status → badge styling. */
 export function jobStatusInfo(status: string): JobStatusInfo {
   switch (status) {
-    case 'queued': return { label: 'QUEUED', cls: 'badge-neutral', pulse: true };
-    case 'running': return { label: 'RUNNING', cls: 'badge-info', pulse: true };
-    case 'completed': return { label: 'COMPLETED', cls: 'badge-success' };
-    case 'failed': return { label: 'FAILED', cls: 'badge-critical' };
-    case 'cancelled': return { label: 'CANCELLED', cls: 'badge-medium' };
-    case 'partial': return { label: 'PARTIAL', cls: 'badge-medium' };
+    case 'queued': return { label: 'Queued', cls: 'badge-info', pulse: true };
+    case 'running': return { label: 'Running', cls: 'badge-info', pulse: true };
+    case 'completed': return { label: 'Completed', cls: 'badge-success' };
+    case 'failed': return { label: 'Failed', cls: 'badge-critical' };
+    case 'cancelled': return { label: 'Cancelled', cls: 'badge-neutral' };
+    case 'partial': return { label: 'Partial', cls: 'badge-medium' };
     // Ran but no scan engine executed: coverage unknown, never "clean".
-    case 'engine_unavailable': return { label: 'NO ENGINE', cls: 'badge-medium' };
-    default: return { label: status.toUpperCase(), cls: 'badge-neutral' };
+    case 'engine_unavailable': return { label: 'No engine', cls: 'badge-medium' };
+    default: return { label: status.replace(/_/g, ' '), cls: 'badge-neutral' };
   }
+}
+
+/** `org/repo` from a git URL — the only repository identity shown to users. */
+export function repoLabel(url?: string | null): string {
+  if (!url) return 'Unknown repository';
+  const cleaned = url.replace(/\.git$/, '').replace(/\/+$/, '');
+  const parts = cleaned.split('/').filter(Boolean);
+  return parts.length >= 2 ? parts.slice(-2).join('/') : cleaned || 'Unknown repository';
+}
+
+/** One status vocabulary for every audit surface (list, table, inspector). */
+export function StatusPill({ status }: { status: string }) {
+  const info = jobStatusInfo(status);
+  return (
+    <span className={`badge ${info.cls}`}>
+      {info.pulse && <span className="badge-pulse" />}
+      {info.label}
+    </span>
+  );
+}
+
+/** Metric card: label, value, hint. Values are counted from real job data. */
+export function MetricCard({
+  icon, label, value, hint, tone = 'neutral',
+}: {
+  icon?: React.ReactNode;
+  label: string;
+  value: number | string;
+  hint: string;
+  tone?: 'neutral' | 'accent' | 'health' | 'crit';
+}) {
+  return (
+    <div className="metric-card">
+      <div className="metric-top">
+        {icon && <span className="metric-icon" aria-hidden="true">{icon}</span>}
+        <span className="metric-label">{label}</span>
+      </div>
+      <div className={`metric-value tone-${tone}`}>{value}</div>
+      <div className="metric-sub">{hint}</div>
+    </div>
+  );
+}
+
+/** Empty state that explains the next action instead of showing a blank box. */
+export function EmptyState({
+  title, body, action,
+}: {
+  title: string;
+  body: React.ReactNode;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="state-empty">
+      <span className="state-empty-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+        </svg>
+      </span>
+      <strong>{title}</strong>
+      <span className="state-empty-body">{body}</span>
+      {action}
+    </div>
+  );
+}
+
+/**
+ * One audit row: repository, branch, snapshot, age, score and status.
+ * A real button so the list is keyboard-navigable end to end.
+ */
+export function AuditRow({
+  job, active, onOpen,
+}: {
+  job: JobResponse;
+  active: boolean;
+  onOpen: () => void;
+}) {
+  const sha = job.commit_sha || job.requested_commit_sha;
+  const failed = job.status === 'failed' || job.status === 'cancelled';
+  return (
+    <button
+      type="button"
+      className={`audit-row${active ? ' is-active' : ''}`}
+      onClick={onOpen}
+      aria-label={`Open audit for ${repoLabel(job.repo_url)}, ${jobStatusInfo(job.status).label}`}
+    >
+      {job.security_score != null && <ScoreRing score={job.security_score} size={30} />}
+      <span className="audit-row-main">
+        <span className="audit-row-repo">{repoLabel(job.repo_url)}</span>
+        <span className="audit-row-meta">
+          <span className="audit-row-branch">{job.repo_branch}</span>
+          <span aria-hidden="true">·</span>
+          <span>{timeAgo(job.created_at) || 'just now'}</span>
+          {sha && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span className="mono" title={`Snapshot ${sha}`}>{sha.substring(0, 8)}</span>
+            </>
+          )}
+        </span>
+        {failed && job.error_message && (
+          <span className="audit-row-error" title={job.error_message}>
+            {job.error_message.length > 64 ? `${job.error_message.slice(0, 64)}…` : job.error_message}
+          </span>
+        )}
+      </span>
+      <span className="audit-row-side">
+        <StatusPill status={job.status} />
+      </span>
+    </button>
+  );
+}
+
+/** Counts of every lifecycle state actually present in jobs[]. */
+export function jobStatusMix(jobs: JobResponse[]): Array<{ status: string; n: number }> {
+  const order = ['running', 'queued', 'completed', 'failed', 'cancelled', 'partial', 'engine_unavailable'];
+  return order
+    .map((status) => ({ status, n: jobs.filter((j) => j.status === status).length }))
+    .filter((row) => row.n > 0);
 }
 
 const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'] as const;
@@ -168,10 +288,13 @@ export function SeverityBars({ findings }: { findings: { severity: string }[] })
   );
 }
 
-/** System health widget per API docs §14: service dots + circuit breaker badges. */
+/**
+ * Operational health of the audit service (API docs §14).
+ * Secondary surface: the raw states belong here, not on the overview.
+ */
 export function HealthWidget({ deep }: { deep: DeepHealth | null }) {
   if (!deep) {
-    return <div className="health-widget"><span className="health-loading">Probing system telemetry…</span></div>;
+    return <div className="health-widget"><span className="health-loading">Probing service telemetry…</span></div>;
   }
   const dot = (ok: boolean | null, disabled = false) =>
     `status-dot ${disabled ? '' : ok ? 'status-dot-live' : 'status-dot-down'}`;
@@ -182,14 +305,14 @@ export function HealthWidget({ deep }: { deep: DeepHealth | null }) {
   const osDisabled = osRaw === 'disabled' || osRaw == null;
   const breakers = Object.entries(deep.circuit_breakers || {});
   const breakerCls = (s: string) => s === 'closed' ? 'breaker-closed' : s === 'half-open' ? 'breaker-half' : 'breaker-open';
-  const breakerLabel = (s: string) => s === 'closed' ? 'ACTIVE' : s === 'half-open' ? 'RECONNECTING' : 'TRIPPED';
+  const breakerLabel = (s: string) => s === 'closed' ? 'Healthy' : s === 'half-open' ? 'Recovering' : 'Tripped';
 
   return (
     <div className="health-widget">
       <div className="health-services">
-        <div className="health-service"><span className={dot(dbOk)} />Database<span className="health-val">{deep.database}</span></div>
-        <div className="health-service"><span className={dot(lsOk)} />LocalStorage<span className="health-val">{deep.local_storage}</span></div>
-        <div className="health-service"><span className={`status-dot ${osDisabled ? '' : osOk ? 'status-dot-live' : 'status-dot-down'}`} />Object Storage<span className="health-val">{osDisabled ? 'disabled' : osRaw}</span></div>
+        <div className="health-service"><span className={dot(dbOk)} /><span>Audit database</span><span className="health-val" title={`Reported state: ${deep.database}`}>{deep.database === 'ok' || deep.database === 'connected' ? 'Connected' : deep.database}</span></div>
+        <div className="health-service"><span className={dot(lsOk)} /><span>Session store</span><span className="health-val" title={`Reported state: ${deep.local_storage}`}>{lsOk ? 'Connected' : deep.local_storage}</span></div>
+        <div className="health-service"><span className={`status-dot ${osDisabled ? '' : osOk ? 'status-dot-live' : 'status-dot-down'}`} /><span>Object storage</span><span className="health-val">{osDisabled ? 'Not in use' : osOk ? 'Connected' : osRaw}</span></div>
       </div>
       {breakers.length > 0 && (
         <div className="health-breakers">

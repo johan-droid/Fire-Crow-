@@ -11,8 +11,6 @@ const GitHubIcon = ({ size = 22 }: { size?: number }) => (
 interface LoginPageProps {
   onNavigateLanding: () => void;
   onGitHubLogin: () => void;
-  loginMode: 'github' | 'demo';
-  setLoginMode: (mode: 'github' | 'demo') => void;
   error: string;
   authFormError: string;
   clearErrors: () => void;
@@ -22,8 +20,6 @@ interface LoginPageProps {
 export default function LoginPage({
   onNavigateLanding,
   onGitHubLogin,
-  loginMode,
-  setLoginMode,
   error,
   authFormError,
   clearErrors,
@@ -52,58 +48,30 @@ export default function LoginPage({
           </p>
         </div>
 
-        {/* Mode Switcher Tabs */}
-        <div className="login-mode-tabs">
-          <button className={`login-mode-tab ${loginMode === 'github' ? 'active' : ''}`} onClick={() => setLoginMode('github')}>
-            GitHub OAuth
-          </button>
-          <button className={`login-mode-tab ${loginMode === 'demo' ? 'active' : ''}`} onClick={() => setLoginMode('demo')}>
-            Demo Access
-          </button>
+        {/* GitHub Sign In Button */}
+        <button onClick={onGitHubLogin} className="login-github-btn">
+          <GitHubIcon />
+          Sync &amp; Sign in with GitHub
+        </button>
+
+        {/* Features List */}
+        <div className="login-features-box">
+          <div className="login-features-title">What syncing enables:</div>
+          <ul className="login-features-list">
+            <li>
+              <span className="login-feature-icon blue">⚡</span>
+              <span><strong>Auto-Discover Repos:</strong> Load public &amp; private repositories instantly into your security dashboard.</span>
+            </li>
+            <li>
+              <span className="login-feature-icon green">🛡️</span>
+              <span><strong>Sandboxed Audits:</strong> Run 0% false positive vulnerability scans against source code ASTs.</span>
+            </li>
+            <li>
+              <span className="login-feature-icon purple">🔄</span>
+              <span><strong>Automated PR Patches:</strong> Generate compiler-tested code remediations pushed to GitHub branches.</span>
+            </li>
+          </ul>
         </div>
-
-        {loginMode === 'github' ? (
-          <>
-            {/* GitHub Sign In Button */}
-            <button onClick={onGitHubLogin} className="login-github-btn">
-              <GitHubIcon />
-              Sync &amp; Sign in with GitHub
-            </button>
-
-            {/* Features List */}
-            <div className="login-features-box">
-              <div className="login-features-title">What syncing enables:</div>
-              <ul className="login-features-list">
-                <li>
-                  <span className="login-feature-icon blue">⚡</span>
-                  <span><strong>Auto-Discover Repos:</strong> Load public &amp; private repositories instantly into your security dashboard.</span>
-                </li>
-                <li>
-                  <span className="login-feature-icon green">🛡️</span>
-                  <span><strong>Sandboxed Audits:</strong> Run 0% false positive vulnerability scans against source code ASTs.</span>
-                </li>
-                <li>
-                  <span className="login-feature-icon purple">🔄</span>
-                  <span><strong>Automated PR Patches:</strong> Generate compiler-tested code remediations pushed to GitHub branches.</span>
-                </li>
-              </ul>
-            </div>
-          </>
-        ) : (
-          <div className="login-demo-section">
-            {/*
-              R-25: this button POSTed to `/auth/demo`, which has never existed
-              on the backend, so it could only ever fail. It has been removed
-              rather than pointed at a new endpoint, because exposing an
-              unauthenticated session-issuing route is a security decision, not a
-              bug fix. If demo mode is wanted it needs a deliberate design.
-            */}
-            <p className="login-demo-desc">
-              Demo mode is currently unavailable. Contact your administrator for
-              access.
-            </p>
-          </div>
-        )}
 
         {/* Error Display */}
         {hasError && (

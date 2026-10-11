@@ -15,7 +15,8 @@ function HeroCanvas3D() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let animId: number;
+    let animId = 0;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     let width = (canvas.width = canvas.parentElement?.clientWidth || window.innerWidth);
     let height = (canvas.height = canvas.parentElement?.clientHeight || 600);
 
@@ -112,7 +113,7 @@ function HeroCanvas3D() {
         ctx.shadowBlur = 0;
       });
 
-      animId = requestAnimationFrame(render);
+      if (!reduceMotion) animId = requestAnimationFrame(render);
     };
 
     render();
