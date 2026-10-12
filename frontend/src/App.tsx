@@ -33,6 +33,8 @@ import {
   FileText,
   AlertTriangle,
   Plus,
+  RefreshCw,
+  GitBranch,
 } from 'lucide-react';
 
 const API_BASE = getApiBase();
@@ -1047,7 +1049,7 @@ function App() {
 
         <div className="dyn-sep" aria-hidden="true" />
 
-        <button onClick={() => { openScanModal(); }} className="fc-btn-primary fc-btn-sm dyn-audit" title="Start a new audit" aria-label="Start a new audit">
+        <button onClick={() => { openScanModal(); }} className="fc-btn-secondary fc-btn-sm dyn-audit" title="Start a new audit" aria-label="Start a new audit">
           <Plus size={15} />
           <span className="dyn-audit-label">New audit</span>
         </button>
@@ -1106,28 +1108,28 @@ function App() {
               {/* Summary Metrics: Truthful, enterprise-grade indicators */}
               <div className="fc-metrics-grid">
                 <MetricCard
-                  icon={<ShieldCheck size={16} />}
+                  icon={<ShieldCheck size={18} />}
                   label="Audits completed"
                   value={completedCount}
                   hint="finished audit runs"
                   tone={completedCount > 0 ? 'health' : 'neutral'}
                 />
                 <MetricCard
-                  icon={<Flame size={16} />}
+                  icon={<Flame size={18} />}
                   label="Running now"
                   value={jobs.filter(j => j.status === 'running' || j.status === 'queued').length}
                   hint="queued or scanning"
                   tone={jobs.some(j => j.status === 'running' || j.status === 'queued') ? 'accent' : 'neutral'}
                 />
                 <MetricCard
-                  icon={<FileText size={16} />}
+                  icon={<FileText size={18} />}
                   label="Reports ready"
                   value={reportsReady}
                   hint="available to download"
                   tone="neutral"
                 />
                 <MetricCard
-                  icon={<AlertTriangle size={16} />}
+                  icon={<AlertTriangle size={18} />}
                   label="Needs attention"
                   value={jobs.filter(j => ['failed', 'cancelled', 'partial', 'engine_unavailable'].includes(j.status)).length}
                   hint="failed, partial, or incomplete audits"
@@ -1375,7 +1377,7 @@ function App() {
                       <table className="fc-table">
                         <thead>
                           <tr>
-                            <th scope="col" style={{ width: '90px' }}>Job</th>
+                            <th scope="col" style={{ width: '100px' }}>Job</th>
                             <th scope="col">Repository</th>
                             <th scope="col">Status</th>
                             <th scope="col">Score</th>
@@ -1389,11 +1391,14 @@ function App() {
                             const busy = cancellingIds.includes(j.id);
                             return (
                               <tr key={j.id} className="fc-table-row" style={{ opacity: busy ? 0.55 : 1 }}>
-                                <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem', color: 'var(--fc-text-muted)' }}>{j.id.substring(0, 8)}</td>
+                                <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem', color: '#888888' }}>{j.id.substring(0, 8)}</td>
                                 <td>
-                                  <div style={{ fontWeight: 600, color: 'var(--fc-text-primary)' }}>{repoLabel(j.repo_url)}</div>
-                                  <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', marginTop: '0.15rem' }}>
-                                    <span className="fc-branch-tag">⎇ {j.repo_branch}</span>
+                                  <div style={{ fontWeight: 600, color: '#FFFFFF', fontSize: '0.86rem', fontFamily: 'var(--font-mono)' }}>{repoLabel(j.repo_url)}</div>
+                                  <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', marginTop: '0.2rem' }}>
+                                    <span className="fc-branch-tag">
+                                      <GitBranch size={11} className="inline mr-1 text-zinc-400" />
+                                      {j.repo_branch}
+                                    </span>
                                     {(j.commit_sha || j.requested_commit_sha) ? (
                                       <span className="fc-sha-tag font-mono" title={`Pinned snapshot ${j.commit_sha || j.requested_commit_sha}`}>⏺ {((j.commit_sha || j.requested_commit_sha) ?? '').substring(0, 8)}</span>
                                     ) : null}
@@ -1407,8 +1412,14 @@ function App() {
                                     </div>
                                   )}
                                 </td>
-                                <td><ScoreRing score={j.security_score ?? null} size={34} /></td>
-                                <td style={{ color: 'var(--fc-text-secondary)', fontSize: '0.74rem' }} title={fmtUtc(j.created_at)}>{timeAgo(j.created_at)}</td>
+                                <td>
+                                  {j.security_score != null ? (
+                                    <ScoreRing score={j.security_score} size={30} />
+                                  ) : (
+                                    <span className="fc-score-na" title="Score not available for this run">N/A</span>
+                                  )}
+                                </td>
+                                <td style={{ color: '#888888', fontSize: '0.74rem' }} title={fmtUtc(j.created_at)}>{timeAgo(j.created_at)}</td>
                                 <td>
                                   <div className="fc-actions-group">
                                     <button onClick={() => handleViewJobDetail(j.id)} className="fc-btn-action">Inspect</button>
@@ -1447,6 +1458,16 @@ function App() {
                   </p>
                 </div>
                 <div className="page-head-side">
+                  <button
+                    type="button"
+                    onClick={() => void fetchUserRepos(true)}
+                    className="fc-btn-secondary"
+                    disabled={isLoadingRepos}
+                    title="Sync connected repositories from GitHub"
+                  >
+                    <RefreshCw size={14} className={isLoadingRepos ? 'spin' : ''} />
+                    <span>{isLoadingRepos ? 'Syncing…' : 'Sync repositories'}</span>
+                  </button>
                   <button onClick={() => { openScanModal(); }} className="fc-btn-primary">
                     <Plus size={15} />
                     New audit
@@ -1454,20 +1475,17 @@ function App() {
                 </div>
               </header>
 
-              <section className="fc-panel" aria-label="Connected GitHub repositories">
+              <section className="fc-panel fc-panel-flush" aria-label="Connected GitHub repositories">
                 <div className="fc-panel-header">
                   <div>
                     <h2 className="fc-panel-title">Connected repositories</h2>
                     <p className="fc-panel-subtitle">Synced from your GitHub account</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void fetchUserRepos(true)}
-                    className="fc-btn-secondary fc-btn-sm"
-                    disabled={isLoadingRepos}
-                  >
-                    {isLoadingRepos ? 'Syncing…' : 'Sync repositories'}
-                  </button>
+                  {userRepos.length > 0 && (
+                    <span className="fc-repo-count-badge">
+                      {userRepos.length} {userRepos.length === 1 ? 'repository' : 'repositories'}
+                    </span>
+                  )}
                 </div>
                 {reposStatus === 'loading' || reposStatus === 'idle' ? (
                   <div className="state-skeleton" aria-busy="true">
@@ -1485,26 +1503,69 @@ function App() {
                 ) : (
                   <ul className="fc-repo-list">
                     {userRepos.map(r => {
-                      const url = r.clone_url || r.html_url || '';
+                      const url = r.clone_url || r.html_url || (r.full_name ? `https://github.com/${r.full_name}` : '');
+                      const norm = (u?: string | null) => (u || '').toLowerCase().replace(/\.git$/, '').replace(/\/$/, '');
+                      const cNorm = norm(r.clone_url);
+                      const hNorm = norm(r.html_url);
+                      const nameNorm = (r.full_name || '').toLowerCase();
+                      const matchingJobs = jobs.filter(j => {
+                        const jNorm = norm(j.repo_url);
+                        return (cNorm && jNorm === cNorm) || (hNorm && jNorm === hNorm) || norm(repoLabel(j.repo_url)) === nameNorm;
+                      });
+                      const latestRun = matchingJobs.length > 0
+                        ? [...matchingJobs].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0]
+                        : null;
+
                       return (
                         <li key={String(r.id ?? r.full_name)} className="fc-repo-item">
                           <div className="fc-repo-main">
-                            <span className="fc-repo-name">{r.full_name}</span>
-                            <span className="fc-repo-meta">
-                              <span className={`badge ${r.private ? 'badge-neutral' : 'badge-success'}`}>{r.private ? 'Private' : 'Public'}</span>
-                              <span className="mono">⎇ {r.default_branch || 'main'}</span>
-                            </span>
-                            {r.description && <span className="fc-repo-desc">{r.description}</span>}
+                            <span className="fc-repo-name mono">{r.full_name}</span>
+                            <div className="fc-repo-meta">
+                              <span className={`badge fc-repo-visibility-pill ${r.private ? 'badge-neutral is-private' : 'badge-success is-public'}`}>
+                                {r.private ? 'Private' : 'Public'}
+                              </span>
+                              <span className="mono fc-repo-branch">
+                                <GitBranch size={12} className="fc-repo-branch-icon" />
+                                {r.default_branch || 'main'}
+                              </span>
+                            </div>
+                            {r.description && (
+                              <p className="fc-repo-desc" title={r.description}>
+                                {r.description}
+                              </p>
+                            )}
                           </div>
-                          {url && (
-                            <button
-                              type="button"
-                              className="fc-btn-secondary fc-btn-sm"
-                              onClick={() => { setNewRepoUrl(url); setNewRepoBranch(r.default_branch || 'main'); openScanModal(); }}
-                            >
-                              Audit
-                            </button>
-                          )}
+                          <div className="fc-repo-side">
+                            <div className="fc-repo-audit-meta">
+                              {latestRun ? (
+                                <>
+                                  <span className="fc-repo-last-run">
+                                    Last audited {timeAgo(latestRun.created_at) || 'just now'}
+                                  </span>
+                                  <StatusPill status={latestRun.status} />
+                                  {latestRun.security_score != null && (
+                                    <ScoreRing score={latestRun.security_score} size={28} />
+                                  )}
+                                </>
+                              ) : (
+                                <span className="fc-repo-unscanned">Not audited yet</span>
+                              )}
+                            </div>
+                            {url && (
+                              <button
+                                type="button"
+                                className="fc-repo-audit-btn"
+                                onClick={() => {
+                                  setNewRepoUrl(url);
+                                  setNewRepoBranch(r.default_branch || 'main');
+                                  openScanModal();
+                                }}
+                                title={`Audit ${r.full_name}`}
+                              >
+                                Audit
+                              </button>
+                            )}
+                          </div>
                         </li>
                       );
                     })}
@@ -1512,7 +1573,7 @@ function App() {
                 )}
               </section>
 
-              <section className="fc-panel" aria-label="Audit history by repository">
+              <section className="fc-panel fc-panel-flush" aria-label="Audit history by repository">
                 <div className="fc-panel-header">
                   <div>
                     <h2 className="fc-panel-title">Audit history</h2>
@@ -1530,15 +1591,17 @@ function App() {
                   const ordered = [...groups.entries()].sort(([, a], [, b]) => ((a[0]?.created_at ?? '') < (b[0]?.created_at ?? '') ? 1 : -1));
                   if (ordered.length === 0) {
                     return (
-                      <EmptyState
-                        title="No audited repositories"
-                        body="Submit a repository to run your first audit."
-                        action={
-                          <button onClick={() => { openScanModal(); }} className="fc-btn-primary fc-btn-sm">
-                            Start an audit
-                          </button>
-                        }
-                      />
+                      <div style={{ padding: '24px' }}>
+                        <EmptyState
+                          title="No audited repositories"
+                          body="Submit a repository to run your first audit."
+                          action={
+                            <button onClick={() => { openScanModal(); }} className="fc-btn-primary fc-btn-sm">
+                              Start an audit
+                            </button>
+                          }
+                        />
+                      </div>
                     );
                   }
                   return (
@@ -1549,17 +1612,26 @@ function App() {
                         return (
                           <li key={repoUrl} className="fc-repo-item">
                             <div className="fc-repo-main">
-                              <span className="fc-repo-name">{repoLabel(repoUrl)}</span>
-                              <span className="fc-repo-meta">
-                                <span>{runs.length} {runs.length === 1 ? 'audit' : 'audits'}</span>
-                                <span aria-hidden="true">·</span>
-                                <span className="mono">⎇ {latest.repo_branch}{sha ? ` · ${sha.substring(0, 8)}` : ''}</span>
-                                <span aria-hidden="true">·</span>
-                                <span>{timeAgo(latest.created_at) || 'just now'}</span>
-                              </span>
+                              <span className="fc-repo-name mono">{repoLabel(repoUrl)}</span>
+                              <div className="fc-repo-meta">
+                                <span className="fc-repo-count-badge">
+                                  {runs.length} {runs.length === 1 ? 'audit' : 'audits'}
+                                </span>
+                                <span className="mono fc-repo-branch">
+                                  <GitBranch size={12} className="fc-repo-branch-icon" />
+                                  {latest.repo_branch}{sha ? ` · ${sha.substring(0, 8)}` : ''}
+                                </span>
+                                <span aria-hidden="true" className="fc-meta-sep">·</span>
+                                <span>Last run {timeAgo(latest.created_at) || 'just now'}</span>
+                              </div>
                             </div>
                             <div className="fc-repo-side">
-                              <StatusPill status={latest.status} />
+                              <div className="fc-repo-audit-meta">
+                                {latest.security_score != null && (
+                                  <ScoreRing score={latest.security_score} size={28} />
+                                )}
+                                <StatusPill status={latest.status} />
+                              </div>
                               <button
                                 type="button"
                                 className="fc-btn-secondary fc-btn-sm"
@@ -1569,7 +1641,7 @@ function App() {
                               </button>
                               <button
                                 type="button"
-                                className="fc-btn-secondary fc-btn-sm"
+                                className="fc-repo-audit-btn"
                                 onClick={() => { setNewRepoUrl(repoUrl); setNewRepoBranch(latest.repo_branch || 'main'); openScanModal(); }}
                               >
                                 Audit again
@@ -1796,57 +1868,76 @@ function App() {
                 <div className="modal-title">Start an audit</div>
                 <div className="modal-sub">Submit a repository for a security audit</div>
               </div>
-              <button onClick={() => setIsScanModalOpen(false)} className="btn btn-ghost btn-icon">✕</button>
+              <button
+                type="button"
+                onClick={() => setIsScanModalOpen(false)}
+                className="fc-modal-close-btn"
+                title="Close modal"
+                aria-label="Close modal"
+              >
+                ✕
+              </button>
             </div>
 
             <form onSubmit={handleStartScan}>
               <div className="modal-body">
-                <div className="form-group" style={{ marginBottom: '1.25rem', background: 'var(--fc-surface-elevated, #F0EFEB)', padding: '0.85rem', borderRadius: '8px', border: '1px solid var(--fc-border, #E7E4DE)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                    <label className="form-label" style={{ margin: 0 }}>Your GitHub repositories</label>
+                <div className="fc-modal-repo-picker">
+                  <div className="fc-modal-repo-header">
+                    <div className="fc-modal-repo-labels">
+                      <label className="form-label" htmlFor="github-repo-select">Your GitHub repositories</label>
+                      <span className="fc-modal-repo-caption">
+                        {reposStatus === 'not_connected'
+                          ? 'GitHub not connected — audit any public URL directly'
+                          : reposStatus === 'github_error' || reposStatus === 'network_error'
+                            ? `Sync failed${reposMessage ? `: ${reposMessage}` : ''} — paste URL below`
+                            : userRepos.length > 0
+                              ? `${userRepos.length} repositories synchronized from GitHub`
+                              : 'Sync to select from your GitHub repositories'}
+                      </span>
+                    </div>
                     <button 
                       type="button" 
-                      onClick={() => fetchUserRepos(true)} 
-                      className="fc-btn-ghost fc-btn-sm"
-                      style={{ padding: '0.15rem 0.5rem', fontSize: '0.72rem', color: 'var(--fc-accent, #C92F38)' }}
+                      onClick={() => void fetchUserRepos(true)} 
+                      className="fc-modal-sync-btn"
+                      disabled={isLoadingRepos}
+                      title="Sync repositories from your GitHub account"
                     >
-                      {isLoadingRepos ? 'Syncing...' : '🔄 Sync Account Repos'}
+                      <RefreshCw size={12} className={isLoadingRepos ? 'spin' : ''} />
+                      <span>{isLoadingRepos ? 'Syncing…' : 'Sync repos'}</span>
                     </button>
                   </div>
-                  <select 
-                    className="form-input"
-                    onChange={(e) => {
-                      if (e.target.value) {
-                        const repo = userRepos.find(r => (r.clone_url || r.html_url) === e.target.value);
-                        if (repo) {
-                          setNewRepoUrl(repo.clone_url || repo.html_url || '');
-                          setNewRepoBranch(repo.default_branch || 'main');
+                  <div className="fc-select-wrap">
+                    <select 
+                      id="github-repo-select"
+                      className="fc-modal-select"
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          const repo = userRepos.find(r => (r.clone_url || r.html_url) === e.target.value);
+                          if (repo) {
+                            setNewRepoUrl(repo.clone_url || repo.html_url || '');
+                            setNewRepoBranch(repo.default_branch || 'main');
+                          }
                         }
-                      }
-                    }}
-                    defaultValue=""
-                  >
-                    <option value="" disabled>-- Select a GitHub Repository to Audit --</option>
-                    {userRepos.map((r) => (
-                      <option key={r.id} value={r.clone_url || r.html_url || ''}>
-                        {r.private ? '🔒 Private' : '🌐 Public'}: {r.full_name} ({r.default_branch || 'main'})
-                      </option>
-                    ))}
-                  </select>
-                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
-                    {reposStatus === 'not_connected'
-                      ? 'GitHub not connected — sign in with GitHub to sync repositories, or paste a public URL below.'
-                      : reposStatus === 'github_error' || reposStatus === 'network_error'
-                        ? `Repository sync failed${reposMessage ? `: ${reposMessage}` : '.'} You can still paste a URL below.`
-                        : userRepos.length > 0
-                          ? `${userRepos.length} repositories synchronized from your GitHub account.`
-                          : 'Click "Sync Account Repos" to load your public & private GitHub repositories.'}
+                      }}
+                      defaultValue=""
+                    >
+                      <option value="" disabled>-- Select a GitHub Repository to Audit --</option>
+                      {userRepos.map((r) => (
+                        <option key={r.id} value={r.clone_url || r.html_url || ''}>
+                          {r.private ? '🔒 Private' : '🌐 Public'}: {r.full_name} ({r.default_branch || 'main'})
+                        </option>
+                      ))}
+                    </select>
+                    <svg className="fc-select-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
                   </div>
                 </div>
 
                 <div className="form-group">
-                  <label className="form-label">Repository Git URL</label>
+                  <label className="form-label" htmlFor="repo-git-url">Repository Git URL</label>
                   <input 
+                    id="repo-git-url"
                     type="text" 
                     className="form-input" 
                     placeholder="https://github.com/org/repo"
@@ -1856,35 +1947,41 @@ function App() {
                   />
                 </div>
 
-                <div className="form-group">
-                  <label className="form-label">Branch</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    value={newRepoBranch}
-                    onChange={e => setNewRepoBranch(e.target.value)}
-                  />
-                </div>
+                <div className="form-row-2col">
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="repo-branch">Branch</label>
+                    <input 
+                      id="repo-branch"
+                      type="text" 
+                      className="form-input" 
+                      value={newRepoBranch}
+                      onChange={e => setNewRepoBranch(e.target.value)}
+                    />
+                  </div>
 
-                <div className="form-group">
-                  <label className="form-label">Pinned commit (optional)</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="40-char lowercase hex, or empty for branch head"
-                    value={newCommitSha}
-                    onChange={e => setNewCommitSha(e.target.value)}
-                    maxLength={40}
-                  />
+                  <div className="form-group">
+                    <label className="form-label" htmlFor="repo-commit">Pinned commit (optional)</label>
+                    <input
+                      id="repo-commit"
+                      type="text" 
+                      className="form-input font-mono"
+                      placeholder="40-char lowercase hex"
+                      value={newCommitSha}
+                      onChange={e => setNewCommitSha(e.target.value)}
+                      maxLength={40}
+                    />
+                  </div>
                 </div>
 
                 {modalError && <div className="error-box" style={{ marginBottom: '1rem' }}>{modalError}</div>}
               </div>
 
               <div className="modal-footer">
-                <button type="button" onClick={() => setIsScanModalOpen(false)} className="fc-btn-secondary">Cancel</button>
-                <button type="submit" className="fc-btn-primary" disabled={isSubmitting || !newRepoUrl.trim()}>
-                  {isSubmitting ? 'Submitting...' : 'Submit Job'}
+                <button type="button" onClick={() => setIsScanModalOpen(false)} className="fc-btn-cancel">
+                  Cancel
+                </button>
+                <button type="submit" className="fc-btn-submit-job" disabled={isSubmitting || !newRepoUrl.trim()}>
+                  {isSubmitting ? 'Submitting…' : 'Submit Job'}
                 </button>
               </div>
             </form>

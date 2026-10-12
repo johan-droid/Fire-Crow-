@@ -798,12 +798,13 @@ export function BrandLockup({
           className="fc-lockup-endorsement"
           style={{
             fontFamily: 'var(--fc-font-mono, "JetBrains Mono", monospace)',
-            fontSize: '0.68rem',
-            color: 'var(--fc-text-secondary, #A6AEB9)',
-            letterSpacing: '0.04em',
+            fontSize: '0.74rem',
+            color: '#CBD5E1',
+            letterSpacing: '0.07em',
             display: 'flex',
             alignItems: 'center',
-            gap: '4px',
+            gap: '5px',
+            marginTop: '2px',
           }}
         >
           <span>PRODUCT BY</span>

@@ -43,6 +43,17 @@ export interface WorkflowStep {
   specs: string[];
 }
 
+export interface PricingTier {
+  id: 'starter' | 'pro' | 'enterprise';
+  name: string;
+  tagline: string;
+  priceMonthly: number;
+  priceAnnual: number;
+  popular?: boolean;
+  features: Array<{ text: string; highlight?: boolean }>;
+  ctaLabel: string;
+}
+
 export interface FAQItem {
   id: string;
   question: string;
@@ -216,31 +227,83 @@ export const WORKFLOW_STEPS: WorkflowStep[] = [
   },
 ];
 
+/* ─── Truthful Pricing Tiers (Matching onInitiateCheckout contract) ─── */
+export const PRICING_TIERS: PricingTier[] = [
+  {
+    id: 'starter',
+    name: 'Starter',
+    tagline: 'Essential repository security scanning for individual developers.',
+    priceMonthly: 19,
+    priceAnnual: 15,
+    features: [
+      { text: '5 Repository audits per month' },
+      { text: 'Tri-engine scanning (SAST, Secrets, CVEs)' },
+      { text: 'Ephemeral container isolation' },
+      { text: 'Standard PDF & JSON report exports' },
+      { text: 'Community support via GitHub' },
+    ],
+    ctaLabel: 'Get Started',
+  },
+  {
+    id: 'pro',
+    name: 'Pro Console',
+    tagline: 'Comprehensive security intelligence for engineering teams.',
+    priceMonthly: 99,
+    priceAnnual: 79,
+    popular: true,
+    features: [
+      { text: 'Unlimited repository audits', highlight: true },
+      { text: 'Priority scanner container execution' },
+      { text: 'Tri-engine analysis (Semgrep, OSV, Gitleaks)' },
+      { text: 'Optional AI executive narrative briefing' },
+      { text: 'SOC2 & ISO-27001 mapped PDF reports' },
+      { text: 'Interactive audit findings explorer' },
+    ],
+    ctaLabel: 'Start Pro Trial',
+  },
+  {
+    id: 'enterprise',
+    name: 'Enterprise',
+    tagline: 'Dedicated capacity and custom configurations for security teams.',
+    priceMonthly: 499,
+    priceAnnual: 399,
+    features: [
+      { text: 'Everything in Pro Console' },
+      { text: 'Custom scanner concurrency limits' },
+      { text: 'Self-hosted Docker runner integration' },
+      { text: 'Custom rule configuration & exclusions' },
+      { text: 'Dedicated 99.9% scanning SLA' },
+      { text: 'Direct security engineering support' },
+    ],
+    ctaLabel: 'Contact Sales',
+  },
+];
+
 /* ─── Truthful Technical FAQ ─── */
 export const FAQ_ITEMS: FAQItem[] = [
   {
     id: 'faq-1',
     question: 'How does Fire Crow prevent repository code leaks?',
-    answer: 'Scanners execute inside isolated, non-root micro-containers with read-only repository mounts and stripped Linux capabilities (--cap-drop=ALL). Repository archives are deleted immediately upon completion of the scan, and code is never used to train machine learning models.',
+    answer: 'Scanners execute inside isolated, non-root micro-containers with read-only repository mounts and stripped Linux capabilities (--cap-drop=ALL).\n\nRepository archives are deleted immediately upon completion of the scan, and code is never stored or used to train machine learning models.',
   },
   {
     id: 'faq-2',
     question: 'Can the AI narrative summary modify my security score or findings?',
-    answer: 'No. By architectural design, audit findings, severities, and risk scores are mathematically frozen in the canonical report before the optional AI narrative agent is invoked. The AI functions purely as an executive briefing writer and has zero write access to the findings database.',
+    answer: 'No. By architectural design, audit findings, severities, and risk scores are mathematically frozen in the canonical ledger before the narrative agent is invoked.\n\nThe AI functions strictly as a read-only briefing writer with zero write access to the findings database.',
   },
   {
     id: 'faq-3',
     question: 'What happens if a scanner tool encounters an error or timeout?',
-    answer: 'Fire Crow reports engine status truthfully. If a scanner fails, times out, or is unavailable, the job status reflects partial or engine_unavailable rather than falsely presenting a clean bill of health. We do not generate false green indicators.',
+    answer: 'Fire Crow reports engine status truthfully. If a scanner fails, times out, or is unavailable, the job status reflects partial or engine_unavailable rather than falsely presenting a clean bill of health.\n\nWe do not generate false green indicators under degraded scanner conditions.',
   },
   {
     id: 'faq-4',
     question: 'What scanners are included in the standard audit pipeline?',
-    answer: 'Fire Crow orchestrates three industry-standard open tools: Gitleaks for high-entropy secret detection, Semgrep for rule-based static application security testing (SAST), and Google OSV-Scanner for identifying known vulnerabilities in open-source dependencies.',
+    answer: 'Fire Crow orchestrates three industry-standard tools: Gitleaks for high-entropy secret detection, Semgrep for rule-based static application security testing (SAST), and Google OSV-Scanner for identifying known vulnerabilities in dependencies.\n\nEach engine runs in parallel within dedicated isolation boundaries.',
   },
   {
     id: 'faq-5',
     question: 'How do I download or share audit reports?',
-    answer: 'Every completed audit can be viewed in the interactive console or downloaded as a standalone JSON data ledger, printable HTML view, or formal executive PDF report suitable for compliance stakeholders.',
+    answer: 'Every completed audit can be viewed in the interactive console or downloaded as a standalone JSON data ledger, printable HTML view, or formal executive PDF report.\n\nReports include cryptographic verification hashes and line-level remediation evidence.',
   },
 ];

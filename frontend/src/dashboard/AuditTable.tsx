@@ -259,7 +259,7 @@ export function AuditTable({
                         {job.security_score != null ? (
                           <ScoreRing score={job.security_score} size={30} />
                         ) : (
-                          <span className="fc-score-null">—</span>
+                          <span className="fc-score-na" title="Score not available for this run">N/A</span>
                         )}
                       </div>
                     </td>
@@ -334,7 +334,7 @@ export function AuditTable({
                   {job.security_score != null ? (
                     <ScoreRing score={job.security_score} size={36} />
                   ) : (
-                    <div className="fc-score-ring-placeholder">—</div>
+                    <div className="fc-score-ring-placeholder fc-score-na">N/A</div>
                   )}
                   <div className="fc-list-item-info">
                     <div className="flex items-center gap-2">

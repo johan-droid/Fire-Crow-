@@ -96,12 +96,13 @@ const StrokeText = ({
       }
       if (!bbox || !bbox.width) return;
 
-      const pad = Math.max(Number(strokeWidth) || 1, Number(fontSize) * 0.1);
+      const padY = Math.max(Number(strokeWidth) || 1, Number(fontSize) * 0.1);
+      const padRight = Math.max(Number(strokeWidth) || 1, 4);
       const next: StrokeTextBox = {
-        x: bbox.x - pad,
-        y: bbox.y - pad,
-        width: bbox.width + pad * 2,
-        height: bbox.height + pad * 2,
+        x: bbox.x,
+        y: bbox.y - padY,
+        width: bbox.width + padRight,
+        height: bbox.height + padY * 2,
       };
 
       setBox(prev =>
@@ -235,7 +236,7 @@ const StrokeText = ({
       role="img"
       aria-label={String(text ?? '')}
     >
-      <svg className="stroke-text__svg" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+      <svg className="stroke-text__svg" viewBox={viewBox} preserveAspectRatio="xMinYMid meet" aria-hidden="true">
         {fillMode === 'wipe' && box && (
           <defs>
             <clipPath id={wipeId} clipPathUnits="userSpaceOnUse">

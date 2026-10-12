@@ -144,9 +144,11 @@ export default function LoginPage({
     }
   };
 
-  // Focus identifier input on mount
+  // Switch tabs cleanly without lingering errors
   useEffect(() => {
-    identifierInputRef.current?.focus();
+    // Clear errors when mode changes
+    clearErrors();
+    setFieldErrors({});
   }, [mode]);
 
   return (
@@ -310,7 +312,8 @@ export default function LoginPage({
                   </div>
                   {fieldErrors.identifier && (
                     <span id="fc-auth-id-err" className="fc-auth-field-error" role="alert">
-                      {fieldErrors.identifier}
+                      <AlertCircle size={13} aria-hidden="true" />
+                      <span>{fieldErrors.identifier}</span>
                     </span>
                   )}
                 </div>
@@ -347,7 +350,8 @@ export default function LoginPage({
                   </div>
                   {fieldErrors.password && (
                     <span id="fc-auth-pw-err" className="fc-auth-field-error" role="alert">
-                      {fieldErrors.password}
+                      <AlertCircle size={13} aria-hidden="true" />
+                      <span>{fieldErrors.password}</span>
                     </span>
                   )}
                   <p className="fc-auth-recovery-note">
@@ -381,7 +385,8 @@ export default function LoginPage({
                   </div>
                   {fieldErrors.registerUsername && (
                     <span id="fc-reg-user-err" className="fc-auth-field-error" role="alert">
-                      {fieldErrors.registerUsername}
+                      <AlertCircle size={13} aria-hidden="true" />
+                      <span>{fieldErrors.registerUsername}</span>
                     </span>
                   )}
                 </div>
@@ -408,7 +413,8 @@ export default function LoginPage({
                   </div>
                   {fieldErrors.registerEmail && (
                     <span id="fc-reg-email-err" className="fc-auth-field-error" role="alert">
-                      {fieldErrors.registerEmail}
+                      <AlertCircle size={13} aria-hidden="true" />
+                      <span>{fieldErrors.registerEmail}</span>
                     </span>
                   )}
                 </div>
@@ -445,7 +451,8 @@ export default function LoginPage({
                   </div>
                   {fieldErrors.registerPassword && (
                     <span id="fc-reg-pw-err" className="fc-auth-field-error" role="alert">
-                      {fieldErrors.registerPassword}
+                      <AlertCircle size={13} aria-hidden="true" />
+                      <span>{fieldErrors.registerPassword}</span>
                     </span>
                   )}
                 </div>

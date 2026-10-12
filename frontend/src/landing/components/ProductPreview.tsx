@@ -1,31 +1,117 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { SAMPLE_FINDINGS, PIPELINE_STAGES, type FindingMock } from '../data/landingData';
+import { ShinyText } from './ShinyText';
+import { DecryptedText } from './DecryptedText';
+import { CountUp } from './CountUp';
 
 interface ProductPreviewProps {
   onNavigateLogin: () => void;
 }
 
+const STAGE_TELEMETRY: Record<string, {
+  cmd: string;
+  flags: string;
+  containerId: string;
+  logs: string[];
+}> = {
+  '01': {
+    containerId: 'fc-ingest-8f3c',
+    cmd: 'stream_unpack --max-mb=50 /archive.tar.gz',
+    flags: '--network=none --memory=256m --cap-drop=ALL',
+    logs: [
+      '[0.00s] Validating streaming archive signature...',
+      '[0.04s] Verified clean tar headers (no symlink traversal)',
+      '[0.14s] Repository contents extracted to ephemeral volume (/tmp/audit-repo)',
+    ],
+  },
+  '02': {
+    containerId: 'fc-gitleaks-4a11',
+    cmd: 'gitleaks detect --source=/tmp/audit-repo --report-format=json',
+    flags: '--read-only --network=none --memory=512m --cap-drop=ALL',
+    logs: [
+      '[0.00s] Initializing high-entropy Shannon regex engine...',
+      '[0.18s] Scanned 128 commits and 42 source files',
+      '[0.36s] Confirmed 1 hardcoded symmetric secret in backend/src/config.rs:44',
+    ],
+  },
+  '03': {
+    containerId: 'fc-semgrep-9f20',
+    cmd: 'semgrep scan --config=p/security-audit --json /tmp/audit-repo',
+    flags: '--read-only --network=none --memory=1024m --cap-drop=ALL',
+    logs: [
+      '[0.00s] Loading OWASP Top 10 rule manifests...',
+      '[0.82s] AST traversal across Rust and TypeScript callgraphs',
+      '[1.80s] Flagged CWE-22 path traversal vulnerability in fetch.rs:88',
+    ],
+  },
+  '04': {
+    containerId: 'fc-osv-3d88',
+    cmd: 'osv-scanner --lockfile=package-lock.json --json',
+    flags: '--read-only --network=none --memory=512m --cap-drop=ALL',
+    logs: [
+      '[0.00s] Reading manifest dependencies (48 packages)...',
+      '[0.32s] Cross-referencing against Google OSV CVE database',
+      '[0.72s] Matched GHSA-vh95-rm6w-qq85 (CVE-2020-7598) in minimist@0.0.8',
+    ],
+  },
+  '05': {
+    containerId: 'fc-ledger-synth',
+    cmd: 'fc-synthesize --canonical --hash=sha256',
+    flags: '--network=none --memory=256m',
+    logs: [
+      '[0.00s] Aggregating findings across 3 scanner outputs...',
+      '[0.06s] Deduplication complete: 3 unique confirmed findings',
+      '[0.18s] Mathematical score ledger finalized: 78/100 (Grade B+)',
+    ],
+  },
+};
+
 export function ProductPreview({ onNavigateLogin }: ProductPreviewProps) {
   const [activeTab, setActiveTab] = useState<'findings' | 'pipeline' | 'ledger' | 'narrative'>('findings');
   const [selectedSeverity, setSelectedSeverity] = useState<'all' | 'critical' | 'high' | 'medium'>('all');
+  const [selectedEngine, setSelectedEngine] = useState<string>('all');
+  const [copiedFindingId, setCopiedFindingId] = useState<string | null>(null);
+  const [expandedStage, setExpandedStage] = useState<string | null>('02');
+  const [simulatedFixCritical, setSimulatedFixCritical] = useState<boolean>(false);
+  const [aiStreaming, setAiStreaming] = useState<boolean>(false);
 
-  const filteredFindings = SAMPLE_FINDINGS.filter((f) => {
-    if (selectedSeverity === 'all') return true;
-    return f.severity === selectedSeverity;
-  });
+  const filteredFindings = useMemo(() => {
+    return SAMPLE_FINDINGS.filter((f) => {
+      const matchSev = selectedSeverity === 'all' || f.severity === selectedSeverity;
+      const matchEngine = selectedEngine === 'all' || f.scanner.toLowerCase().includes(selectedEngine.toLowerCase());
+      return matchSev && matchEngine;
+    });
+  }, [selectedSeverity, selectedEngine]);
+
+  const handleCopyEvidence = (finding: FindingMock) => {
+    const text = `${finding.filePath}:${finding.lineNumber}\n${finding.evidence}\n// ${finding.remediation}`;
+    navigator.clipboard?.writeText(text);
+    setCopiedFindingId(finding.id);
+    setTimeout(() => setCopiedFindingId(null), 2000);
+  };
+
+  const handleTriggerAiStream = () => {
+    setAiStreaming(true);
+    setTimeout(() => setAiStreaming(false), 1200);
+  };
+
+  // Deterministic score calculation
+  const calculatedScore = simulatedFixCritical ? 93 : 78;
+  const calculatedGrade = simulatedFixCritical ? 'A (EXCELLENT)' : 'B+ (GOOD)';
 
   return (
     <section id="preview" className="fc-preview-section" aria-labelledby="preview-heading">
       <div className="fc-container">
         {/* Section Header */}
-        <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+        <div className="fc-section-header-left" style={{ marginBottom: '28px' }}>
           <span className="fc-demo-badge">
-            Sample data · illustration only — not a live audit
+            <span className="fc-pulse-dot" style={{ background: '#34D399', boxShadow: 'none', width: '6px', height: '6px' }} aria-hidden="true" />
+            <ShinyText text="Sample audit data · Interactive console simulation" shineColor="#38BDF8" />
           </span>
-          <h2 id="preview-heading" className="fc-section-title" style={{ marginTop: '12px' }}>
+          <h2 id="preview-heading" className="fc-section-title" style={{ marginTop: '12px', textAlign: 'left' }}>
             Interactive Audit Walkthrough
           </h2>
-          <p className="fc-section-desc" style={{ maxWidth: '640px', margin: '8px auto 0' }}>
+          <p className="fc-section-desc" style={{ maxWidth: '600px', margin: '8px 0 0', textAlign: 'left' }}>
             Inspect client-side audit visualization: normalized findings, containerized pipeline execution,
             deterministic risk scoring, and the optional read-only AI executive briefing.
           </p>
@@ -91,8 +177,8 @@ export function ProductPreview({ onNavigateLogin }: ProductPreviewProps) {
 
             {/* Sample-data tag */}
             <div className="fc-window-badge" title="Illustrative sample, not live data">
-              <span className="fc-pulse-dot" style={{ background: '#eab308', boxShadow: '0 0 6px #eab308' }} aria-hidden="true" />
-              <span>SAMPLE · NOT LIVE</span>
+              <span className="fc-pulse-dot" style={{ background: '#34D399', boxShadow: '0 0 6px #34D399' }} aria-hidden="true" />
+              <span>LIVE INTERACTION READY</span>
             </div>
           </div>
 
@@ -108,76 +194,139 @@ export function ProductPreview({ onNavigateLogin }: ProductPreviewProps) {
               >
                 {/* Findings Filter Bar */}
                 <div className="fc-findings-toolbar">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.78rem', color: 'var(--fc-warm-subtle)', fontFamily: 'var(--fc-font-mono)' }}>
-                      SEVERITY:
-                    </span>
-                    <div className="fc-filter-pill-group">
-                      {(['all', 'critical', 'high', 'medium'] as const).map((sev) => (
-                        <button
-                          key={sev}
-                          type="button"
-                          className={`fc-filter-pill ${selectedSeverity === sev ? 'active' : ''}`}
-                          onClick={() => setSelectedSeverity(sev)}
-                        >
-                          {sev.toUpperCase()}
-                        </button>
-                      ))}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '0.74rem', color: 'var(--fc-warm-subtle)', fontFamily: 'var(--fc-font-mono)' }}>
+                        SEVERITY:
+                      </span>
+                      <div className="fc-filter-pill-group">
+                        {(['all', 'critical', 'high', 'medium'] as const).map((sev) => (
+                          <button
+                            key={sev}
+                            type="button"
+                            className={`fc-filter-pill ${selectedSeverity === sev ? 'active' : ''}`}
+                            onClick={() => setSelectedSeverity(sev)}
+                          >
+                            {sev.toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '0.74rem', color: 'var(--fc-warm-subtle)', fontFamily: 'var(--fc-font-mono)' }}>
+                        ENGINE:
+                      </span>
+                      <div className="fc-filter-pill-group">
+                        {['all', 'gitleaks', 'semgrep', 'osv'].map((engine) => (
+                          <button
+                            key={engine}
+                            type="button"
+                            className={`fc-filter-pill ${selectedEngine === engine ? 'active' : ''}`}
+                            onClick={() => setSelectedEngine(engine)}
+                          >
+                            {engine.toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
 
-                  <span style={{ fontSize: '0.76rem', color: 'var(--fc-warm-subtle)', fontFamily: 'var(--fc-font-mono)' }}>
-                    TARGET: sample-repo/main @ 8f3c1b
+                  <span style={{ fontSize: '0.76rem', color: 'var(--fc-clean)', fontFamily: 'var(--fc-font-mono)' }}>
+                    TARGET: sample-repo/main @ <DecryptedText text="8f3c1b" speed={30} animateOn="view" /> (3 findings)
                   </span>
                 </div>
 
                 {/* Finding Cards */}
-                {filteredFindings.map((finding: FindingMock) => (
-                  <div key={finding.id} className="fc-finding-card">
-                    <div className="fc-finding-head">
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-                          <span className={`fc-badge fc-badge-${finding.severity}`}>
-                            {finding.severity}
+                {filteredFindings.length === 0 ? (
+                  <div style={{ padding: '32px', textAlign: 'center', color: 'var(--fc-warm-subtle)', fontFamily: 'var(--fc-font-mono)' }}>
+                    No findings match the selected filters.
+                  </div>
+                ) : (
+                  filteredFindings.map((finding: FindingMock) => {
+                    const isCopied = copiedFindingId === finding.id;
+
+                    return (
+                      <div key={finding.id} className="fc-finding-card">
+                        <div className="fc-finding-head">
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                              <span className={`fc-badge fc-badge-${finding.severity}`}>
+                                {finding.severity}
+                              </span>
+                              <span style={{ fontFamily: 'var(--fc-font-mono)', fontSize: '0.74rem', color: 'var(--fc-warm-subtle)' }}>
+                                {finding.id}
+                              </span>
+                            </div>
+                            <h3 className="fc-finding-title">{finding.title}</h3>
+                          </div>
+
+                          <div style={{ textAlign: 'right', fontFamily: 'var(--fc-font-mono)', fontSize: '0.78rem' }}>
+                            <span style={{ color: 'var(--fc-text-muted)' }}>CVSS: </span>
+                            <strong style={{ color: 'var(--fc-text-primary)' }}>{finding.cvss.toFixed(1)}</strong>
+                          </div>
+                        </div>
+
+                        <p style={{ fontSize: '0.86rem', color: 'var(--fc-text-secondary)', fontWeight: 500, marginBottom: '12px', lineHeight: 1.55 }}>
+                          {finding.description}
+                        </p>
+
+                        <div className="fc-finding-meta-chips">
+                          <span className="fc-meta-chip">
+                            <span className="fc-meta-chip-label">File:</span>
+                            <code className="fc-meta-chip-code">{finding.filePath}:{finding.lineNumber}</code>
                           </span>
-                          <span style={{ fontFamily: 'var(--fc-font-mono)', fontSize: '0.74rem', color: 'var(--fc-warm-subtle)' }}>
-                            {finding.id}
+                          <span className="fc-meta-chip">
+                            <span className="fc-meta-chip-label">Engine:</span>
+                            <span className="fc-meta-chip-val">{finding.scanner}</span>
+                          </span>
+                          <span className="fc-meta-chip">
+                            <span className="fc-meta-chip-label">Mapping:</span>
+                            <span className="fc-meta-chip-val">{finding.cwe}</span>
                           </span>
                         </div>
-                        <h3 className="fc-finding-title">{finding.title}</h3>
+
+                        {/* Code Evidence Block with interactive copy */}
+                        <div className="fc-code-snippet" style={{ position: 'relative' }}>
+                          <span style={{ color: 'var(--fc-text-muted)', marginRight: '8px', userSelect: 'none' }}>
+                            {finding.lineNumber} |
+                          </span>
+                          <span style={{ color: '#F1F5F9' }}>{finding.evidence}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyEvidence(finding)}
+                            className="fc-snippet-copy-btn"
+                            title="Copy code snippet & remediation"
+                            aria-label={`Copy evidence for ${finding.id}`}
+                          >
+                            {isCopied ? (
+                              <span style={{ color: '#34D399', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M20 6L9 17l-5-5" />
+                                </svg>
+                                Copied
+                              </span>
+                            ) : (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                                  <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                                </svg>
+                                Copy
+                              </span>
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Actionable remediation */}
+                        <div className="fc-remediation-box">
+                          <span style={{ color: 'var(--fc-clean)', fontWeight: 700 }}>REMEDIATION:</span>
+                          <span>{finding.remediation}</span>
+                        </div>
                       </div>
-
-                      <div style={{ textAlign: 'right', fontFamily: 'var(--fc-font-mono)', fontSize: '0.78rem' }}>
-                        <span style={{ color: 'var(--fc-text-muted)' }}>CVSS: </span>
-                        <strong style={{ color: 'var(--fc-text-primary)' }}>{finding.cvss.toFixed(1)}</strong>
-                      </div>
-                    </div>
-
-                    <p style={{ fontSize: '0.86rem', color: 'var(--fc-text-secondary)', fontWeight: 500, marginBottom: '12px', lineHeight: 1.55 }}>
-                      {finding.description}
-                    </p>
-
-                    <div className="fc-finding-meta">
-                      <span><strong>File:</strong> {finding.filePath}:{finding.lineNumber}</span>
-                      <span><strong>Engine:</strong> {finding.scanner}</span>
-                      <span><strong>Mapping:</strong> {finding.cwe}</span>
-                    </div>
-
-                    {/* Code Evidence Block */}
-                    <div className="fc-code-snippet">
-                      <span style={{ color: 'var(--fc-text-muted)', marginRight: '8px', userSelect: 'none' }}>
-                        {finding.lineNumber} |
-                      </span>
-                      <span style={{ color: '#F1F5F9' }}>{finding.evidence}</span>
-                    </div>
-
-                    {/* Actionable remediation */}
-                    <div className="fc-remediation-box">
-                      <span style={{ color: 'var(--fc-clean)', fontWeight: 700 }}>REMEDIATION:</span>
-                      <span>{finding.remediation}</span>
-                    </div>
-                  </div>
-                ))}
+                    );
+                  })
+                )}
               </div>
             )}
 
@@ -194,29 +343,68 @@ export function ProductPreview({ onNavigateLogin }: ProductPreviewProps) {
                     EXECUTION PROTOCOL: DOCKER EPHEMERAL MICRO-SANDBOXES
                   </span>
                   <span style={{ fontFamily: 'var(--fc-font-mono)', fontSize: '0.78rem', color: 'var(--fc-clean)' }}>
-                    WALL TIME: 3.20s
+                    TOTAL DURATION: 3.20s (PARALLEL EXECUTION)
                   </span>
                 </div>
 
-                {PIPELINE_STAGES.map((stage) => (
-                  <div key={stage.step} className="fc-pipeline-stage-item">
-                    <div className="fc-stage-left">
-                      <span className="fc-stage-number">{stage.step}</span>
-                      <div>
-                        <div className="fc-stage-name">{stage.name}</div>
-                        <div className="fc-stage-desc">{stage.summary}</div>
-                      </div>
-                    </div>
+                {PIPELINE_STAGES.map((stage) => {
+                  const isExpanded = expandedStage === stage.step;
+                  const telemetry = STAGE_TELEMETRY[stage.step];
 
-                    <div className="fc-stage-meta">
-                      <span style={{ color: 'var(--fc-warm-subtle)' }}>Engine: {stage.scanner}</span>
-                      <span style={{ color: 'var(--fc-ember-bright)', background: 'var(--fc-ember-dim)', padding: '2px 8px', borderRadius: '4px' }}>
-                        {stage.duration}
-                      </span>
-                      <span style={{ color: 'var(--fc-clean)' }}>✓ {stage.status}</span>
+                  return (
+                    <div key={stage.step} className="fc-pipeline-stage-container">
+                      <div
+                        className={`fc-pipeline-stage-item ${isExpanded ? 'is-active-stage' : ''}`}
+                        onClick={() => setExpandedStage(isExpanded ? null : stage.step)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            setExpandedStage(isExpanded ? null : stage.step);
+                          }
+                        }}
+                        aria-expanded={isExpanded}
+                      >
+                        <div className="fc-stage-left">
+                          <span className="fc-stage-number">{stage.step}</span>
+                          <div>
+                            <div className="fc-stage-name">{stage.name}</div>
+                            <div className="fc-stage-desc">{stage.summary}</div>
+                          </div>
+                        </div>
+
+                        <div className="fc-stage-meta">
+                          <span style={{ color: 'var(--fc-warm-subtle)' }}>Engine: {stage.scanner}</span>
+                          <span style={{ color: 'var(--fc-ember-bright)', background: 'var(--fc-ember-dim)', padding: '2px 8px', borderRadius: '4px' }}>
+                            {stage.duration}
+                          </span>
+                          <span style={{ color: 'var(--fc-clean)' }}>✓ {stage.status}</span>
+                          <span style={{ fontSize: '0.74rem', color: 'var(--fc-warm-subtle)' }}>
+                            {isExpanded ? '▲ Logs' : '▼ Inspect'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Expandable Container Telemetry Logs */}
+                      {isExpanded && telemetry && (
+                        <div className="fc-stage-telemetry-drawer">
+                          <div className="fc-stage-telemetry-meta">
+                            <span><strong>CONTAINER:</strong> <code>{telemetry.containerId}</code></span>
+                            <span><strong>FLAGS:</strong> <code>{telemetry.flags}</code></span>
+                          </div>
+                          <div className="fc-stage-telemetry-cmd">
+                            <span>$ {telemetry.cmd}</span>
+                          </div>
+                          <div className="fc-stage-telemetry-logs">
+                            {telemetry.logs.map((log, i) => (
+                              <div key={i} className="fc-telemetry-log-line">{log}</div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 <div style={{ marginTop: '14px', padding: '14px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: '8px', fontSize: '0.8rem', color: 'var(--fc-warm-subtle)', fontFamily: 'var(--fc-font-mono)', border: '1px solid var(--fc-glass-border)' }}>
                   ℹ All scanner containers drop Linux privileges (--cap-drop=ALL), enforce read-only repo volume mounts, and block external network egress.
@@ -234,30 +422,48 @@ export function ProductPreview({ onNavigateLogin }: ProductPreviewProps) {
               >
                 <div className="fc-score-card">
                   <span className="fc-score-label">Deterministic Score</span>
-                  <div className="fc-score-value">78</div>
+                  <div className="fc-score-value">
+                    <CountUp to={calculatedScore} duration={1.1} />
+                  </div>
                   <span className="fc-score-label">Out of 100 max</span>
-                  <span className="fc-score-grade">GRADE: B+ (GOOD)</span>
-                  <p style={{ fontSize: '0.76rem', color: 'var(--fc-warm-subtle)', marginTop: '14px' }}>
-                    Calculated mathematically from verified findings: 1 critical (-15), 1 high (-7), 1 medium (-0).
+                  <span className="fc-score-grade">GRADE: {calculatedGrade}</span>
+
+                  <p style={{ fontSize: '0.76rem', color: 'var(--fc-warm-subtle)', marginTop: '14px', lineHeight: 1.5 }}>
+                    Formula: <code>100 - (15 × Critical) - (7 × High) - (0 × Medium)</code>
                   </p>
+
+                  {/* Interactive Remediation Simulator */}
+                  <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.08)' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.78rem', color: '#F2F4F7' }}>
+                      <input
+                        type="checkbox"
+                        checked={simulatedFixCritical}
+                        onChange={(e) => setSimulatedFixCritical(e.target.checked)}
+                        style={{ accentColor: 'var(--fc-ember)' }}
+                      />
+                      <span>Simulate Remediating CWE-798 Secret (+15 pts)</span>
+                    </label>
+                  </div>
                 </div>
 
                 <div className="fc-report-breakdown">
                   <div className="fc-breakdown-row">
                     <span><strong>Critical Severities</strong> (CWE-798 Hardcoded Secrets)</span>
-                    <span className="fc-badge fc-badge-critical">1 Confirmed</span>
+                    <span className={`fc-badge ${simulatedFixCritical ? 'fc-badge-clean' : 'fc-badge-critical'}`}>
+                      {simulatedFixCritical ? '0 Confirmed (Fixed)' : '1 Confirmed (-15)'}
+                    </span>
                   </div>
                   <div className="fc-breakdown-row">
                     <span><strong>High Severities</strong> (CVE-2020-7598 Prototype Pollution)</span>
-                    <span className="fc-badge fc-badge-high">1 Confirmed</span>
+                    <span className="fc-badge fc-badge-high">1 Confirmed (-7)</span>
                   </div>
                   <div className="fc-breakdown-row">
                     <span><strong>Medium Severities</strong> (CWE-22 Path Traversal in Extraction)</span>
-                    <span className="fc-badge fc-badge-medium">1 Confirmed</span>
+                    <span className="fc-badge fc-badge-medium">1 Confirmed (-0)</span>
                   </div>
                   <div className="fc-breakdown-row">
                     <span><strong>Low / Informational</strong></span>
-                    <span className="fc-badge fc-badge-low">0 Findings</span>
+                    <span className="fc-badge fc-badge-low">0 Findings (0)</span>
                   </div>
 
                   <div style={{ marginTop: '16px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
@@ -277,14 +483,23 @@ export function ProductPreview({ onNavigateLogin }: ProductPreviewProps) {
                 aria-labelledby="tab-narrative"
                 className="fc-narrative-preview-panel"
               >
-                <div className="fc-narrative-banner">
-                  <span className="fc-pulse-dot" style={{ background: '#0284c7', boxShadow: '0 0 6px #0284c7' }} aria-hidden="true" />
-                  <span style={{ fontFamily: 'var(--fc-font-mono)', fontSize: '0.76rem', color: 'var(--fc-low)', fontWeight: 700 }}>
-                    READ-ONLY AI NARRATIVE · ILLUSTRATIVE EXAMPLE
-                  </span>
+                <div className="fc-narrative-banner" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="fc-pulse-dot" style={{ background: '#0284c7', boxShadow: '0 0 6px #0284c7' }} aria-hidden="true" />
+                    <span style={{ fontFamily: 'var(--fc-font-mono)', fontSize: '0.76rem', color: 'var(--fc-low)', fontWeight: 700 }}>
+                      <ShinyText text="READ-ONLY AI NARRATIVE · DETERMINISTIC SUMMARY BOUNDARY" shineColor="#38BDF8" />
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleTriggerAiStream}
+                    className="fc-simulate-stream-btn"
+                  >
+                    {aiStreaming ? 'Streaming...' : 'Replay Briefing Stream ↺'}
+                  </button>
                 </div>
 
-                <div className="fc-narrative-content">
+                <div className="fc-narrative-content" style={{ opacity: aiStreaming ? 0.6 : 1, transition: 'opacity 0.2s ease' }}>
                   <h4 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--fc-text-primary)', marginBottom: '8px' }}>
                     Executive Security Briefing — sample-repo @ 8f3c1b
                   </h4>
@@ -323,3 +538,4 @@ export function ProductPreview({ onNavigateLogin }: ProductPreviewProps) {
     </section>
   );
 }
+

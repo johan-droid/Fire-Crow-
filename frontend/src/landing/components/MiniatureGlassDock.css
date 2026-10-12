@@ -1,0 +1,193 @@
+.fc-glass-dock-wrapper {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 999;
+  pointer-events: auto;
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fc-glass-dock-wrapper.is-hidden {
+  opacity: 0;
+  transform: translateX(-50%) translateY(20px);
+  pointer-events: none;
+}
+
+.fc-glass-dock-wrapper.is-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.fc-glass-dock {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 9999px;
+  background: rgba(15, 18, 24, 0.78);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 20px 48px -10px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+}
+
+.fc-dock-telemetry-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 9999px;
+  background: rgba(52, 211, 153, 0.08);
+  border: 1px solid rgba(52, 211, 153, 0.22);
+}
+
+.fc-dock-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #34D399;
+  box-shadow: 0 0 8px #34D399;
+  animation: fc-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.fc-dock-telemetry-text {
+  font-family: var(--fc-font-mono, monospace);
+  font-size: 0.64rem;
+  font-weight: 700;
+  color: #34D399;
+  letter-spacing: 0.08em;
+}
+
+.fc-dock-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(255, 255, 255, 0.12);
+  margin: 0 2px;
+}
+
+.fc-dock-items-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fc-dock-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--fc-text-secondary, #A6AEB9);
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+  transform-origin: bottom center;
+}
+
+.fc-dock-item:hover {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.fc-dock-item.is-primary {
+  background: rgba(229, 72, 77, 0.22);
+  border-color: rgba(229, 72, 77, 0.55);
+  color: #FFFFFF;
+  box-shadow: 0 0 12px rgba(229, 72, 77, 0.35);
+}
+
+.fc-dock-item.is-primary:hover {
+  background: var(--fc-ember, #E5484D);
+  border-color: var(--fc-ember-bright, #F2555A);
+  box-shadow: 0 0 20px rgba(229, 72, 77, 0.55);
+}
+
+.fc-dock-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.fc-dock-tooltip {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(10, 12, 16, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #F2F4F7;
+  font-family: var(--fc-font-sans, sans-serif);
+  font-size: 0.72rem;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  animation: fc-tooltip-pop 0.15s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.fc-dock-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 4px;
+  border-style: solid;
+  border-color: rgba(10, 12, 16, 0.95) transparent transparent transparent;
+}
+
+@keyframes fc-tooltip-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@media (max-width: 640px) {
+  .fc-dock-telemetry-badge {
+    display: none;
+  }
+  .fc-dock-divider {
+    display: none;
+  }
+  .fc-dock-item {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fc-glass-dock-wrapper {
+    transition: none !important;
+  }
+  .fc-dock-pulse {
+    animation: none !important;
+  }
+  .fc-dock-tooltip {
+    animation: none !important;
+  }
+  .fc-dock-item {
+    transform: none !important;
+  }
+}

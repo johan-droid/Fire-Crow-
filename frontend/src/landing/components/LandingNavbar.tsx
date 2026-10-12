@@ -24,16 +24,23 @@ export function LandingNavbar({ onNavigateLogin }: LandingNavbarProps) {
     <nav className="fc-nav" aria-label="Main Navigation">
       <div className="fc-container fc-nav-container">
         {/* Brand Lockup: Fire Crow as product, NEXT LAB.inc as parent */}
-        <a href="#top" className="fc-logo-group" onClick={closeMenu} aria-label="Fire Crow by NEXT LAB.inc Homepage">
-          <BrandLockup compact={false} />
-        </a>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <a href="#top" className="fc-logo-group" onClick={closeMenu} aria-label="Fire Crow by NEXT LAB.inc Homepage">
+            <BrandLockup compact={false} />
+          </a>
+          <a href="#workflow" className="fc-nav-status-pill" title="All 3 scanning engines healthy & operational">
+            <span className="fc-pulse-dot" style={{ background: '#10B981', boxShadow: 'none', width: '5px', height: '5px' }} aria-hidden="true" />
+            <span>FLEET ONLINE</span>
+          </a>
+        </div>
 
         {/* Desktop Links */}
         <div className="fc-nav-links">
           <a href="#capabilities" className="fc-nav-link">Capabilities</a>
           <a href="#workflow" className="fc-nav-link">Architecture</a>
-          <a href="#preview" className="fc-nav-link">Audit Walkthrough</a>
-          <a href="#studio" className="fc-nav-link">NEXT LAB Studio</a>
+          <a href="#preview" className="fc-nav-link">Walkthrough</a>
+          <a href="#pricing" className="fc-nav-link">Enterprise</a>
+          <a href="#studio" className="fc-nav-link">Studio</a>
           <a href="#faq" className="fc-nav-link">FAQ</a>
           <a
             href="https://github.com/johan-droid/Fire-Crow-"
@@ -51,7 +58,7 @@ export function LandingNavbar({ onNavigateLogin }: LandingNavbarProps) {
 
         {/* Desktop Actions */}
         <div className="fc-nav-actions">
-          <button onClick={onNavigateLogin} className="fc-btn-ghost" type="button">
+          <button onClick={onNavigateLogin} className="fc-nav-link fc-nav-signin-link" type="button">
             Sign In
           </button>
           <button onClick={onNavigateLogin} className="fc-btn-primary" type="button">
@@ -82,8 +89,9 @@ export function LandingNavbar({ onNavigateLogin }: LandingNavbarProps) {
         <div className="fc-mobile-drawer open" id="mobile-navigation" role="region" aria-label="Mobile Navigation">
           <a href="#capabilities" onClick={closeMenu}>Capabilities</a>
           <a href="#workflow" onClick={closeMenu}>Architecture</a>
-          <a href="#preview" onClick={closeMenu}>Audit Walkthrough</a>
-          <a href="#studio" onClick={closeMenu}>NEXT LAB Studio</a>
+          <a href="#preview" onClick={closeMenu}>Walkthrough</a>
+          <a href="#pricing" onClick={closeMenu}>Enterprise</a>
+          <a href="#studio" onClick={closeMenu}>Studio</a>
           <a href="#faq" onClick={closeMenu}>FAQ</a>
           <a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer" onClick={closeMenu}>
             GitHub Repository ↗

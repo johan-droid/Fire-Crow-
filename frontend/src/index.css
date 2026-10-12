@@ -3106,22 +3106,22 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
     • Status colors are the dark-theme spec palette, not raw system colors.
    ════════════════════════════════════════════════════════════════ */
 .shell {
-  --dash-bg: #0A0B0E;
-  --dash-surface: #0F1115;
-  --dash-card: #12151B;
-  --dash-elev: #1A1F28;
-  --dash-border: rgba(255, 255, 255, 0.09);
-  --dash-border-soft: rgba(255, 255, 255, 0.06);
-  --dash-hairline: rgba(255, 255, 255, 0.06);
-  --dash-text: #F2F4F7;
+  --dash-bg: #0A0A0A;
+  --dash-surface: #141414;
+  --dash-card: #141414;
+  --dash-elev: #1A1A1A;
+  --dash-border: #2A2A2A;
+  --dash-border-soft: #222222;
+  --dash-hairline: #222222;
+  --dash-text: #FFFFFF;
   --dash-text-2: #A6AEB9;
-  --dash-text-3: #6E7683;
+  --dash-text-3: #888888;
   --dash-accent: #E5484D;
   --dash-accent-hover: #F2555A;
-  --dash-accent-dim: color-mix(in srgb, var(--dash-accent) 12%, transparent);
-  --dash-accent-border: color-mix(in srgb, var(--dash-accent) 35%, transparent);
+  --dash-accent-dim: rgba(229, 72, 77, 0.15);
+  --dash-accent-border: rgba(229, 72, 77, 0.35);
   --dash-health: #34D399;
-  --dash-warn: #F59E0B;
+  --dash-warn: #FFC107;
   --dash-crit: #F04444;
   --dash-info: #38BDF8;
   /* One control height scale for every console control. */
@@ -3152,13 +3152,13 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   z-index: 60;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   max-width: calc(100vw - 24px);
-  padding: 7px 9px;
-  background: rgba(15, 17, 22, 0.88);
+  padding: 8px 14px;
+  background: #1A1A1A;
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  border: 1px solid var(--dash-border);
+  border: 1px solid #2A2A2A;
   border-radius: 18px;
   box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.65);
   animation: fadeUp 0.35s var(--fc-ease) backwards;
@@ -3206,9 +3206,9 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .dyn-item:hover { background: var(--dash-elev); color: var(--dash-text); }
 .shell .dyn-item:focus-visible { outline: 2px solid var(--dash-accent); outline-offset: 1px; }
 .shell .dyn-item.active {
-  background: var(--dash-accent-dim);
-  border-color: var(--dash-accent-border);
-  color: var(--dash-accent-hover);
+  background: rgba(229, 72, 77, 0.15);
+  border-color: rgba(229, 72, 77, 0.35);
+  color: #FFFFFF;
 }
 .shell .dyn-item-icon { display: flex; align-items: center; flex: none; }
 .shell .dyn-badge {
@@ -3224,9 +3224,9 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   font-variant-numeric: tabular-nums;
 }
 .shell .dyn-item.active .dyn-badge {
-  background: transparent;
-  border-color: var(--dash-accent-border);
-  color: var(--dash-accent-hover);
+  background: rgba(229, 72, 77, 0.25);
+  border-color: rgba(229, 72, 77, 0.45);
+  color: #FFFFFF;
 }
 /* Live-audit pill: appears only while a run is queued/running. */
 .shell .dyn-live {
@@ -3288,21 +3288,21 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .dyn-user {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
-  padding-left: 2px;
+  gap: 0.5rem;
+  padding-left: 4px;
   flex: none;
 }
 .shell .dyn-avatar {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
-  background: var(--dash-accent-dim);
-  color: var(--dash-accent-hover);
-  border: 1px solid var(--dash-accent-border);
+  background: #2A2A2A;
+  color: #FFFFFF;
+  border: 1px solid rgba(255, 255, 255, 0.15);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.72rem;
+  font-size: 0.76rem;
   font-weight: 700;
   flex: none;
 }
@@ -3311,16 +3311,18 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   background: transparent;
   border: none;
   border-radius: 6px;
-  padding: 0.3rem;
+  padding: 0.35rem;
   display: flex;
   align-items: center;
+  justify-content: center;
   cursor: pointer;
+  margin-left: 2px;
   transition: color 0.14s ease, background 0.14s ease;
 }
 .shell .dyn-logout:hover,
 .shell .dyn-logout:focus-visible {
-  color: var(--dash-accent-hover);
-  background: var(--dash-accent-dim);
+  color: #FFFFFF;
+  background: #2A2A2A;
 }
 /* Narrow: labels collapse to icons so every option stays one tap away. */
 @media (max-width: 1100px) {
@@ -3487,7 +3489,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .badge-success { background: color-mix(in srgb, var(--dash-health) 12%, transparent); color: var(--dash-health); border-color: color-mix(in srgb, var(--dash-health) 32%, transparent); }
 .shell .badge-critical { background: color-mix(in srgb, var(--dash-crit) 12%, transparent); color: var(--dash-crit); border-color: color-mix(in srgb, var(--dash-crit) 35%, transparent); }
 .shell .badge-high { background: color-mix(in srgb, var(--dash-accent) 12%, transparent); color: var(--dash-accent-hover); border-color: var(--dash-accent-border); }
-.shell .badge-medium { background: color-mix(in srgb, var(--dash-warn) 12%, transparent); color: var(--dash-warn); border-color: color-mix(in srgb, var(--dash-warn) 32%, transparent); }
+.shell .badge-medium { background: #4A3A1A; color: #FFC107; border-color: rgba(255, 193, 7, 0.45); }
 .shell .badge-low { background: color-mix(in srgb, var(--dash-info) 12%, transparent); color: var(--dash-info); border-color: color-mix(in srgb, var(--dash-info) 32%, transparent); }
 .shell .badge-info { background: color-mix(in srgb, var(--dash-info) 12%, transparent); color: var(--dash-info); border-color: color-mix(in srgb, var(--dash-info) 32%, transparent); }
 .shell .badge-neutral { background: var(--dash-elev); color: var(--dash-text-2); border-color: var(--dash-border); }
@@ -3630,24 +3632,35 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 /* ─── Modals, forms, tables, findings ─────────── */
 .shell .modal,
 .modal {
-  background: var(--dash-card);
-  border-color: var(--dash-border);
+  background: #141414;
+  border: 1px solid #333333;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
   border-radius: 14px;
 }
-.modal-head { border-bottom-color: var(--dash-hairline); }
-.modal-footer { border-top-color: var(--dash-hairline); }
-.modal-title { color: var(--dash-text); }
-.modal-sub { color: var(--dash-text-3); }
+.modal-head {
+  padding: 24px 32px;
+  border-bottom: 1px solid #2A2A2A;
+  background-color: #141414;
+}
+.modal-footer {
+  padding: 20px 32px;
+  border-top: 1px solid #2A2A2A;
+  background-color: #101010;
+}
+.modal-title { color: #FFFFFF; font-size: 1.15rem; font-weight: 700; }
+.modal-sub { color: #888888; font-size: 0.82rem; }
 .shell .form-input {
-  background: var(--dash-surface);
-  border-color: var(--dash-border);
-  color: var(--dash-text);
+  height: 42px;
+  background: #1A1A1A;
+  border: 1px solid #333333;
+  border-radius: 8px;
+  color: #FFFFFF;
 }
 .shell .form-input:focus {
-  border-color: var(--dash-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dash-accent) 16%, transparent);
+  border-color: #FF4D4D;
+  box-shadow: 0 0 0 3px rgba(255, 77, 77, 0.18);
 }
-.shell .form-label { color: var(--dash-text-2); }
+.shell .form-label { color: #888888; }
 .table-wrap th { color: var(--dash-text-3); border-bottom-color: var(--dash-hairline); }
 .table-wrap td { border-bottom-color: var(--dash-hairline); }
 .table-wrap tr:hover td { background: var(--dash-elev); }
@@ -3757,19 +3770,22 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   margin-bottom: 0.35rem;
 }
 .page-head-title {
-  font-size: 1.6rem;
+  font-size: 28px;
   font-weight: 700;
   letter-spacing: -0.025em;
-  line-height: 1.12;
-  color: var(--dash-text);
+  line-height: 1.15;
+  color: #FFFFFF;
   margin: 0;
 }
 .page-head-sub {
-  font-size: 0.87rem;
+  font-size: 14px;
   line-height: 1.55;
-  color: var(--dash-text-3);
+  color: #888888;
   margin-top: 0.4rem;
   max-width: 62ch;
+}
+.spin {
+  animation: spin 1s linear infinite;
 }
 .page-head-side { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; }
 .page-head-meta {
@@ -3943,10 +3959,10 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .status-pill.status-queued .status-dot { background: var(--dash-accent-hover); }
 .shell .status-pill.status-completed { color: var(--dash-health); }
 .shell .status-pill.status-completed .status-dot { background: var(--dash-health); }
-.shell .status-pill.status-failed,
-.shell .status-pill.status-partial { color: var(--dash-crit); }
-.shell .status-pill.status-failed .status-dot,
-.shell .status-pill.status-partial .status-dot { background: var(--dash-crit); }
+.shell .status-pill.status-failed { color: var(--dash-crit); }
+.shell .status-pill.status-failed .status-dot { background: var(--dash-crit); }
+.shell .status-pill.status-partial { color: #FFC107; }
+.shell .status-pill.status-partial .status-dot { background: #FFC107; }
 .shell .status-pill.status-engine_unavailable { color: var(--dash-warn); }
 .shell .status-pill.status-engine_unavailable .status-dot { background: var(--dash-warn); }
 
@@ -4171,16 +4187,17 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .table-wrap td { border-bottom-color: var(--dash-hairline); vertical-align: middle; }
 .shell .table-wrap tr:hover td { background: var(--dash-elev); }
 .shell .form-input {
-  height: var(--dash-ctl);
-  background: var(--dash-elev);
-  border-color: var(--dash-border);
-  color: var(--dash-text);
+  height: 42px;
+  background: #1A1A1A;
+  border: 1px solid #333333;
+  border-radius: 8px;
+  color: #FFFFFF;
 }
 .shell .form-input:focus {
-  border-color: var(--dash-accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dash-accent) 16%, transparent);
+  border-color: #FF4D4D;
+  box-shadow: 0 0 0 3px rgba(255, 77, 77, 0.18);
 }
-.shell .form-label { color: var(--dash-text-2); }
+.shell .form-label { color: #888888; }
 .shell .finding-card { border-left: 3px solid var(--dash-accent); }
 .shell .remediation-details summary { color: var(--dash-accent-hover); }
 .shell .code-block {
