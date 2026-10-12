@@ -43,17 +43,6 @@ export interface WorkflowStep {
   specs: string[];
 }
 
-export interface PricingTier {
-  id: 'starter' | 'pro' | 'enterprise';
-  name: string;
-  tagline: string;
-  priceMonthly: number;
-  priceAnnual: number;
-  popular?: boolean;
-  features: Array<{ text: string; highlight?: boolean }>;
-  ctaLabel: string;
-}
-
 export interface FAQItem {
   id: string;
   question: string;
@@ -224,58 +213,6 @@ export const WORKFLOW_STEPS: WorkflowStep[] = [
     title: 'Deterministic Report & Export',
     description: 'The audit results are finalized into an immutable security ledger with mathematical scoring, actionable remediation, and optional AI summaries.',
     specs: ['Deterministic score (0-100)', 'Actionable remediation', 'JSON / HTML / PDF export'],
-  },
-];
-
-/* ─── Honest Pricing Tiers (Matching onInitiateCheckout contract) ─── */
-export const PRICING_TIERS: PricingTier[] = [
-  {
-    id: 'starter',
-    name: 'Starter',
-    tagline: 'Essential repository security scanning for individual developers.',
-    priceMonthly: 19,
-    priceAnnual: 15,
-    features: [
-      { text: '5 Repository audits per month' },
-      { text: 'Tri-engine scanning (SAST, Secrets, CVEs)' },
-      { text: 'Ephemeral container isolation' },
-      { text: 'Standard PDF & JSON report exports' },
-      { text: 'Community support via GitHub' },
-    ],
-    ctaLabel: 'Get Started',
-  },
-  {
-    id: 'pro',
-    name: 'Pro Console',
-    tagline: 'Comprehensive security intelligence for engineering teams.',
-    priceMonthly: 99,
-    priceAnnual: 79,
-    popular: true,
-    features: [
-      { text: 'Unlimited repository audits', highlight: true },
-      { text: 'Priority scanner container execution' },
-      { text: 'Tri-engine analysis (Semgrep, OSV, Gitleaks)' },
-      { text: 'Optional AI executive narrative briefing' },
-      { text: 'SOC2 & ISO-27001 mapped PDF reports' },
-      { text: 'Interactive audit findings explorer' },
-    ],
-    ctaLabel: 'Start Pro Trial',
-  },
-  {
-    id: 'enterprise',
-    name: 'Enterprise',
-    tagline: 'Dedicated capacity and custom configurations for security teams.',
-    priceMonthly: 499,
-    priceAnnual: 399,
-    features: [
-      { text: 'Everything in Pro Console' },
-      { text: 'Custom scanner concurrency limits' },
-      { text: 'Self-hosted Docker runner integration' },
-      { text: 'Custom rule configuration & exclusions' },
-      { text: 'Dedicated 99.9% scanning SLA' },
-      { text: 'Direct security engineering support' },
-    ],
-    ctaLabel: 'Contact Sales',
   },
 ];
 

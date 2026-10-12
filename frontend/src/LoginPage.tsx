@@ -1,5 +1,4 @@
 import { useState, type FormEvent, useEffect, useRef } from 'react';
-import { AuroraBackdrop } from './scene';
 import {
   NextLabSymbol,
   FireCrowSymbol,
@@ -152,8 +151,6 @@ export default function LoginPage({
 
   return (
     <div className="fc-auth-shell">
-      <AuroraBackdrop variant="login" />
-
       <main className="fc-auth-container" aria-label="Fire Crow Authentication">
         {/* ─── LEFT PANEL: Studio Endorsement & Engineering Principles ─── */}
         <aside className="fc-auth-brand-panel" aria-label="Brand Overview">

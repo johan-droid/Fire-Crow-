@@ -1,8 +1,8 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
-   FIRE CROW — AUTHENTICATION SYSTEM STYLES (PEACH TRUE BLACK SYSTEM)
+   FIRE CROW — AUTHENTICATION SYSTEM STYLES (EMBER GRAPHITE SYSTEM)
    Understated, premium developer-tooling identity with NEXT LAB.inc studio endorsement.
    Scoped to .fc-auth-* to prevent collisions with console or landing page.
-   Tokens: Canvas #000000, Surface #0A0A0C, Elevated #141418, Text #F5F5F7, Accent #FF9E7D
+   Tokens: Canvas #000000, Surface #0A0A0C, Elevated #141418, Text #F5F5F7, Accent #E5484D
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .fc-auth-shell {
@@ -11,7 +11,7 @@
   align-items: center;
   justify-content: center;
   background-color: var(--fc-bg-canvas, #000000);
-  background-image: radial-gradient(circle at 50% 20%, rgba(255, 158, 125, 0.08) 0%, transparent 60%);
+  background-image: radial-gradient(circle at 50% 20%, rgba(229, 72, 77, 0.08) 0%, transparent 60%);
   padding: 1.5rem;
   position: relative;
   overflow-x: hidden;
@@ -25,7 +25,7 @@
   background: #0A0A0C;
   border: 1px solid var(--fc-border, rgba(255, 255, 255, 0.08));
   border-radius: 20px;
-  box-shadow: 0 24px 70px -15px rgba(0, 0, 0, 0.95), 0 0 40px rgba(255, 158, 125, 0.06);
+  box-shadow: 0 24px 70px -15px rgba(0, 0, 0, 0.95), 0 0 40px rgba(229, 72, 77, 0.06);
   display: grid;
   grid-template-columns: 1fr 1.15fr;
   overflow: hidden;
@@ -95,9 +95,9 @@
   font-size: 0.58rem;
   font-weight: 700;
   padding: 1px 5px;
-  background: rgba(255, 158, 125, 0.12);
-  border: 1px solid rgba(255, 158, 125, 0.28);
-  color: var(--fc-ember, #FF9E7D);
+  background: rgba(229, 72, 77, 0.12);
+  border: 1px solid rgba(229, 72, 77, 0.28);
+  color: var(--fc-ember, #E5484D);
   border-radius: 3px;
   text-transform: uppercase;
 }
@@ -157,9 +157,9 @@
   font-family: var(--fc-font-mono, "JetBrains Mono", monospace);
   font-size: 0.72rem;
   font-weight: 600;
-  color: var(--fc-ember, #FF9E7D);
-  background: rgba(255, 158, 125, 0.12);
-  border: 1px solid rgba(255, 158, 125, 0.28);
+  color: var(--fc-ember, #E5484D);
+  background: rgba(229, 72, 77, 0.12);
+  border: 1px solid rgba(229, 72, 77, 0.28);
   padding: 2px 6px;
   border-radius: 4px;
   line-height: 1.2;
@@ -299,7 +299,7 @@
 
 .fc-auth-github-btn:hover:not(:disabled) {
   background: #1C1C22;
-  border-color: rgba(255, 158, 125, 0.4);
+  border-color: rgba(229, 72, 77, 0.4);
   transform: translateY(-1px);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
 }
@@ -383,8 +383,8 @@
 
 .fc-auth-input:focus {
   background: #050508;
-  border-color: var(--fc-ember, #FF9E7D);
-  box-shadow: 0 0 0 3px rgba(255, 158, 125, 0.18);
+  border-color: var(--fc-ember, #E5484D);
+  box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.18);
   outline: none;
 }
 
@@ -422,7 +422,7 @@
 }
 
 .fc-auth-pw-toggle:focus-visible {
-  outline: 2px solid var(--fc-ember, #FF9E7D);
+  outline: 2px solid var(--fc-ember, #E5484D);
 }
 
 .fc-auth-field-error {
@@ -465,15 +465,15 @@
 /* Submit Action Button */
 .fc-auth-submit-btn {
   width: 100%;
-  background: linear-gradient(135deg, #FFB299 0%, #FF9E7D 100%);
-  color: #000000 !important;
+  background: #E5484D;
+  color: #FFFFFF !important;
   padding: 0.85rem;
   font-size: 0.9rem;
   font-weight: 700;
   border-radius: 10px;
-  border: 1px solid rgba(255, 178, 153, 0.4);
+  border: 1px solid rgba(242, 85, 90, 0.5);
   cursor: pointer;
-  box-shadow: 0 4px 16px rgba(255, 158, 125, 0.35);
+  box-shadow: 0 4px 16px rgba(229, 72, 77, 0.35);
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   align-items: center;
@@ -484,9 +484,9 @@
 }
 
 .fc-auth-submit-btn:hover:not(:disabled) {
-  background: #FFB299;
+  background: #F2555A;
   transform: translateY(-1px);
-  box-shadow: 0 6px 22px rgba(255, 158, 125, 0.5);
+  box-shadow: 0 6px 22px rgba(229, 72, 77, 0.5);
 }
 
 .fc-auth-submit-btn:active:not(:disabled) {
@@ -503,8 +503,8 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 2px solid rgba(0, 0, 0, 0.3);
-  border-top-color: #000000;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #FFFFFF;
   animation: spin 0.8s linear infinite;
 }
 
@@ -519,7 +519,7 @@
 .fc-auth-text-link {
   background: none;
   border: none;
-  color: var(--fc-ember, #FF9E7D);
+  color: var(--fc-ember, #E5484D);
   font-weight: 600;
   cursor: pointer;
   padding: 0;
@@ -530,7 +530,7 @@
 }
 
 .fc-auth-text-link:hover {
-  color: #FFB299;
+  color: #F2555A;
 }
 
 /* Back Link */
@@ -553,7 +553,7 @@
 }
 
 .fc-auth-back-btn:focus-visible {
-  outline: 2px solid var(--fc-ember, #FF9E7D);
+  outline: 2px solid var(--fc-ember, #E5484D);
 }
 
 /* ─── Responsive Viewports ──────────────────────────────────────── */

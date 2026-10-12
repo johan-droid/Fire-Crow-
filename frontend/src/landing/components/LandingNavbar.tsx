@@ -34,7 +34,6 @@ export function LandingNavbar({ onNavigateLogin }: LandingNavbarProps) {
           <a href="#workflow" className="fc-nav-link">Architecture</a>
           <a href="#preview" className="fc-nav-link">Audit Walkthrough</a>
           <a href="#studio" className="fc-nav-link">NEXT LAB Studio</a>
-          <a href="#pricing" className="fc-nav-link">Pricing</a>
           <a href="#faq" className="fc-nav-link">FAQ</a>
           <a
             href="https://github.com/johan-droid/Fire-Crow-"
@@ -85,7 +84,6 @@ export function LandingNavbar({ onNavigateLogin }: LandingNavbarProps) {
           <a href="#workflow" onClick={closeMenu}>Architecture</a>
           <a href="#preview" onClick={closeMenu}>Audit Walkthrough</a>
           <a href="#studio" onClick={closeMenu}>NEXT LAB Studio</a>
-          <a href="#pricing" onClick={closeMenu}>Pricing</a>
           <a href="#faq" onClick={closeMenu}>FAQ</a>
           <a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer" onClick={closeMenu}>
             GitHub Repository ↗

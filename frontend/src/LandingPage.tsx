@@ -1,4 +1,3 @@
-import { useEffect, useRef } from 'react';
 import { LandingNavbar } from './landing/components/LandingNavbar';
 import { HeroSection } from './landing/components/HeroSection';
 import { ProductPreview } from './landing/components/ProductPreview';
@@ -6,7 +5,6 @@ import { NextLabBrandSection } from './landing/components/NextLabBrandSection';
 import { CapabilitiesSection } from './landing/components/CapabilitiesSection';
 import { WorkflowSection } from './landing/components/WorkflowSection';
 import { TrustSection } from './landing/components/TrustSection';
-import { PricingSection } from './landing/components/PricingSection';
 import { FAQSection } from './landing/components/FAQSection';
 import { FinalCTA } from './landing/components/FinalCTA';
 import { LandingFooter } from './landing/components/LandingFooter';
@@ -21,9 +19,7 @@ export interface UserProfile {
 }
 
 export interface LandingPageProps {
-  user: UserProfile | null;
   onNavigateLogin: () => void;
-  onInitiateCheckout: (amount: number, packageName: string) => void;
 }
 
 /**
@@ -36,44 +32,10 @@ export interface LandingPageProps {
  * backed by deterministic execution, container isolation, and canonical audit ledgers.
  */
 export default function LandingPage({
-  user,
   onNavigateLogin,
-  onInitiateCheckout,
 }: LandingPageProps) {
-  const rootRef = useRef<HTMLDivElement | null>(null);
-
-  // Subtle parallax on the ambient orbs — rAF-throttled, passive, and fully
-  // disabled under prefers-reduced-motion so scrolling stays lightweight.
-  useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    let raf = 0;
-    const onScroll = () => {
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(() => {
-        const root = rootRef.current;
-        if (!root) return;
-        const y = Math.min(window.scrollY, 1400);
-        root.style.setProperty('--fc-parallax-a', `${y * 0.05}px`);
-        root.style.setProperty('--fc-parallax-b', `${y * 0.09}px`);
-      });
-    };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      window.removeEventListener('scroll', onScroll);
-      cancelAnimationFrame(raf);
-    };
-  }, []);
-
   return (
-    <div className="fc-landing apple-landing-page" id="top" ref={rootRef}>
-      {/* Precision ambient background lighting */}
-      <div className="fc-orbs" aria-hidden="true">
-        <div className="fc-orb fc-orb-a" />
-        <div className="fc-orb fc-orb-b" />
-        <div className="fc-orb fc-orb-c" />
-        <div className="fc-orb fc-orb-d" />
-      </div>
-
+    <div className="fc-landing apple-landing-page" id="top">
       {/* 01. Sticky Header Navigation with NEXT LAB + Fire Crow Co-Branding */}
       <LandingNavbar onNavigateLogin={onNavigateLogin} />
 
@@ -108,21 +70,12 @@ export default function LandingPage({
           <TrustSection />
         </Reveal>
 
-        {/* 08. Transparent Commercial Plans */}
-        <Reveal>
-          <PricingSection
-            user={user}
-            onNavigateLogin={onNavigateLogin}
-            onInitiateCheckout={onInitiateCheckout}
-          />
-        </Reveal>
-
-        {/* 09. Technical Architecture FAQ */}
+        {/* 08. Technical Architecture FAQ */}
         <Reveal>
           <FAQSection />
         </Reveal>
 
-        {/* 10. Final Action Banner */}
+        {/* 09. Final Action Banner */}
         <Reveal>
           <FinalCTA onNavigateLogin={onNavigateLogin} />
         </Reveal>

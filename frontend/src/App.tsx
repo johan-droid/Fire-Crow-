@@ -955,76 +955,106 @@ function App() {
   if (!isConsole) {
     // fallback: unknown route -> landing
     return (
-      <LandingPage user={user} onNavigateLogin={() => navigate('/login')} onInitiateCheckout={handleInitiateDodoCheckout} />
+      <LandingPage onNavigateLogin={() => navigate('/login')} />
     );
   }
+  // Live-audit pill for the dynamic island: the monitored run when it is
+  // genuinely in flight, otherwise the newest running/queued job.
+  // Same progress formula as the overview live-audit panel (7 phases).
+  const islandLiveJob = (() => {
+    const monitored = jobs.find(j => j.id === (activeMonitorJobId || ''));
+    const job = (monitored && (monitored.status === 'running' || monitored.status === 'queued'))
+      ? monitored
+      : jobs.find(j => j.status === 'running' || j.status === 'queued') || null;
+    if (!job) return null;
+    const TOTAL_PHASES = 7; // keep in sync with the overview live-audit phase order
+    const done = monitorPhases.filter(p => p.status === 'completed').length;
+    const hasStarted = monitorPhases.some(p => p.status === 'started' || p.status === 'running');
+    const pct = job.status === 'queued'
+      ? 8
+      : Math.min(95, Math.max(12, Math.round((done / TOTAL_PHASES) * 100) + (hasStarted ? 8 : 0)));
+    return { job, pct };
+  })();
+
   return (
     <div className="shell">
-      {/* Workspace navigation — product surfaces only: the security workflow.
-          Infrastructure and administration never appear here. */}
-      <nav className="nav-island" aria-label="Security workspace navigation">
-        <div className="island-brand">
-          <FireCrowSymbol size={24} className="island-logo" />
-          <span className="island-label island-brand-text">Fire Crow</span>
+      {/* Dynamic island — the workspace command bar. Compact by default:
+          brand, five sections, live-audit activity, new audit, identity.
+          It expands with a live pill while a run is queued or running. */}
+      <nav className="dyn-island" aria-label="Security workspace navigation">
+        <button
+          className="dyn-brand"
+          onClick={() => navigate('/console/overview')}
+          title="Fire Crow — Overview"
+          aria-label="Fire Crow — go to Overview"
+        >
+          <FireCrowSymbol size={26} className="dyn-logo" />
+        </button>
+
+        <div className="dyn-sep" aria-hidden="true" />
+
+        <div className="dyn-options" role="group" aria-label="Workspace sections">
+          {([
+            { id: 'overview', label: 'Overview', desc: 'What needs attention', icon: (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+            ) },
+            { id: 'repositories', label: 'Repositories', desc: 'Audited code, history, actions', icon: (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8 7l7.5 3.8M8 17l7.5-3.8"/></svg>
+            ) },
+            { id: 'audits', label: 'Audits', desc: 'Every repository audit run', badge: jobs.length, icon: (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15h6M9 11h3"/></svg>
+            ) },
+            { id: 'findings', label: 'Findings', desc: 'Evidence and how to fix it', icon: (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            ) },
+            { id: 'settings', label: 'Settings', desc: 'Account and security', icon: (
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.9 2.9l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.9-2.9l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.9-2.9l.1.1a1.7 1.7 0 0 0 1.9.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5h0a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.9 2.9l-.1.1a1.7 1.7 0 0 0-.3 1.9v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+            ) },
+          ] as const).map((item) => (
+            <button
+              key={item.id}
+              className={`dyn-item ${activeWindow === item.id ? 'active' : ''}`}
+              onClick={() => navigate(`/console/${item.id}`)}
+              title={`${item.label} — ${item.desc}`}
+              aria-label={item.label}
+              aria-current={activeWindow === item.id ? 'page' : undefined}
+            >
+              <span className="dyn-item-icon">{item.icon}</span>
+              <span className="dyn-item-label">{item.label}</span>
+              {'badge' in item && item.badge > 0 && <span className="dyn-badge">{item.badge}</span>}
+            </button>
+          ))}
         </div>
 
-        <div className="island-divider" />
+        {islandLiveJob && (
+          <>
+            <div className="dyn-sep" aria-hidden="true" />
+            <button
+              className="dyn-live"
+              onClick={() => { setActiveMonitorJobId(islandLiveJob.job.id); navigate('/console/audits'); void handleViewJobDetail(islandLiveJob.job.id); }}
+              title={`${repoLabel(islandLiveJob.job.repo_url)} — ${islandLiveJob.job.status}, ${islandLiveJob.pct}% — open audit`}
+              aria-label={`Audit in progress: ${repoLabel(islandLiveJob.job.repo_url)}, ${islandLiveJob.pct} percent. Open audit.`}
+            >
+              <span className="dyn-live-dot" aria-hidden="true" />
+              <span className="dyn-live-repo">{repoLabel(islandLiveJob.job.repo_url)}</span>
+              <span className="dyn-live-track" aria-hidden="true">
+                <span className="dyn-live-fill" style={{ width: `${islandLiveJob.pct}%` }} />
+              </span>
+              <span className="dyn-live-pct">{islandLiveJob.pct}%</span>
+            </button>
+          </>
+        )}
 
-        {([
-          {
-            group: 'Security workspace',
-            items: [
-              { id: 'overview', label: 'Overview', desc: 'What needs attention', icon: (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
-              ) },
-              { id: 'repositories', label: 'Repositories', desc: 'Audited code, history, actions', icon: (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8 7l7.5 3.8M8 17l7.5-3.8"/></svg>
-              ) },
-              { id: 'audits', label: 'Audits', desc: 'Every repository audit run', badge: jobs.length, icon: (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15h6M9 11h3"/></svg>
-              ) },
-              { id: 'findings', label: 'Findings', desc: 'Evidence and how to fix it', icon: (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              ) },
-            ],
-          },
-          {
-            group: 'Account',
-            items: [
-              { id: 'settings', label: 'Settings', desc: 'Account and security', icon: (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.9 2.9l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.9-2.9l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.9-2.9l.1.1a1.7 1.7 0 0 0 1.9.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5h0a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.9 2.9l-.1.1a1.7 1.7 0 0 0-.3 1.9v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-              ) },
-            ],
-          },
-        ] as const).map((section) => (
-          <div key={section.group} className="island-group">
-            <div className="island-group-label">{section.group}</div>
-            {section.items.map((item) => (
-              <button
-                key={item.id}
-                className={`island-item ${activeWindow === item.id ? 'active' : ''}`}
-                onClick={() => navigate(`/console/${item.id}`)}
-                title={item.label}
-                aria-label={item.label}
-                aria-current={activeWindow === item.id ? 'page' : undefined}
-              >
-                <span className="island-item-icon">{item.icon}</span>
-                <span className="island-item-text">
-                  <span className="island-label">{item.label}</span>
-                  <span className="island-item-desc">{item.desc}</span>
-                </span>
-                {'badge' in item && item.badge > 0 && <span className="island-badge">{item.badge}</span>}
-              </button>
-            ))}
-          </div>
-        ))}
+        <div className="dyn-sep" aria-hidden="true" />
 
-        <div className="island-flex-spacer" />
+        <button onClick={() => { openScanModal(); }} className="fc-btn-primary fc-btn-sm dyn-audit" title="Start a new audit" aria-label="Start a new audit">
+          <Plus size={15} />
+          <span className="dyn-audit-label">New audit</span>
+        </button>
 
-        <div className="island-user">
-          <div className="island-avatar">{user?.username ? user.username[0].toUpperCase() : 'U'}</div>
-          <span className="island-label island-username">{user?.username}</span>
-          <button onClick={handleLogout} className="island-logout" title="Sign Out" aria-label="Sign out">
+        <div className="dyn-user">
+          <div className="dyn-avatar" title={user?.username ?? 'Signed in'}>{user?.username ? user.username[0].toUpperCase() : 'U'}</div>
+          <button onClick={handleLogout} className="dyn-logout" title="Sign Out" aria-label="Sign out">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
               <polyline points="16 17 21 12 16 7"/>
@@ -1036,30 +1066,6 @@ function App() {
 
       {/* Main Container */}
       <main className="main-content">
-        {/* Topbar — persistent controls. Section titles live in the page body:
-            the overview owns its own H1, so no duplicate heading here. */}
-        <div className="topbar">
-          {activeWindow !== 'overview' && (
-            <div>
-              <div className="topbar-title">
-                {activeWindow === 'repositories' && 'Repositories'}
-                {activeWindow === 'audits' && 'Audits'}
-                {activeWindow === 'findings' && 'Findings'}
-                {activeWindow === 'settings' && 'Settings'}
-              </div>
-              <div className="topbar-subtitle">
-                Signed in as {user?.username ?? 'unknown'}
-              </div>
-            </div>
-          )}
-
-          <div className="topbar-right">
-            <button onClick={handleLogout} className="topbar-avatar" title="Sign Out" aria-label="Sign out">
-              {user?.username ? user.username[0].toUpperCase() : 'U'}
-            </button>
-          </div>
-        </div>
-
         {/* Page Content Body */}
         <div className="page-body">
           {/* Tab 1: Overview */}

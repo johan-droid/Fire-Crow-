@@ -148,12 +148,12 @@ export function ProductPreview({ onNavigateLogin }: ProductPreviewProps) {
                       </div>
 
                       <div style={{ textAlign: 'right', fontFamily: 'var(--fc-font-mono)', fontSize: '0.78rem' }}>
-                        <span style={{ color: '#64748B' }}>CVSS: </span>
-                        <strong style={{ color: '#0F172A' }}>{finding.cvss.toFixed(1)}</strong>
+                        <span style={{ color: 'var(--fc-text-muted)' }}>CVSS: </span>
+                        <strong style={{ color: 'var(--fc-text-primary)' }}>{finding.cvss.toFixed(1)}</strong>
                       </div>
                     </div>
 
-                    <p style={{ fontSize: '0.86rem', color: '#334155', fontWeight: 500, marginBottom: '12px', lineHeight: 1.55 }}>
+                    <p style={{ fontSize: '0.86rem', color: 'var(--fc-text-secondary)', fontWeight: 500, marginBottom: '12px', lineHeight: 1.55 }}>
                       {finding.description}
                     </p>
 
@@ -165,7 +165,7 @@ export function ProductPreview({ onNavigateLogin }: ProductPreviewProps) {
 
                     {/* Code Evidence Block */}
                     <div className="fc-code-snippet">
-                      <span style={{ color: '#64748B', marginRight: '8px', userSelect: 'none' }}>
+                      <span style={{ color: 'var(--fc-text-muted)', marginRight: '8px', userSelect: 'none' }}>
                         {finding.lineNumber} |
                       </span>
                       <span style={{ color: '#F1F5F9' }}>{finding.evidence}</span>
@@ -279,21 +279,21 @@ export function ProductPreview({ onNavigateLogin }: ProductPreviewProps) {
               >
                 <div className="fc-narrative-banner">
                   <span className="fc-pulse-dot" style={{ background: '#0284c7', boxShadow: '0 0 6px #0284c7' }} aria-hidden="true" />
-                  <span style={{ fontFamily: 'var(--fc-font-mono)', fontSize: '0.76rem', color: '#0369A1', fontWeight: 700 }}>
+                  <span style={{ fontFamily: 'var(--fc-font-mono)', fontSize: '0.76rem', color: 'var(--fc-low)', fontWeight: 700 }}>
                     READ-ONLY AI NARRATIVE · ILLUSTRATIVE EXAMPLE
                   </span>
                 </div>
 
                 <div className="fc-narrative-content">
-                  <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#0F172A', marginBottom: '8px' }}>
+                  <h4 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--fc-text-primary)', marginBottom: '8px' }}>
                     Executive Security Briefing — sample-repo @ 8f3c1b
                   </h4>
-                  <p style={{ fontSize: '0.86rem', color: '#334155', lineHeight: 1.6, marginBottom: '14px' }}>
+                  <p style={{ fontSize: '0.86rem', color: 'var(--fc-text-secondary)', lineHeight: 1.6, marginBottom: '14px' }}>
                     Automated analysis completed across static analysis (Semgrep), dependency CVE tracking (OSV-Scanner),
                     and credential entropy (Gitleaks). The audit identified 3 confirmed issues. Two items require immediate remediation:
                   </p>
 
-                  <ul style={{ paddingLeft: '20px', fontSize: '0.84rem', color: '#334155', lineHeight: 1.6, marginBottom: '16px' }}>
+                  <ul style={{ paddingLeft: '20px', fontSize: '0.84rem', color: 'var(--fc-text-secondary)', lineHeight: 1.6, marginBottom: '16px' }}>
                     <li style={{ marginBottom: '6px' }}>
                       <strong style={{ color: 'var(--fc-critical)' }}>Critical:</strong> Rotate symmetric secret key hardcoded in <code>backend/src/config.rs:44</code> and migrate to KMS or environment variables.
                     </li>

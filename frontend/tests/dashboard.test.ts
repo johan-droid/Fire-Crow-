@@ -7,6 +7,7 @@ import type { JobResponse } from '../src/api/types.js';
 const cwd = process.cwd();
 const app = readFileSync(join(cwd, 'src', 'App.tsx'), 'utf8');
 const dashboardCss = readFileSync(join(cwd, 'src', 'dashboard.css'), 'utf8');
+const landingCss = readFileSync(join(cwd, 'src', 'landing', 'styles', 'landing.css'), 'utf8');
 const metricCardSrc = readFileSync(join(cwd, 'src', 'dashboard', 'MetricCard.tsx'), 'utf8');
 const auditTableSrc = readFileSync(join(cwd, 'src', 'dashboard', 'AuditTable.tsx'), 'utf8');
 
@@ -85,13 +86,18 @@ describe('No infrastructure clutter in console content', () => {
   });
 });
 
-describe('Peach true black NEXT LAB.inc / Fire Crow identity', () => {
-  it('defines the restrained peach-true-black tokens', () => {
+describe('Ember graphite NEXT LAB.inc / Fire Crow identity', () => {
+  it('defines the restrained ember-graphite tokens', () => {
     assert.ok(dashboardCss.includes('--fc-canvas: #000000'), 'true black canvas token missing');
     assert.ok(dashboardCss.includes('--fc-surface: #000000'), 'surface token missing');
     assert.ok(dashboardCss.includes('--fc-text-primary: #FFFFFF'), 'white text token missing');
     assert.ok(dashboardCss.includes('--fc-text-secondary: #A1A1AA'), 'secondary text token missing');
-    assert.ok(dashboardCss.includes('--fc-accent: #FF9E7D'), 'peach accent missing');
+    assert.ok(dashboardCss.includes('--fc-accent: #E5484D'), 'ember accent missing');
+  });
+
+  it('scopes landing tokens to .fc-landing so they never re-theme the console or login', () => {
+    assert.ok(!/^:root\s*\{/m.test(landingCss), 'landing.css must not define a global :root token block');
+    assert.ok(landingCss.includes('--fc-bg-canvas: #0A0B0E'), 'landing graphite canvas token missing');
   });
 
   it('styles the workspace surfaces: attention, repos, settings, guidance', () => {

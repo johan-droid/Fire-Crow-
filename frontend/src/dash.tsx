@@ -198,7 +198,7 @@ export function PanelState({
   if (empty) {
     return (
       <div className="state-empty">
-        <span className="state-empty-icon">{emptyIcon ?? '◌'}</span>
+        {emptyIcon && <span className="state-empty-icon">{emptyIcon}</span>}
         {children}
       </div>
     );

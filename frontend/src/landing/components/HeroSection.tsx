@@ -1,4 +1,6 @@
 import { NextLabSymbol } from './BrandLogos';
+import TechText from './TechText';
+import StrokeText from './StrokeText';
 
 interface HeroSectionProps {
   onNavigateLogin: () => void;
@@ -22,11 +24,22 @@ export function HeroSection({ onNavigateLogin }: HeroSectionProps) {
             </div>
 
             {/* High-impact Fire Crow headline */}
-            <h1 id="hero-heading" className="fc-hero-headline">
-              Engineering-first security auditing.<br />
-              <span className="fc-hero-subhead">
-                Know what&apos;s in your repo before <span className="fc-accent">attackers do.</span>
-              </span>
+            <h1 id="hero-heading" className="fc-hero-headline fc-hero-punch">
+              <span className="fc-punch-static">Know what&rsquo;s in your repo</span>
+              <StrokeText
+                text="before attackers do."
+                strokeColor="#E5484D"
+                fillColor="#F2F4F7"
+                strokeWidth={1.6}
+                drawDuration={1.1}
+                fillDelay={0.15}
+                stagger={0.04}
+                trigger="scroll"
+                fillMode="wipe"
+                fontSize={120}
+                fontWeight={800}
+                letterSpacing={-3}
+              />
             </h1>
 
             {/* Credible, truthful subtext */}
@@ -56,37 +69,25 @@ export function HeroSection({ onNavigateLogin }: HeroSectionProps) {
               <span><strong>03</strong> Read canonical ledger</span>
             </div>
           </div>
+        </div>
 
-          {/* Glass terminal — the exact shape the console submits */}
-          <div className="fc-terminal" role="img" aria-label="Sample audit submission request showing the repository URL and branch fields">
-            <div className="fc-terminal-bar">
-              <div className="fc-window-controls" aria-hidden="true">
-                <div className="fc-dot fc-dot-red" />
-                <div className="fc-dot fc-dot-yellow" />
-                <div className="fc-dot fc-dot-green" />
-              </div>
-              <span className="fc-terminal-title">audit-submit.sh // NEXT LAB ENGINE</span>
-              <span className="fc-terminal-live">
-                <span className="fc-pulse-dot" style={{ background: '#10b981', boxShadow: '0 0 6px #10b981' }} aria-hidden="true" />
-                API CONTRACT
-              </span>
-            </div>
-            <div className="fc-terminal-body">
-              <span className="fc-tok-comment"># Ephemeral containerized audit intake</span>{'\n'}
-              <span className="fc-tok-comment"># Zero code retention · read-only volume mounts</span>{'\n'}
-              <span className="fc-tok-cmd">curl</span> <span className="fc-tok-flag">-X POST</span> /api/v1/audit/submit {'\\\n'}
-              {'  '}<span className="fc-tok-flag">-H</span> <span className="fc-tok-str">&quot;Content-Type: application/json&quot;</span> {'\\\n'}
-              {'  '}<span className="fc-tok-flag">-d</span> <span className="fc-tok-str">&apos;{'{'}</span>{'\n'}
-              {'    '}<span className="fc-tok-key">&quot;repo_url&quot;</span><span className="fc-tok-str">: &quot;https://github.com/acme/api&quot;,</span>{'\n'}
-              {'    '}<span className="fc-tok-key">&quot;repo_branch&quot;</span><span className="fc-tok-str">: &quot;main&quot;,</span>{'\n'}
-              {'    '}<span className="fc-tok-key">&quot;commit_sha&quot;</span><span className="fc-tok-str">: null  </span><span className="fc-tok-comment"># or pin a 40-char commit SHA</span>{'\n'}
-              {'  '}<span className="fc-tok-str">&apos;</span>{'\n\n'}
-              <span className="fc-tok-out">→ ephemeral micro-sandbox → canonical ledger → JSON / HTML / PDF</span>
-            </div>
-            <div className="fc-terminal-note">
-              <strong>Guaranteed boundaries:</strong> 50MB unpack ceiling, --cap-drop=ALL, commit-SHA attestation.
-            </div>
-          </div>
+        {/* Interactive wordmark — the brand dissolves into dashed vector
+            outlines under the pointer, like evidence under inspection. */}
+        <div className="fc-wordmark-band">
+          <TechText
+            text="FIRE CROW"
+            fontFamily='"Space Grotesk", "Inter", sans-serif'
+            fontWeight={700}
+            fontSize={150}
+            letterSpacing={-0.03}
+            color="#F2F4F7"
+            accentColor="#E5484D"
+            reveal="letter"
+            reach={180}
+            dashLength={4}
+            dashGap={2}
+            specks={12}
+          />
         </div>
 
         {/* Verified Trust Strip */}

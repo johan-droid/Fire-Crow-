@@ -43,7 +43,6 @@ export function LandingFooter() {
               <li><a href="#capabilities">Capabilities</a></li>
               <li><a href="#workflow">Architecture</a></li>
               <li><a href="#preview">Audit Walkthrough</a></li>
-              <li><a href="#pricing">Pricing Plans</a></li>
               <li><a href="#faq">Technical FAQ</a></li>
             </ul>
           </div>

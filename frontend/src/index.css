@@ -97,8 +97,8 @@
    color-mix(), so switching the attribute recolors the whole UI live.
    ───────────────────────────────────────────────────────────── */
 html[data-accent='ember'], :root {
-  --accent: #C92F38;
-  --accent-bright: #A9232D;
+  --accent: #E5484D;
+  --accent-bright: #F2555A;
 }
 html[data-accent='azure'] {
   --accent: #0071e3;
@@ -1043,205 +1043,14 @@ body {
 
 /* ─── Dashboard, Forms & App Components ──────── */
 .shell {
-  display: flex;
+  display: block;
   min-height: 100vh;
   background: var(--apple-canvas);
 }
 
-/* ─── Hover Navigation Island ──────────────────────────────────
-   A floating glass rail docked to the left edge. Collapsed it shows
-   only icons; hovering makes the island spring open and reveal
-   labels, badges, brand and the account row.
-   ───────────────────────────────────────────────────────────── */
-.nav-island {
-  position: fixed;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 60;
-  width: 60px;
-  max-height: calc(100vh - 32px);
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-  padding: 12px 10px;
-  background: color-mix(in srgb, #0c0c11 82%, transparent);
-  backdrop-filter: blur(24px) saturate(1.5);
-  border: 1px solid var(--apple-border);
-  border-radius: 24px;
-  box-shadow: var(--shadow-elevated);
-  overflow: hidden;
-  transition: width 0.5s var(--apple-spring), border-color 0.3s ease;
-}
-.nav-island:hover,
-.nav-island:focus-within {
-  width: 212px;
-  border-color: var(--apple-border-hover);
-}
-
-.island-brand {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  padding: 0.15rem 0.35rem 0.45rem;
-  min-height: 34px;
-}
-.island-logo {
-  width: 30px;
-  height: 30px;
-  flex-shrink: 0;
-  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 55%, transparent));
-}
-
-.island-label {
-  font-size: 0.84rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  opacity: 0;
-  transform: translateX(-6px);
-  transition: opacity 0.25s var(--apple-ease), transform 0.25s var(--apple-ease);
-}
-.nav-island:hover .island-label,
-.nav-island:focus-within .island-label {
-  opacity: 1;
-  transform: none;
-  transition-delay: 0.08s;
-}
-.island-brand-text {
-  font-size: 0.95rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  color: var(--text-primary);
-}
-
-.island-divider {
-  height: 1px;
-  margin: 2px 4px 4px;
-  background: var(--apple-border);
-  flex-shrink: 0;
-}
-
-.island-item {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  padding: 0.6rem 0.5rem;
-  border-radius: 14px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  text-align: left;
-  width: 100%;
-  transition: background 0.2s var(--apple-ease), color 0.2s var(--apple-ease), border-color 0.2s var(--apple-ease);
-}
-.island-item-icon {
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.island-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-primary);
-}
-.island-item.active {
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
-  color: var(--accent-bright);
-  box-shadow: inset 0 0 14px color-mix(in srgb, var(--accent) 9%, transparent);
-}
-
-.island-badge {
-  margin-left: auto;
-  font-size: 0.66rem;
-  font-weight: 700;
-  min-width: 18px;
-  text-align: center;
-  padding: 0.08rem 0.38rem;
-  border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, 0.09);
-  color: var(--text-secondary);
-}
-.island-item.active .island-badge {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
-  color: var(--accent-bright);
-}
-
-.island-flex-spacer { flex: 1; min-height: 8px; }
-
-.island-user {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 0.45rem 0.35rem;
-  border-top: 1px solid var(--apple-border);
-}
-.island-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), #A82028);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: #fff;
-  flex-shrink: 0;
-}
-.island-username {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 0.78rem;
-}
-.island-logout {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 0.3rem;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  opacity: 0.65;
-  transition: opacity 0.2s var(--apple-ease), color 0.2s ease, background 0.2s ease;
-}
-.nav-island:hover .island-logout,
-.nav-island:focus-within .island-logout { opacity: 1; }
-.island-logout:hover { color: var(--apple-red); background: var(--apple-red-dim); }
-
-@media (max-width: 900px) {
-  /* Island docks to the bottom center as an icon-only pill on small screens */
-  .nav-island {
-    left: 50%;
-    top: auto;
-    bottom: 14px;
-    transform: translateX(-50%);
-    flex-direction: row;
-    align-items: center;
-    gap: 2px;
-    width: auto;
-    max-height: none;
-    padding: 8px 12px;
-    border-radius: 20px;
-  }
-  .nav-island:hover,
-  .nav-island:focus-within { width: auto; }
-  .island-brand, .island-divider, .island-flex-spacer, .island-label, .island-badge, .island-user { display: none; }
-  .island-item {
-    width: auto;
-    padding: 0.55rem 0.7rem;
-    border-radius: 12px;
-  }
-  .main-content { padding-bottom: 76px; }
-}
+/* ─── Dynamic island styles live with the console system below
+    (.shell .dyn-island). The left rail was removed: navigation now
+    docks top-center on desktop and bottom-center on small screens. */
 
 .main-content {
   flex: 1;
@@ -1250,30 +1059,15 @@ body {
   min-width: 0;
   max-height: 100vh;
   overflow-y: auto;
-  /* Clear the collapsed island rail; the expanded island floats over content */
-  padding-left: 74px;
+  /* Clear the top-docked dynamic island; it floats over content */
+  padding-top: 72px;
 }
-@media (max-width: 900px) {
-  .main-content { padding-left: 0; }
-}
-
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 40;
-  background: rgba(7, 7, 9, 0.85);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid var(--apple-border);
-  padding: 0.85rem 1.75rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+@media (max-width: 760px) {
+  .main-content { padding-top: 0; padding-bottom: 84px; }
 }
 
-.topbar-title { font-size: 1.05rem; font-weight: 700; letter-spacing: -0.02em; }
-.topbar-subtitle { font-size: 0.76rem; color: var(--text-muted); margin-top: 0.1rem; }
-.topbar-right { display: flex; align-items: center; gap: 0.85rem; }
+/* (Console topbar removed with the left rail: section titles live in each
+   window's page-head and identity controls live in the dynamic island.) */
 
 .status-indicator {
   display: flex;
@@ -1929,7 +1723,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   font-weight: 600;
   cursor: pointer;
   text-align: left;
-  /* Labels inside the menu are always visible — override island-label hiding */
+  /* Labels inside the menu are always visible */
   opacity: 1 !important;
   transform: none !important;
   transition: background 0.2s ease, color 0.2s ease;
@@ -1944,26 +1738,6 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12), 0 0 10px color-mix(in srgb, currentColor 30%, transparent);
 }
 .swatch-check { margin-left: auto; color: var(--accent-bright); }
-
-.topbar-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid var(--apple-border);
-  background: linear-gradient(135deg, var(--accent), var(--apple-purple));
-  color: #fff;
-  font-size: 0.72rem;
-  font-weight: 700;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.25s var(--apple-ease);
-}
-.topbar-avatar:hover {
-  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
-  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 25%, transparent);
-}
 
 /* ─── Social Proof Logo Cloud ────────────────── */
 .apple-logo-cloud {
@@ -2860,10 +2634,10 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 }
 .aurora-dashboard .aurora-grid { opacity: 0.5; }
 
-/* Dashboard shell keeps content above the backdrop. The navigation island
+/* Dashboard shell keeps content above the backdrop. The dynamic island
    keeps its own z-index so it stays clickable above the main column. */
 .shell { position: relative; }
-.shell > *:not(.aurora-backdrop):not(.nav-island) { position: relative; z-index: 1; }
+.shell > *:not(.aurora-backdrop):not(.dyn-island) { position: relative; z-index: 1; }
 
 /* ─── Scroll reveal choreography (landing sections) ────────── */
 .reveal {
@@ -3269,8 +3043,6 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .page-body > * { min-width: 0; }
 .panel, .metric-card, .progress-card { min-width: 0; }
 .panel-body, .term-progress, .health-widget { min-width: 0; overflow-wrap: anywhere; }
-.topbar { flex-wrap: wrap; min-width: 0; }
-.topbar-right { flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
 .term-header { flex-wrap: wrap; row-gap: 0.4rem; }
 .term-header-meta { flex-wrap: wrap; }
 .health-services { align-items: stretch; }
@@ -3301,7 +3073,6 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 }
 @media (max-width: 900px) {
   .page-body { padding: 1.2rem 1rem; gap: 1.1rem; max-width: none; margin: 0; }
-  .topbar { padding: 0.75rem 1rem; gap: 0.75rem; }
   .metrics-grid { gap: 0.75rem; }
   .two-col { gap: 1rem; }
   .panel-header { flex-wrap: wrap; row-gap: 0.5rem; }
@@ -3324,37 +3095,35 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 
 /* ════════════════════════════════════════════════════════════════
    FIRE CROW — DASHBOARD DESIGN SYSTEM
-   Graphite base with warm-neutral elevated surfaces, off-white
-   text and a restrained terracotta accent. Scoped to the
+   Graphite operations-console: near-black canvas, elevated graphite
+   surfaces, off-white text and a restrained ember accent. Scoped to the
    authenticated console (.shell and descendants, plus the modals it
    opens). Landing/login/scene styling is untouched.
    ──────────────────────────────────────────────────────────────
     Token notes:
-    • `--accent` under the default ember theme is a cyclic self-ref in
-      :root, so `var(--accent, #c4643c)` resolves to the terracotta —
-      exactly the spec accent. The console keeps a single fixed
-      ember-on-off-white identity (no runtime theme switching).
-    • Status colors are the muted spec palette, not raw system colors.
+    • The console keeps a single fixed ember-on-graphite identity with
+      its own --dash-accent (no runtime theme switching).
+    • Status colors are the dark-theme spec palette, not raw system colors.
    ════════════════════════════════════════════════════════════════ */
 .shell {
-  --dash-bg: #F7F6F2;
-  --dash-surface: #FFFFFF;
-  --dash-card: #FFFFFF;
-  --dash-elev: #F0EFEB;
-  --dash-border: #E7E4DE;
-  --dash-border-soft: rgba(0, 0, 0, 0.06);
-  --dash-hairline: rgba(0, 0, 0, 0.06);
-  --dash-text: #252522;
-  --dash-text-2: #77766F;
-  --dash-text-3: #8E8D86;
-  --dash-accent: var(--accent, #C92F38);
-  --dash-accent-hover: var(--accent-bright, #A9232D);
-  --dash-accent-dim: color-mix(in srgb, var(--dash-accent) 10%, transparent);
-  --dash-accent-border: color-mix(in srgb, var(--dash-accent) 28%, transparent);
-  --dash-health: #166534;
-  --dash-warn: #B45309;
-  --dash-crit: #991B1B;
-  --dash-info: #1E40AF;
+  --dash-bg: #0A0B0E;
+  --dash-surface: #0F1115;
+  --dash-card: #12151B;
+  --dash-elev: #1A1F28;
+  --dash-border: rgba(255, 255, 255, 0.09);
+  --dash-border-soft: rgba(255, 255, 255, 0.06);
+  --dash-hairline: rgba(255, 255, 255, 0.06);
+  --dash-text: #F2F4F7;
+  --dash-text-2: #A6AEB9;
+  --dash-text-3: #6E7683;
+  --dash-accent: #E5484D;
+  --dash-accent-hover: #F2555A;
+  --dash-accent-dim: color-mix(in srgb, var(--dash-accent) 12%, transparent);
+  --dash-accent-border: color-mix(in srgb, var(--dash-accent) 35%, transparent);
+  --dash-health: #34D399;
+  --dash-warn: #F59E0B;
+  --dash-crit: #F04444;
+  --dash-info: #38BDF8;
   /* One control height scale for every console control. */
   --dash-ctl: 34px;
   --dash-ctl-sm: 28px;
@@ -3369,117 +3138,215 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .aurora-starfield { display: none; }
 .shell .aurora-orb { filter: saturate(0.4) blur(80px); }
 
-/* ─── Navigation rail (docked left, expands on hover/focus) ─────
-    `.shell .nav-island` specificity (0,2,0) beats the generic
+/* ─── Dynamic island — top floating workspace command bar ─────
+    Compact by default: brand, five sections, new-audit, identity.
+    Expands with a live-audit pill while a run is queued or running.
+    `.shell .dyn-island` specificity (0,2,0) beats the generic
     `.shell > *:not(.aurora-backdrop)` position:relative shim so the
-    rail is genuinely fixed. Always expanded: labels, group headings
-    and one-line descriptions are permanent. */
-.shell .nav-island {
+    island stays genuinely fixed and clickable above the page. */
+.shell .dyn-island {
   position: fixed;
-  left: 0;
-  top: 0;
-  height: 100vh;
-  max-height: none;
-  transform: none;
-  border-radius: 0;
-  border-right: 1px solid var(--dash-border);
-  background: var(--dash-surface);
-  backdrop-filter: none;
-  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.03);
-  overflow-y: auto;
-  scrollbar-width: thin;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100vw - 24px);
+  padding: 7px 9px;
+  background: rgba(15, 17, 22, 0.88);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--dash-border);
+  border-radius: 18px;
+  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.65);
+  animation: fadeUp 0.35s var(--fc-ease) backwards;
 }
-.shell .nav-island:hover,
-.shell .nav-island:focus-within {
-  width: 236px;
-  border-color: var(--dash-border);
-  box-shadow: 12px 0 32px rgba(0, 0, 0, 0.06);
+.shell .dyn-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
 }
-.island-brand { border-bottom: 1px solid var(--dash-border); }
-.island-divider { background: var(--dash-border); }
-.island-label { color: var(--dash-text-2); font-size: 0.82rem; font-weight: 600; }
-.island-brand-text { color: var(--dash-text); letter-spacing: -0.01em; }
-.island-item { border-radius: 10px; margin: 1px 0; }
-.island-item:hover { background: #F0EFEB; color: var(--dash-text); }
-.island-item.active {
+.shell .dyn-brand:hover { background: var(--dash-elev); border-color: var(--dash-border); }
+.shell .dyn-logo { display: block; }
+.shell .dyn-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 5px 2px;
+  background: var(--dash-hairline);
+  flex: none;
+}
+.shell .dyn-options {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.shell .dyn-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 11px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--dash-text-2);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+.shell .dyn-item:hover { background: var(--dash-elev); color: var(--dash-text); }
+.shell .dyn-item:focus-visible { outline: 2px solid var(--dash-accent); outline-offset: 1px; }
+.shell .dyn-item.active {
   background: var(--dash-accent-dim);
   border-color: var(--dash-accent-border);
-  color: var(--dash-accent);
-  box-shadow: inset 2px 0 0 var(--dash-accent);
+  color: var(--dash-accent-hover);
 }
-.island-badge {
+.shell .dyn-item-icon { display: flex; align-items: center; flex: none; }
+.shell .dyn-badge {
+  font-size: 0.66rem;
+  font-weight: 700;
+  min-width: 18px;
+  text-align: center;
+  padding: 0.08rem 0.38rem;
+  border-radius: 999px;
   background: var(--dash-elev);
+  border: 1px solid var(--dash-border);
   color: var(--dash-text-2);
+  font-variant-numeric: tabular-nums;
 }
-.island-item.active .island-badge {
-  background: var(--dash-accent-dim);
-  color: var(--dash-accent);
+.shell .dyn-item.active .dyn-badge {
+  background: transparent;
+  border-color: var(--dash-accent-border);
+  color: var(--dash-accent-hover);
 }
-.island-user { border-top: 1px solid var(--dash-border); }
-.island-username { color: var(--dash-text-2); }
-.shell .island-avatar {
-  background: var(--dash-accent-dim);
-  color: var(--dash-accent);
+/* Live-audit pill: appears only while a run is queued/running. */
+.shell .dyn-live {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  max-width: 280px;
+  padding: 0.45rem 0.65rem;
+  border-radius: 11px;
   border: 1px solid var(--dash-accent-border);
+  background: var(--dash-accent-dim);
+  color: var(--dash-text);
+  cursor: pointer;
+  animation: fadeUp 0.3s var(--fc-ease) backwards;
 }
-.shell .island-logout {
-  opacity: 0.75;
+.shell .dyn-live:hover { border-color: var(--dash-accent); }
+.shell .dyn-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--dash-accent-hover);
+  box-shadow: 0 0 8px var(--dash-accent);
+  animation: status-pulse 1.4s ease-in-out infinite;
+}
+.shell .dyn-live-repo {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--dash-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.shell .dyn-live-track {
+  width: 56px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  flex: none;
+}
+.shell .dyn-live-fill {
+  display: block;
+  height: 100%;
+  background: var(--dash-accent);
+  border-radius: 999px;
+  transition: width 0.5s ease;
+}
+.shell .dyn-live-pct {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--dash-accent-hover);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.shell .dyn-audit { flex: none; }
+.shell .dyn-user {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding-left: 2px;
+  flex: none;
+}
+.shell .dyn-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--dash-accent-dim);
+  color: var(--dash-accent-hover);
+  border: 1px solid var(--dash-accent-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  flex: none;
+}
+.shell .dyn-logout {
   color: var(--dash-text-3);
   background: transparent;
+  border: none;
   border-radius: 6px;
   padding: 0.3rem;
-  transition: opacity 0.14s var(--fc-ease), color 0.14s ease, background 0.14s ease;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  transition: color 0.14s ease, background 0.14s ease;
 }
-.shell .island-logout:hover,
-.shell .island-logout:focus-visible {
-  opacity: 1;
-  color: var(--dash-accent);
+.shell .dyn-logout:hover,
+.shell .dyn-logout:focus-visible {
+  color: var(--dash-accent-hover);
   background: var(--dash-accent-dim);
 }
-
-/* Mobile: keep the bottom dock, but in console surfaces. */
-@media (max-width: 900px) {
-  .shell .nav-island {
-    position: fixed;
-    left: 50%;
+/* Narrow: labels collapse to icons so every option stays one tap away. */
+@media (max-width: 1100px) {
+  .shell .dyn-item-label,
+  .shell .dyn-audit-label { display: none; }
+  .shell .dyn-item { padding: 0.5rem 0.55rem; }
+}
+/* Small screens: the island docks bottom-center, live pill condenses. */
+@media (max-width: 760px) {
+  .shell .dyn-island {
     top: auto;
-    bottom: 14px;
-    transform: translateX(-50%);
-    flex-direction: row;
-    height: 52px;
-    width: auto;
-    max-height: none;
-    border-radius: 20px;
-    border: 1px solid var(--dash-border);
-    background: var(--dash-surface);
-    box-shadow: 0 16px 40px -16px rgba(0, 0, 0, 0.6);
+    bottom: 12px;
+    gap: 4px;
+    padding: 6px 8px;
+    border-radius: 16px;
   }
-  .shell .nav-island:hover,
-  .shell .nav-island:focus-within { width: auto; }
+  .shell .dyn-live-repo,
+  .shell .dyn-live-track { display: none; }
+  .shell .dyn-live { max-width: none; }
+  .shell .dyn-sep { margin: 4px 1px; }
 }
-@media (max-width: 480px) {
-  .shell .nav-island { padding: 5px; gap: 0; }
-  .shell .island-item { padding: 0.5rem 0.42rem; }
-}
-
-/* ─── Topbar ──────────────────────────────────── */
-.topbar {
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--dash-border);
-}
-.topbar-title { color: var(--dash-text); font-size: 1.02rem; }
-.topbar-subtitle { color: var(--dash-text-3); }
 .backend-status {
   border-color: var(--dash-border);
-  background: #F0EFEB;
+  background: var(--dash-elev);
   color: var(--dash-text-2);
   height: 28px;
-}
-/* The landing page's ≤768 media query hides `display:flex` .topbar
-   globally — the console must keep its topbar on tablets/phones. */
-@media (max-width: 768px) {
-  .shell .topbar { display: flex; }
 }
 
 /* ─── Overview page heading (new) ─────────────── */
@@ -3533,7 +3400,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   font-size: 0.68rem;
   font-weight: 700;
   color: var(--dash-text-2);
-  background: #F0EFEB;
+  background: var(--dash-elev);
   border: 1px solid var(--dash-border);
   padding: 0.1rem 0.5rem;
   border-radius: 999px;
@@ -3548,7 +3415,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   font-size: 0.7rem;
   font-weight: 600;
   color: var(--dash-text-2);
-  background: #F0EFEB;
+  background: var(--dash-elev);
   border: 1px solid var(--dash-border);
   border-radius: 999px;
   padding: 0.18rem 0.6rem;
@@ -3623,11 +3490,11 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .badge-medium { background: color-mix(in srgb, var(--dash-warn) 12%, transparent); color: var(--dash-warn); border-color: color-mix(in srgb, var(--dash-warn) 32%, transparent); }
 .shell .badge-low { background: color-mix(in srgb, var(--dash-info) 12%, transparent); color: var(--dash-info); border-color: color-mix(in srgb, var(--dash-info) 32%, transparent); }
 .shell .badge-info { background: color-mix(in srgb, var(--dash-info) 12%, transparent); color: var(--dash-info); border-color: color-mix(in srgb, var(--dash-info) 32%, transparent); }
-.shell .badge-neutral { background: #F0EFEB; color: var(--dash-text-2); border-color: var(--dash-border); }
+.shell .badge-neutral { background: var(--dash-elev); color: var(--dash-text-2); border-color: var(--dash-border); }
 
 /* ─── List items ──────────────────────────────── */
 .list-item { border-radius: 10px; }
-.list-item:hover { background: #F0EFEB; }
+.list-item:hover { background: var(--dash-elev); }
 .list-item-title { color: var(--dash-text); }
 .list-item-sub { color: var(--dash-text-3); }
 /* Table cells that carry a truncated reason (failed audits, etc.) */
@@ -3673,7 +3540,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   justify-content: center;
   font-size: 1.35rem;
   border-radius: 50%;
-  background: #F0EFEB;
+  background: var(--dash-elev);
   border: 1px solid var(--dash-border);
   color: var(--dash-text-2);
 }
@@ -3711,11 +3578,11 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   box-shadow: none;
 }
 .shell .btn-secondary {
-  background: #F0EFEB;
+  background: var(--dash-elev);
   color: var(--dash-text);
   border-color: var(--dash-border);
 }
-.shell .btn-secondary:hover { background: #E7E4DE; border-color: var(--dash-border); }
+.shell .btn-secondary:hover { background: var(--dash-elev); border-color: var(--dash-border); }
 .shell .btn-secondary:active { transform: scale(0.985); }
 .shell .btn-danger {
   background: color-mix(in srgb, var(--dash-crit) 10%, transparent);
@@ -3730,7 +3597,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   border-color: transparent;
 }
 .shell .btn-ghost:hover {
-  background: #F0EFEB;
+  background: var(--dash-elev);
   color: var(--dash-text);
 }
 .shell .btn-ghost:active { transform: scale(0.96); }
@@ -3772,7 +3639,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .modal-title { color: var(--dash-text); }
 .modal-sub { color: var(--dash-text-3); }
 .shell .form-input {
-  background: #FFFFFF;
+  background: var(--dash-surface);
   border-color: var(--dash-border);
   color: var(--dash-text);
 }
@@ -3783,9 +3650,9 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .form-label { color: var(--dash-text-2); }
 .table-wrap th { color: var(--dash-text-3); border-bottom-color: var(--dash-hairline); }
 .table-wrap td { border-bottom-color: var(--dash-hairline); }
-.table-wrap tr:hover td { background: #F0EFEB; }
+.table-wrap tr:hover td { background: var(--dash-elev); }
 .finding-card {
-  background: #F0EFEB;
+  background: var(--dash-elev);
   border: 1px solid var(--dash-border);
   border-left: 3px solid var(--dash-accent);
 }
@@ -3806,7 +3673,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .metric-value, .shell .sev-count, .shell .progress-percent,
 .shell .health-val, .shell .term-bar-pct, .shell .count-pill,
 .shell .status-pill, .shell .badge { font-feature-settings: 'tnum'; }
-.shell :where(button, a).island-item:focus-visible,
+.shell .dyn-item:focus-visible,
 .shell button:focus-visible,
 .shell .theme-btn:focus-visible { outline: 2px solid var(--dash-accent); outline-offset: 2px; }
 
@@ -3816,7 +3683,6 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   .two-col { grid-template-columns: 1fr; }
 }
 @media (max-width: 768px) {
-  .shell .topbar { gap: 0.6rem; }
   .page-head-title { font-size: 1.25rem; }
 }
 @media (max-width: 560px) {
@@ -3829,6 +3695,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   .shell .skeleton-row,
   .shell .term-bar-fill.running,
   .shell .status-dot,
+  .shell .dyn-live-dot,
   .shell .badge-pulse,
   .shell .health-chip,
   .shell .breaker-badge { animation: none !important; }
@@ -3867,95 +3734,9 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   .shell .page-body { padding: 1.15rem 1.15rem 6.25rem; }
 }
 
-/* ─── Navigation: groups, labels, descriptions ────────────────── */
-/* Always expanded: an icon-only rail hides the destination, and this
-   console is navigated by name, not by glyph. */
-.shell .nav-island { width: 236px; }
-.shell .nav-island:hover,
-.shell .nav-island:focus-within { width: 236px; box-shadow: none; }
-.island-group { display: flex; flex-direction: column; gap: 1px; }
-.island-group-label {
-  font-size: 0.6rem;
-  font-weight: 700;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  color: var(--dash-text-3);
-  padding: 0.6rem 0.65rem 0.3rem;
-}
-.shell .island-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.65rem;
-  width: 100%;
-  padding: 0.5rem 0.6rem;
-  border-radius: 10px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--dash-text-2);
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.14s var(--fc-ease), color 0.14s var(--fc-ease), border-color 0.14s var(--fc-ease), transform 0.1s var(--fc-ease);
-}
-.shell .island-item:active {
-  transform: scale(0.985);
-}
-.shell .island-item-icon { margin-top: 2px; }
-.shell .island-item-text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
-.shell .island-label {
-  font-size: 0.83rem;
-  font-weight: 600;
-  color: inherit;
-  line-height: 1.25;
-}
-.shell .island-item-desc {
-  font-size: 0.67rem;
-  font-weight: 500;
-  line-height: 1.3;
-  color: var(--dash-text-3);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.shell .island-item:hover { background: #F0EFEB; color: var(--dash-text); }
-.shell .island-item:hover .island-item-desc { color: var(--dash-text-2); }
-.shell .island-item.active { color: var(--dash-accent); }
-.shell .island-item.active .island-item-desc { color: color-mix(in srgb, var(--dash-accent) 72%, transparent); }
-.shell .island-item.active .island-label { color: var(--dash-accent); }
-.shell .island-brand { padding: 0.15rem 0.35rem 0.55rem; }
-
-/* ─── Topbar ──────────────────────────────────────────────────── */
-.shell .topbar {
-  position: sticky;
-  top: 0;
-  z-index: 40;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  min-height: 56px;
-  padding: 0.6rem 2rem;
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(16px);
-  border-bottom: 1px solid var(--dash-border);
-}
-.shell .topbar-title { font-size: 0.95rem; font-weight: 650; letter-spacing: -0.01em; color: var(--dash-text); }
-.shell .topbar-subtitle { font-size: 0.74rem; color: var(--dash-text-3); margin-top: 0.05rem; }
-.shell .topbar-right { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; justify-content: flex-end; }
-.shell .topbar-avatar {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: 1px solid var(--dash-border);
-  background: var(--dash-elev);
-  color: var(--dash-text-2);
-  font-size: 0.74rem;
-  font-weight: 700;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-.shell .topbar-avatar:hover { color: var(--dash-text); border-color: var(--dash-accent); }
+/* ─── Navigation now docks in the top dynamic island (.shell .dyn-island
+    above): icon-only rails hide destinations, and this console is
+    navigated by name, not by glyph. */
 
 /* ─── Page introduction ───────────────────────────────────────── */
 .page-head {
@@ -3999,7 +3780,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   padding: 0 0.6rem;
   border-radius: 999px;
   border: 1px solid var(--dash-border);
-  background: #F0EFEB;
+  background: var(--dash-elev);
   font-size: 0.74rem;
   color: var(--dash-text-3);
   white-space: nowrap;
@@ -4029,7 +3810,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   align-items: center;
   justify-content: center;
   border-radius: 7px;
-  background: #F0EFEB;
+  background: var(--dash-elev);
   border: 1px solid var(--dash-hairline);
   color: var(--dash-text-3);
 }
@@ -4101,7 +3882,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   border-radius: 10px;
   border: 1px solid transparent;
 }
-.shell .result-row:hover { background: #F0EFEB; border-color: var(--dash-border); }
+.shell .result-row:hover { background: var(--dash-elev); border-color: var(--dash-border); }
 .shell .result-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .shell .result-row-repo {
   font-size: 0.85rem;
@@ -4120,7 +3901,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   padding: 0.1rem 0.5rem;
   border-radius: 999px;
   border: 1px solid var(--dash-border);
-  background: #F0EFEB;
+  background: var(--dash-elev);
   white-space: nowrap;
 }
 
@@ -4148,7 +3929,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   padding: 0 0.6rem;
   border-radius: 999px;
   border: 1px solid var(--dash-border);
-  background: #F0EFEB;
+  background: var(--dash-elev);
   font-size: 0.73rem;
   font-weight: 600;
   color: var(--dash-text-2);
@@ -4186,7 +3967,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
-.shell .audit-row:hover { background: #F0EFEB; border-color: var(--dash-border); }
+.shell .audit-row:hover { background: var(--dash-elev); border-color: var(--dash-border); }
 .shell .audit-row.is-active { background: var(--dash-accent-dim); border-color: var(--dash-accent-border); }
 .shell .audit-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .shell .audit-row-repo {
@@ -4212,7 +3993,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   padding: 0 0.35rem;
   border-radius: 5px;
   border: 1px solid var(--dash-border);
-  background: #F0EFEB;
+  background: var(--dash-elev);
   white-space: nowrap;
   max-width: 18ch;
   overflow: hidden;
@@ -4280,7 +4061,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   font-weight: 600;
   color: var(--dash-text-3);
 }
-.shell .live-phase-dot { width: 5px; height: 5px; border-radius: 50%; background: #D5D2C9; flex: none; }
+.shell .live-phase-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--dash-text-3); flex: none; }
 .shell .live-phase.is-done { color: var(--dash-text-2); }
 .shell .live-phase.is-done .live-phase-dot { background: var(--dash-health); }
 .shell .live-phase.is-active { color: var(--dash-text); }
@@ -4352,13 +4133,13 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .state-error { color: var(--dash-crit); }
 .shell .state-error .btn-secondary { color: var(--dash-text-2); }
 .shell .skeleton-row {
-  background: linear-gradient(90deg, #F0EFEB 25%, #E7E4DE 50%, #F0EFEB 75%);
+  background: linear-gradient(90deg, var(--dash-elev) 25%, rgba(255, 255, 255, 0.06) 50%, var(--dash-elev) 75%);
   background-size: 200% 100%;
 }
 
 /* ─── "View all" panel link ───────────────────────────────────── */
 .shell .panel-link { color: var(--dash-text-2); display: inline-flex; align-items: center; gap: 0.3rem; }
-.shell .panel-link:hover { color: var(--dash-accent-hover); background: #F0EFEB; }
+.shell .panel-link:hover { color: var(--dash-accent-hover); background: var(--dash-elev); }
 
 /* ─── Service status (diagnostics window) ─────────────────────── */
 .shell .diag-note {
@@ -4388,7 +4169,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 /* ─── Tables & forms ──────────────────────────────────────────── */
 .shell .table-wrap th { color: var(--dash-text-3); border-bottom-color: var(--dash-hairline); }
 .shell .table-wrap td { border-bottom-color: var(--dash-hairline); vertical-align: middle; }
-.shell .table-wrap tr:hover td { background: #F0EFEB; }
+.shell .table-wrap tr:hover td { background: var(--dash-elev); }
 .shell .form-input {
   height: var(--dash-ctl);
   background: var(--dash-elev);
@@ -4421,57 +4202,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 @media (max-width: 1200px) {
   .shell .metrics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 900px) {
-  /* Bottom dock with labeled items: horizontal scroll beats icon soup. */
-  .shell .nav-island {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    top: auto;
-    height: auto;
-    max-height: none;
-    flex-direction: row;
-    align-items: stretch;
-    gap: 2px;
-    width: 100%;
-    padding: 6px 8px;
-    border-radius: 0;
-    border-top: 1px solid var(--dash-border);
-    border-right: none;
-    background: color-mix(in srgb, var(--dash-surface) 96%, transparent);
-    backdrop-filter: blur(18px);
-    box-shadow: 0 -12px 32px -18px rgba(0, 0, 0, 0.8);
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-  }
-  .shell .nav-island::-webkit-scrollbar { display: none; }
-  .shell .nav-island:hover,
-  .shell .nav-island:focus-within { width: 100%; box-shadow: 0 -12px 32px -18px rgba(0, 0, 0, 0.8); }
-  .shell .island-group { flex-direction: row; gap: 2px; flex: none; }
-  .shell .island-group-label { display: none; }
-  .shell .island-item {
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-    width: 66px;
-    flex: none;
-    padding: 0.4rem 0.3rem;
-    border-radius: 12px;
-  }
-  .shell .island-item-icon { margin-top: 0; }
-  .shell .island-item-desc { display: none; }
-  .shell .island-label { font-size: 0.63rem; white-space: nowrap; }
-  .shell .island-badge { position: absolute; }
-  .shell .island-brand,
-  .shell .island-divider,
-  .shell .island-flex-spacer,
-  .shell .island-user { display: none; }
-  .shell .main-content { padding-bottom: 0; }
-}
 @media (max-width: 768px) {
-  .shell .topbar { padding: 0.55rem 1.15rem; }
   .page-head { align-items: flex-start; }
   .page-head-title { font-size: 1.35rem; }
   .page-head-side { width: 100%; }
@@ -4502,6 +4233,6 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   .shell .page-body > * { animation: none !important; }
   .shell .btn,
   .shell .audit-row,
-  .shell .island-item,
+  .shell .dyn-item,
   .shell .metric-card { transition: none !important; }
 }

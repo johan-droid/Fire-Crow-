@@ -1,15 +1,15 @@
 /* ════════════════════════════════════════════════════════════════
-   FIRE CROW — PEACH TRUE BLACK ENTERPRISE DASHBOARD DESIGN SYSTEM
+   FIRE CROW — EMBER GRAPHITE ENTERPRISE DASHBOARD DESIGN SYSTEM
    Colors:
      Canvas:           #000000
      Surface:          #000000
      Elevated surface: #0F0F12
      Border:           rgba(255, 255, 255, 0.08)
-     Border hover:     rgba(255, 158, 125, 0.35)
+     Border hover:     rgba(229, 72, 77, 0.35)
      Text primary:     #FFFFFF
      Text secondary:   #A1A1AA
      Text muted:       #71717A
-     Brand accent:     #FF9E7D
+     Brand accent:     #E5484D
      Critical:         #EF4444
      High:             #FF7849
      Medium:           #F59E0B
@@ -21,15 +21,15 @@
   --fc-surface: #000000;
   --fc-surface-elevated: #0F0F12;
   --fc-border: rgba(255, 255, 255, 0.08);
-  --fc-border-hover: rgba(255, 158, 125, 0.35);
+  --fc-border-hover: rgba(229, 72, 77, 0.35);
 
   --fc-text-primary: #FFFFFF;
   --fc-text-secondary: #A1A1AA;
   --fc-text-muted: #71717A;
 
-  --fc-accent: #FF9E7D;
-  --fc-accent-hover: #FFB299;
-  --fc-accent-dim: rgba(255, 158, 125, 0.12);
+  --fc-accent: #E5484D;
+  --fc-accent-hover: #F2555A;
+  --fc-accent-dim: rgba(229, 72, 77, 0.12);
 
   --fc-critical: #EF4444;
   --fc-high: #FF7849;
@@ -41,7 +41,7 @@
 
   --fc-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --fc-shadow-card: 0 2px 8px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
-  --fc-shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.7), 0 0 20px rgba(255, 158, 125, 0.08);
+  --fc-shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.7), 0 0 20px rgba(229, 72, 77, 0.08);
 }
 
 /* Fallback / dark token support for compatibility */
@@ -50,7 +50,7 @@
   --fc-surface: #000000;
   --fc-surface-elevated: #0F0F12;
   --fc-border: rgba(255, 255, 255, 0.08);
-  --fc-accent: #FF9E7D;
+  --fc-accent: #E5484D;
 }
 
 /* ─── Standard Buttons ────────────────────────── */
@@ -60,26 +60,26 @@
   justify-content: center;
   gap: 0.45rem;
   background-color: var(--fc-accent);
-  color: #000000 !important;
+  color: #FFFFFF !important;
   font-weight: 600;
   font-size: 0.82rem;
   padding: 0.48rem 0.95rem;
   border-radius: var(--fc-radius);
-  border: 1px solid rgba(255, 178, 153, 0.35);
+  border: 1px solid rgba(242, 85, 90, 0.45);
   cursor: pointer;
-  box-shadow: 0 1px 4px rgba(255, 158, 125, 0.35);
+  box-shadow: 0 1px 4px rgba(229, 72, 77, 0.35);
   transition: background-color 0.14s var(--fc-ease), transform 0.1s var(--fc-ease), box-shadow 0.14s var(--fc-ease);
   text-decoration: none;
   white-space: nowrap;
 }
 .fc-btn-primary:hover {
   background-color: var(--fc-accent-hover);
-  box-shadow: 0 3px 12px rgba(255, 158, 125, 0.5);
+  box-shadow: 0 3px 12px rgba(229, 72, 77, 0.5);
   transform: translateY(-0.5px);
 }
 .fc-btn-primary:active {
   transform: scale(0.985);
-  box-shadow: 0 1px 2px rgba(255, 158, 125, 0.2);
+  box-shadow: 0 1px 2px rgba(229, 72, 77, 0.2);
 }
 .fc-btn-primary:focus-visible {
   outline: 2px solid var(--fc-accent);
@@ -639,7 +639,7 @@
 
 .fc-search-input:focus {
   border-color: var(--fc-accent);
-  box-shadow: 0 0 0 3px rgba(255, 158, 125, 0.18);
+  box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.18);
 }
 
 .fc-view-switcher {
@@ -764,7 +764,7 @@
 }
 
 .fc-table-row.is-selected {
-  background-color: rgba(255, 158, 125, 0.06);
+  background-color: rgba(229, 72, 77, 0.06);
   box-shadow: inset 3px 0 0 var(--fc-accent);
 }
 
@@ -916,7 +916,7 @@
 
 .fc-audit-list-item.is-active {
   border-color: var(--fc-accent);
-  background-color: rgba(255, 158, 125, 0.06);
+  background-color: rgba(229, 72, 77, 0.06);
 }
 
 .fc-list-item-left {
@@ -1474,7 +1474,7 @@
   border-radius: 12px;
   width: 100%;
   max-width: 540px;
-  box-shadow: 0 24px 64px -12px rgba(0, 0, 0, 0.95), 0 0 40px rgba(255, 158, 125, 0.05);
+  box-shadow: 0 24px 64px -12px rgba(0, 0, 0, 0.95), 0 0 40px rgba(229, 72, 77, 0.05);
   overflow: hidden;
   animation: fcScaleUp 0.22s var(--fc-ease);
 }
@@ -1549,7 +1549,7 @@
 
 .shell .form-input:focus {
   border-color: var(--fc-accent);
-  box-shadow: 0 0 0 3px rgba(255, 158, 125, 0.18);
+  box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.18);
 }
 
 /* ─── Finding Cards & Evidence in Inspector ──────── */

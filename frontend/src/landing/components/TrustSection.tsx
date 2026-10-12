@@ -46,7 +46,7 @@ export function TrustSection() {
             </div>
             <h3>Truthful Scanner Diagnostics</h3>
             <p>
-              If a scanner tool experiences an error, timeout, or outage, Fire Crow reports
+              If a scanner tool experiences an error, timeout, or outage, Fire Crow reports{' '}
               <code>engine_unavailable</code> or <code>partial</code>. We never present a silent,
               artificial clean bill of health when a scan could not run.
             </p>

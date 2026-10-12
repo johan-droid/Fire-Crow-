@@ -25,9 +25,9 @@ export function NextLabSymbol({
   style,
   ...props
 }: LogoProps) {
-  const primaryStroke = monochrome ? 'currentColor' : '#252522';
-  const accentFill = monochrome ? 'currentColor' : '#C92F38';
-  const gridStroke = monochrome ? 'currentColor' : 'rgba(37, 37, 34, 0.25)';
+  const primaryStroke = monochrome ? 'currentColor' : '#F2F4F7';
+  const accentFill = monochrome ? 'currentColor' : '#E5484D';
+  const gridStroke = monochrome ? 'currentColor' : 'rgba(232, 235, 240, 0.25)';
 
   return (
     <svg
@@ -60,7 +60,7 @@ export function NextLabSymbol({
       {/* Experimental Laboratory Forward Vector Node (N / >) */}
       <path
         d="M9 13.5L16 9.5L23 13.5L16 17.5L9 13.5Z"
-        fill="rgba(37, 37, 34, 0.05)"
+        fill="rgba(232, 235, 240, 0.05)"
         stroke={primaryStroke}
         strokeWidth="1.25"
         strokeLinejoin="round"
@@ -105,7 +105,7 @@ export function NextLabWordmark({
         fontWeight: 700,
         letterSpacing: '-0.02em',
         fontSize: `${size}px`,
-        color: '#252522',
+        color: '#F2F4F7',
         lineHeight: 1,
       }}
     >
@@ -117,10 +117,10 @@ export function NextLabWordmark({
             fontFamily: 'var(--fc-font-mono, "JetBrains Mono", monospace)',
             fontSize: `${Math.max(10, size * 0.55)}px`,
             fontWeight: 600,
-            color: 'var(--fc-text-secondary, #77766F)',
+            color: 'var(--fc-text-secondary, #A6AEB9)',
             letterSpacing: '0.04em',
-            background: 'rgba(0, 0, 0, 0.04)',
-            border: '1px solid rgba(0, 0, 0, 0.12)',
+            background: 'rgba(255, 255, 255, 0.06)',
+            border: '1px solid rgba(255, 255, 255, 0.14)',
             padding: '2px 5px',
             borderRadius: '4px',
             textTransform: 'uppercase',
@@ -183,7 +183,7 @@ export function FireCrowSymbol({
         {/* Tactical shield perimeter gradient */}
         <linearGradient id={`fc-shield-grad-${uid}`} x1="32" y1="10" x2="78" y2="75" gradientUnits="userSpaceOnUse">
           <stop offset="0%" stopColor={monochrome ? 'currentColor' : '#FF4D4D'} />
-          <stop offset="45%" stopColor={monochrome ? 'currentColor' : '#C92F38'} />
+          <stop offset="45%" stopColor={monochrome ? 'currentColor' : '#E5484D'} />
           <stop offset="100%" stopColor={monochrome ? 'currentColor' : '#8B151B'} />
         </linearGradient>
 
@@ -494,8 +494,8 @@ export function FireCrowWordmark({
           gap: '6px',
         }}
       >
-        <span style={{ color: 'var(--fc-text-primary, #252522)' }}>FIRE</span>
-        <span style={{ color: 'var(--fc-accent, #C92F38)' }}>CROW</span>
+        <span style={{ color: 'var(--fc-text-primary, #F2F4F7)' }}>FIRE</span>
+        <span style={{ color: 'var(--fc-accent, #E5484D)' }}>CROW</span>
       </span>
 
       {withEndorsement && (
@@ -503,7 +503,7 @@ export function FireCrowWordmark({
           style={{
             fontFamily: 'var(--fc-font-mono, "JetBrains Mono", monospace)',
             fontSize: `${Math.max(9, size * 0.44)}px`,
-            color: 'var(--fc-text-secondary, #77766F)',
+            color: 'var(--fc-text-secondary, #A6AEB9)',
             letterSpacing: '0.08em',
             textTransform: 'uppercase',
             marginTop: '2px',
@@ -561,11 +561,11 @@ export function FireCrowLogo({
   }
 
   const isDark = theme === 'dark';
-  const fireColor = isDark ? '#FFFFFF' : 'var(--fc-text-primary, #252522)';
-  const crowColor = 'var(--fc-accent, #C92F38)';
-  const taglineColor = isDark ? '#A1A1AA' : 'var(--fc-text-secondary, #77766F)';
-  const endorsementColor = isDark ? '#71717A' : 'var(--fc-text-muted, #8E8D86)';
-  const ruleColor = isDark ? 'rgba(255, 255, 255, 0.16)' : 'var(--fc-border, #E7E4DE)';
+  const fireColor = isDark ? '#FFFFFF' : 'var(--fc-text-primary, #F2F4F7)';
+  const crowColor = 'var(--fc-accent, #E5484D)';
+  const taglineColor = isDark ? '#A1A1AA' : 'var(--fc-text-secondary, #A6AEB9)';
+  const endorsementColor = isDark ? '#71717A' : 'var(--fc-text-muted, #6E7683)';
+  const ruleColor = isDark ? 'rgba(255, 255, 255, 0.16)' : 'var(--fc-border, rgba(255, 255, 255, 0.09))';
 
   if (variant === 'horizontal') {
     return (
@@ -770,11 +770,11 @@ export function BrandLockup({
               fontSize: compact ? '1rem' : '1.15rem',
               fontWeight: 800,
               letterSpacing: '0.04em',
-              color: '#252522',
+              color: '#F2F4F7',
             }}
           >
             <span>FIRE </span>
-            <span style={{ color: '#C92F38' }}>CROW</span>
+            <span style={{ color: '#E5484D' }}>CROW</span>
           </span>
           <span
             className="fc-badge-sec"
@@ -782,7 +782,7 @@ export function BrandLockup({
               fontFamily: 'var(--fc-font-mono, "JetBrains Mono", monospace)',
               fontSize: '0.62rem',
               fontWeight: 600,
-              color: '#C92F38',
+              color: '#E5484D',
               background: 'rgba(201, 47, 56, 0.08)',
               border: '1px solid rgba(201, 47, 56, 0.25)',
               padding: '1px 6px',
@@ -799,7 +799,7 @@ export function BrandLockup({
           style={{
             fontFamily: 'var(--fc-font-mono, "JetBrains Mono", monospace)',
             fontSize: '0.68rem',
-            color: 'var(--fc-text-secondary, #77766F)',
+            color: 'var(--fc-text-secondary, #A6AEB9)',
             letterSpacing: '0.04em',
             display: 'flex',
             alignItems: 'center',
@@ -807,7 +807,7 @@ export function BrandLockup({
           }}
         >
           <span>PRODUCT BY</span>
-          <strong style={{ color: '#252522', fontWeight: 600 }}>NEXT LAB.inc</strong>
+          <strong style={{ color: '#F2F4F7', fontWeight: 600 }}>NEXT LAB.inc</strong>
         </span>
       </div>
     </div>
