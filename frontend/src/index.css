@@ -1,4 +1,5 @@
 @import './dashboard.css';
+@import './auth.css';
 
 :root {
   /* Apple Cupertino Color System & Glass Tokens */
@@ -3027,9 +3028,8 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 }
 
 /* ══════════════════════════════════════════════════════════════
-   LOGIN & AUTHENTICATION SYSTEM — Scoped to auth.css
+   LOGIN & AUTHENTICATION SYSTEM — Scoped to auth.css (imported at top)
    ══════════════════════════════════════════════════════════════ */
-@import './auth.css';
 
 /* ─── Dashboard overlap fixes ────────────────────
    Prevent metrics / terminal / two-col panels from visually overlapping.
