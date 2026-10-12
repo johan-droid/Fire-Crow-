@@ -1845,7 +1845,7 @@ function App() {
                     <label className="form-label">Emergency Recovery Codes — store securely, shown once</label>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
                       {(mfaEnrollment.recovery_codes || []).map((c) => (
-                        <code key={c} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', background: 'var(--fc-surface-elevated, #F0EFEB)', border: '1px solid var(--fc-border, #E7E4DE)', color: 'var(--fc-text-primary, #252522)', borderRadius: '6px', padding: '0.35rem 0.55rem' }}>{c}</code>
+                        <code key={c} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', background: 'var(--fc-surface-elevated, #1A1A1A)', border: '1px solid var(--fc-border, #2A2A2A)', color: 'var(--fc-text-primary, #FFFFFF)', borderRadius: '6px', padding: '0.35rem 0.55rem' }}>{c}</code>
                       ))}
                     </div>
                   </div>
@@ -2061,7 +2061,7 @@ function App() {
                         </div>
                       )}
                       {reportState === 'ready' && execReport && (
-                        <div style={{ marginBottom: '0.75rem', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid var(--fc-border, #E7E4DE)', background: 'var(--fc-surface-elevated, #F0EFEB)' }}>
+                        <div style={{ marginBottom: '0.75rem', padding: '0.75rem 0.9rem', borderRadius: '8px', border: '1px solid var(--fc-border, #2A2A2A)', background: 'var(--fc-surface-elevated, #1A1A1A)' }}>
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '0.3rem' }}>
                             Attempt #{execReport.identity.attempt_number} • exec {execReport.identity.execution_id.substring(0, 8)} • snapshot {(execReport.identity.snapshot_commit ?? '').substring(0, 8) || 'branch head'}
                           </div>
@@ -2202,7 +2202,7 @@ function App() {
                         </div>
                       )}
                       {narrativeState === 'ready' && narrative && (
-                        <div style={{ fontSize: '0.8rem', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid var(--fc-border, #E7E4DE)', background: 'var(--fc-surface-elevated, #F0EFEB)' }}>
+                        <div style={{ fontSize: '0.8rem', padding: '0.75rem 0.9rem', borderRadius: '8px', border: '1px solid var(--fc-border, #2A2A2A)', background: 'var(--fc-surface-elevated, #1A1A1A)' }}>
                           <p style={{ margin: '0 0 0.5rem' }}>{narrative.executive_summary}</p>
                           {narrative.finding_explanations.map(e => (
                             <div key={e.finding_id} style={{ marginBottom: '0.4rem' }}>

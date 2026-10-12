@@ -125,9 +125,9 @@ flowchart TD
 
     subgraph Sandbox ["Ephemeral Execution Boundary"]
         Proxy["docker-socket-proxy (Deny-by-Default TCP)"]
-        C_Gitleaks["Docker: Gitleaks v8.18.2 (Cap-Drop ALL)"]
-        C_Semgrep["Docker: Semgrep v1.64.0 (ReadOnly Mount)"]
-        C_OSV["Docker: OSV-Scanner v1.6.2 (Egress Guard)"]
+        C_Gitleaks["Docker: Gitleaks v8.18.4 (Cap-Drop ALL)"]
+        C_Semgrep["Docker: Semgrep 1.96.0 (ReadOnly Mount)"]
+        C_OSV["Docker: OSV-Scanner v2.2.4 (Egress Guard)"]
     end
 
     subgraph DataStore ["State & Ledger Persistence (PostgreSQL 16)"]
@@ -168,9 +168,9 @@ FireCrow orchestrates three specialized security engines. Each scanner focuses o
 
 | Scanner Engine | Pinned Version | Security Domain | Target Inputs | Output Mapping |
 | :--- | :--- | :--- | :--- | :--- |
-| **Gitleaks** | `v8.18.2` | High-Entropy Secrets, API Keys, Private Keys, Hardcoded Tokens | Source files, commit diffs, git history, configuration files | `CWE-798: Use of Hard-coded Credentials` (Secret redacted) |
-| **Semgrep** | `v1.64.0` | SAST, AST Taint Analysis, OWASP Top 10, Code Quality | Polyglot source code (Rust, JS/TS, Python, Go, Java, etc.) | `CWE-89 (SQLi)`, `CWE-79 (XSS)`, `CWE-22 (Path Traversal)`, etc. |
-| **OSV-Scanner** | `v1.6.2` | Software Supply Chain, Dependency CVEs, Transitive Risks | Lockfiles (`package-lock.json`, `Cargo.lock`, `poetry.lock`, etc.) | Upstream CVE / GHSA references with CVSS 3.1 severity scores |
+| **Gitleaks** | `v8.18.4` | High-Entropy Secrets, API Keys, Private Keys, Hardcoded Tokens | Source files, commit diffs, git history, configuration files | `CWE-798: Use of Hard-coded Credentials` (Secret redacted) |
+| **Semgrep** | `1.96.0` | SAST, AST Taint Analysis, OWASP Top 10, Code Quality | Polyglot source code (Rust, JS/TS, Python, Go, Java, etc.) | `CWE-89 (SQLi)`, `CWE-79 (XSS)`, `CWE-22 (Path Traversal)`, etc. |
+| **OSV-Scanner** | `v2.2.4` | Software Supply Chain, Dependency CVEs, Transitive Risks | Lockfiles (`package-lock.json`, `Cargo.lock`, `poetry.lock`, etc.) | Upstream CVE / GHSA references with CVSS 3.1 severity scores |
 
 ### Canonical Audit Finding Schema (v1)
 
@@ -179,7 +179,7 @@ All scanner outputs are normalized into an immutable, unified finding shape:
 ```json
 {
   "finding_id": "FC-SEC-01",
-  "scanner": "gitleaks v8.18.2",
+  "scanner": "gitleaks v8.18.4",
   "rule_id": "generic-api-key",
   "title": "Hardcoded JSON Web Token Secret in Configuration",
   "severity": "critical",
@@ -409,15 +409,29 @@ Fire-Crow-/
 
 ---
 
-## 📚 Documentation Suite
+## 📚 Documentation Suite & Engineering Handbook
 
-Explore the comprehensive technical documentation in the [`documentation/`](documentation/) directory:
+FireCrow includes an exhaustive, production-grade engineering documentation system in the [`docs/`](docs/) directory:
 
-- 📘 **[Unified Developer & Deployment Guide](documentation/DEVELOPER_GUIDE.md)**: Exhaustive manual for local development, production configuration, and failure remedies.
-- 🛡️ **[Final Security Hardening Report](documentation/FINAL_SECURITY_HARDENING_REPORT.md)**: Detailed audit report with proof of remediation for findings F1 through L11.
-- 🌐 **[API Topology & Public Origin Contract](documentation/API_TOPOLOGY.md)**: Specification for single-origin routing, CORS policies, and cookie mode isolation.
-- 🔑 **[Administrative Bootstrap Guide](documentation/BOOTSTRAP_ADMIN.md)**: Setup instructions for role-based access control and initial admin provisioning.
-- 📜 **[Historical Security Audit Baseline](documentation/INTERNAL_SECURITY_AUDIT.md)**: The original frozen audit record that guided the hardening initiative.
+- 📖 **[Master Engineering Handbook](docs/README.md)**: Master navigation index and persona-based reading pathways.
+- 🏛️ **[System Architecture & Overview](docs/architecture/overview.md)**: End-to-end architecture, audit lifecycle, and security boundaries.
+- 🗺️ **[Repository Architecture & Map](docs/architecture/repository-map.md)**: Codebase layout and the *"Where do I make this change?"* lookup matrix.
+- ⚡ **[Developer Getting Started Guide](docs/development/getting-started.md)**: Prerequisites, dev runner (`./scripts/dev.sh`), and first-run verification.
+- 🦀 **[Backend Systems Guide](docs/development/backend.md)**: Axum 0.7, stream intake bounds, Docker orchestration, and DB lifecycle triggers.
+- ⚛️ **[Frontend Engineering Guide](docs/development/frontend.md)**: React 19, API client, design token system, and testing conventions.
+- 🧪 **[Testing Strategy & Matrix](docs/development/testing.md)**: Test suite hierarchy, 166-test invariant runner, and CI workflow.
+- 🌐 **[API Specifications & Inventory](docs/api/README.md)**: Complete endpoint contract, authentication, SSE streams, and curl examples.
+- ⚙️ **[Environment & Configuration Reference](docs/configuration/environment.md)**: Exhaustive table of all backend and frontend environment variables.
+- 🚨 **[Troubleshooting & Operational Runbook](docs/operations/troubleshooting.md)**: Symptom-Cause-Diagnostic-Remediation handbook for top failure modes.
+- 🚀 **[Production Deployment Architecture](docs/deployment/README.md)**: Vercel frontend, Render backend, container sandboxing, and release checklist.
+- 🛡️ **[Security Philosophy & Threat Model](docs/security/README.md)**: Zero-trust architecture, STRIDE analysis, and incident response playbooks.
+- 🤝 **[Contributing Guide](CONTRIBUTING.md)**: Branch conventions, Conventional Commits, pre-PR checklist, and review policies.
+
+Historic security reports and specialized references are retained in [`documentation/`](documentation/):
+- 📘 [Unified Developer & Deployment Guide](documentation/DEVELOPER_GUIDE.md)
+- 🛡️ [Final Security Hardening Report](documentation/FINAL_SECURITY_HARDENING_REPORT.md)
+- 🌐 [API Topology & Public Origin Contract](documentation/API_TOPOLOGY.md)
+- 🔑 [Administrative Bootstrap Guide](documentation/BOOTSTRAP_ADMIN.md)
 
 ---
 
@@ -426,9 +440,9 @@ Explore the comprehensive technical documentation in the [`documentation/`](docu
 | Layer | Technologies & Tools |
 | :--- | :--- |
 | **Backend Core** | [Rust 1.85+](https://www.rust-lang.org/) • [Axum 0.7](https://github.com/tokio-rs/axum) • [Tokio](https://tokio.rs/) • [SQLx 0.8](https://github.com/launchbadge/sqlx) • [Tower](https://github.com/tower-rs/tower) |
-| **Frontend UI** | [React 19](https://react.dev/) • [TypeScript 5.7+](https://www.typescriptlang.org/) • [Vite 8.1](https://vitejs.dev/) • [GSAP](https://greensock.com/) • [Lucide Icons](https://lucide.dev/) |
+| **Frontend UI** | [React 19](https://react.dev/) • [TypeScript 5.7+](https://www.typescriptlang.org/) • [Vite 8.1](https://vitejs.dev/) • [Lucide Icons](https://lucide.dev/) |
 | **Database & Cache**| [PostgreSQL 16](https://www.postgresql.org/) (Triggers & Migrations) • [Redis 7](https://redis.io/) (Rate limits & pub/sub) |
-| **Security Scanners**| [Gitleaks v8.18.2](https://github.com/gitleaks/gitleaks) • [Semgrep v1.64.0](https://semgrep.dev/) • [OSV-Scanner v1.6.2](https://github.com/google/osv-scanner) |
+| **Security Scanners**| [Gitleaks v8.18.4](https://github.com/gitleaks/gitleaks) • [Semgrep 1.96.0](https://semgrep.dev/) • [OSV-Scanner v2.2.4](https://github.com/google/osv-scanner) |
 | **Sandboxing & Proxy**| [Docker Engine](https://www.docker.com/) • [docker-socket-proxy v0.5.0](https://github.com/Tecnativa/docker-socket-proxy) |
 | **Deployment Cloud**| [Vercel](https://vercel.com/) (Frontend SPA) • [Render](https://render.com/) (Docker Web Service & Managed Postgres) |
 

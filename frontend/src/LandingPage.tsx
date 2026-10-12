@@ -13,17 +13,19 @@ import { Reveal } from './landing/components/Reveal';
 import { Particles } from './landing/components/Particles';
 import './landing/styles/landing.css';
 
-export interface UserProfile {
-  user_id: string;
+export interface LandingPageUser {
+  user_id?: string;
   username: string;
   email: string | null;
   credit_balance?: number;
 }
 
+export type UserProfile = LandingPageUser;
+
 export interface LandingPageProps {
-  user?: UserProfile | null;
+  user?: LandingPageUser | null;
   onNavigateLogin: () => void;
-  onInitiateCheckout?: (amount: number, packageName: string) => void;
+  onInitiateCheckout?: (amount: number, packageName: string) => Promise<void> | void;
 }
 
 /**
@@ -74,7 +76,7 @@ export default function LandingPage({
       </div>
 
       {/* 01. Sticky Header Navigation with NEXT LAB + Fire Crow Co-Branding */}
-      <LandingNavbar onNavigateLogin={onNavigateLogin} />
+      <LandingNavbar user={user} onNavigateLogin={onNavigateLogin} />
 
       <main id="main-content" style={{ position: 'relative', zIndex: 1 }}>
         {/* 02. High-Impact Value Proposition Hero with Terminal */}

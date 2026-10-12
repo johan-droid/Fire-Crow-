@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { BrandLockup } from './BrandLogos';
 
 interface LandingNavbarProps {
+  user?: { username: string; email?: string | null; credit_balance?: number } | null;
   onNavigateLogin: () => void;
 }
 
-export function LandingNavbar({ onNavigateLogin }: LandingNavbarProps) {
+export function LandingNavbar({ user, onNavigateLogin }: LandingNavbarProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -58,9 +59,15 @@ export function LandingNavbar({ onNavigateLogin }: LandingNavbarProps) {
 
         {/* Desktop Actions */}
         <div className="fc-nav-actions">
-          <button onClick={onNavigateLogin} className="fc-nav-link fc-nav-signin-link" type="button">
-            Sign In
-          </button>
+          {user ? (
+            <span className="fc-nav-link" style={{ cursor: 'default', color: '#FFFFFF', fontWeight: 500 }}>
+              {user.username}
+            </span>
+          ) : (
+            <button onClick={onNavigateLogin} className="fc-nav-link fc-nav-signin-link" type="button">
+              Sign In
+            </button>
+          )}
           <button onClick={onNavigateLogin} className="fc-btn-primary" type="button">
             Launch Console →
           </button>
@@ -97,17 +104,23 @@ export function LandingNavbar({ onNavigateLogin }: LandingNavbarProps) {
             GitHub Repository ↗
           </a>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
-            <button
-              onClick={() => {
-                closeMenu();
-                onNavigateLogin();
-              }}
-              className="fc-btn-ghost"
-              style={{ width: '100%', justifyContent: 'center' }}
-              type="button"
-            >
-              Sign In
-            </button>
+            {user ? (
+              <div style={{ textAlign: 'center', fontSize: '0.85rem', color: '#A1A1AA', padding: '6px 0' }}>
+                Signed in as <strong style={{ color: '#FFFFFF' }}>{user.username}</strong>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  closeMenu();
+                  onNavigateLogin();
+                }}
+                className="fc-btn-ghost"
+                style={{ width: '100%', justifyContent: 'center' }}
+                type="button"
+              >
+                Sign In
+              </button>
+            )}
             <button
               onClick={() => {
                 closeMenu();

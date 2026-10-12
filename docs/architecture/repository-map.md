@@ -1,0 +1,132 @@
+# Repository Architecture & File Map
+
+This guide provides a structural index of the FireCrow codebase and a decision matrix for routing code changes to the correct files and subsystems.
+
+---
+
+## 1. Top-Level Directory Layout
+
+```
+.
+├── .github/
+│   └── workflows/
+│       └── ci.yml               # GitHub Actions CI workflow (Rust check, test, Clippy, Vite build)
+├── backend/                     # Axum 0.7 + Tokio async Rust backend service
+│   ├── Cargo.toml               # Rust dependencies and crate workspace configuration
+│   ├── Cargo.lock               # Exact pinned Rust dependency lockfile
+│   ├── Dockerfile               # Multi-stage production container build (Debian bookworm-slim)
+│   ├── migrations/              # PostgreSQL SQL migrations (schema, tables, lifecycle triggers)
+│   ├── scanners/                # Scanner-specific configurations
+│   │   └── semgrep/             # Custom Semgrep SAST rule definitions (firecrow-sast.yml)
+│   └── src/                     # Backend application source code
+├── frontend/                    # React 19 + TypeScript 5.7 + Vite single-page application
+│   ├── package.json             # Frontend dependencies and npm scripts
+│   ├── tsconfig.json            # Base TypeScript configuration
+│   ├── tsconfig.app.json        # Application-specific compiler options
+│   ├── tsconfig.node.json       # Tooling/Vite-specific compiler options
+│   ├── vite.config.ts           # Vite bundler configuration, build target, dev server proxy
+│   ├── vercel.json              # Vercel deployment routing (fail-closed static rewrite)
+│   └── src/                     # React application source code
+├── scripts/                     # Local developer experience and automation scripts
+│   ├── dev.sh                   # Unified local development launcher (DB, Backend, Frontend)
+│   └── test-dev.sh              # Headless integration test suite for dev environment
+├── documentation/               # Historic/specialized audit documentation
+│   ├── API_TOPOLOGY.md          # Endpoint route reference
+│   ├── DEVELOPER_GUIDE.md       # Onboarding reference
+│   └── INTERNAL_SECURITY_AUDIT.md # Security audit findings
+├── docs/                        # Complete Engineering Handbook (this documentation system)
+├── render.yaml                  # Infrastructure-as-code blueprint for Render deployment
+└── README.md                    # Primary repository landing and quickstart guide
+```
+
+---
+
+## 2. Backend Subsystem Layout (`backend/`)
+
+```
+backend/
+├── migrations/
+│   └── 001_initial_schema.sql       # Initial tables: users, sessions, audit_jobs, triggers
+├── scanners/
+│   └── semgrep/
+│       └── firecrow-sast.yml        # Custom OWASP & CWE rules executed by Semgrep engine
+└── src/
+    ├── main.rs                      # Binary entrypoint: initializes tracing, config, DB pool, Axum
+    ├── app.rs                       # Axum router construction, route binding, middleware mounting
+    ├── config.rs                    # Strongly typed environment configuration (AppConfig) & validation
+    ├── agents/                      # Orchestration & scanner execution pipeline
+    │   ├── mod.rs                   # Agent module exports
+    │   ├── fetch.rs                 # FetchAgent: Stream-bounded tarball download & unpack (50MB ceiling)
+    │   ├── scanner.rs               # ScannerAgent: Ephemeral Docker container manager (Gitleaks/Semgrep/OSV)
+    │   └── summary.rs               # SummaryAgent: Isolated Google Gemini executive narrative generator
+    ├── schemas/                     # Core domain data contracts
+    │   ├── mod.rs
+    │   ├── audit_state.rs           # AuditJob entity & lifecycle state enum (queued, running, completed, failed)
+    │   └── canonical_audit.rs       # Canonical Audit Schema v1 struct definitions & serde serializers
+    ├── db/                          # Database connection and queries
+    │   ├── mod.rs                   # Database connection pool manager (sqlx::PgPool)
+    │   └── audit_repo.rs            # CRUD queries for audit jobs, users, and audit records
+    ├── auth/                        # Security & authentication subsystem
+    │   ├── mod.rs
+    │   ├── middleware.rs            # Session extractor, CSRF double-submit guard, IDOR owner assertion
+    │   ├── password.rs              # Argon2id password hashing and verification
+    │   ├── totp.rs                  # RFC 6238 TOTP engine for multi-factor authentication (MFA)
+    │   └── oauth.rs                 # GitHub OAuth 2.0 authorization code flow
+    └── routes/                      # HTTP endpoint controllers
+        ├── auth.rs                  # /api/auth routes (login, logout, session, mfa)
+        ├── audit.rs                 # /api/audit routes (run, status, list, export)
+        └── health.rs                # /health, /healthz, /ready probes
+```
+
+---
+
+## 3. Frontend Subsystem Layout (`frontend/`)
+
+```
+frontend/
+├── public/                          # Static assets, favicon, logo images
+├── src/
+│   ├── main.tsx                     # React application root entrypoint
+│   ├── App.tsx                      # Root router, global auth state provider, layout shell
+│   ├── dash.tsx                     # Main security engineering dashboard (KPIs, tables, details)
+│   ├── dashboard.css                # Dashboard-specific layout, grid, and specular tokens
+│   ├── index.css                    # Global design tokens, color palette, typography, reset
+│   ├── LandingPage.tsx              # Public marketing and conversion landing page
+│   ├── landing/                     # Modular landing page sections
+│   │   └── components/
+│   │       ├── LandingNavbar.tsx    # Header navigation, brand pill, user status
+│   │       ├── HeroSection.tsx      # Terminal-style headline & primary CTAs
+│   │       ├── InteractiveAudit.tsx # Live walkthrough visualizer
+│   │       ├── ArchitectureSection.tsx # 4-stage pipeline visual cards
+│   │       ├── PricingSection.tsx   # Capacity tiers & billing toggle
+│   │       └── LandingFooter.tsx    # System status, legal, copyright
+│   ├── components/                  # Reusable UI components
+│   │   ├── AuditStatusBadge.tsx     # Color-coded job status pill
+│   │   ├── ScoreRing.tsx            # SVG circular gauge for 0-100 deterministic risk score
+│   │   ├── FindingDrawer.tsx        # Slide-out drawer with code snippet & CWE remediation
+│   │   └── Modal.tsx                # Accessible backdrop dialog
+│   └── services/
+│       └── api.ts                   # Fetch API client, CSRF header injection, typed response DTOs
+```
+
+---
+
+## 4. "Where Do I Make This Change?" Lookup Matrix
+
+Use this matrix to identify exactly which files must be created or modified for common development tasks:
+
+| Goal / Task Description | Primary Files to Touch | Supporting / Test Files |
+| :--- | :--- | :--- |
+| **Add a new API endpoint** | [backend/src/routes/](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/routes/)<br/>[backend/src/app.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/app.rs) | [frontend/src/services/api.ts](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/services/api.ts)<br/>[docs/api/README.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/api/README.md) |
+| **Add a new scanner engine** | [backend/src/agents/scanner.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/agents/scanner.rs)<br/>[backend/src/schemas/canonical_audit.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/schemas/canonical_audit.rs) | [docs/deployment/containers.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/deployment/containers.md)<br/>[docs/development/maintenance.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/development/maintenance.md) |
+| **Update SAST scanning rules** | [backend/scanners/semgrep/firecrow-sast.yml](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/scanners/semgrep/firecrow-sast.yml) | Semgrep unit test fixtures |
+| **Add a database table / column** | `backend/migrations/` (new SQL file)<br/>[backend/src/db/](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/db/) | [backend/src/schemas/](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/schemas/) |
+| **Modify audit state machine** | `backend/migrations/` (update trigger `audit_jobs_lifecycle_guard_fn`)<br/>[backend/src/schemas/audit_state.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/schemas/audit_state.rs) | [docs/architecture/adr/003-execution-lifecycle.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/architecture/adr/003-execution-lifecycle.md) |
+| **Modify risk score weights** | [backend/src/agents/scanner.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/agents/scanner.rs) (or normalizer module) | [frontend/src/dash.tsx](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/dash.tsx)<br/>[docs/development/backend.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/development/backend.md) |
+| **Change token/session expiry** | [backend/src/config.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/config.rs)<br/>[backend/src/auth/middleware.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/auth/middleware.rs) | [docs/configuration/environment.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/configuration/environment.md) |
+| **Adjust rate limiting rules** | [backend/src/app.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/app.rs) | [backend/src/config.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/config.rs)<br/>[docs/api/README.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/api/README.md) |
+| **Modify Docker sandboxing flags** | [backend/src/agents/scanner.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/agents/scanner.rs) | [docs/deployment/containers.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/deployment/containers.md)<br/>[docs/security/threat-model.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/security/threat-model.md) |
+| **Add a new dashboard view/widget** | [frontend/src/dash.tsx](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/dash.tsx)<br/>[frontend/src/dashboard.css](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/dashboard.css) | [frontend/src/services/api.ts](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/services/api.ts) |
+| **Update landing page copy/pricing** | [frontend/src/landing/components/](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/landing/components/) | [frontend/src/LandingPage.tsx](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/LandingPage.tsx) |
+| **Change global design tokens / theme**| [frontend/src/index.css](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/index.css)<br/>[frontend/src/dashboard.css](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/dashboard.css) | All UI components |
+| **Add a new test suite** | `frontend/tests/` or `backend/tests/` | [docs/development/testing.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/development/testing.md) |

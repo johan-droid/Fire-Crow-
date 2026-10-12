@@ -3,9 +3,9 @@ import { SpotlightCard } from './SpotlightCard';
 import { ShinyText } from './ShinyText';
 
 interface PricingSectionProps {
-  user?: { user_id: string; username: string } | null;
+  user?: { user_id?: string; username: string; email?: string | null; credit_balance?: number } | null;
   onNavigateLogin: () => void;
-  onInitiateCheckout?: (amount: number, packageName: string) => void;
+  onInitiateCheckout?: (amount: number, packageName: string) => Promise<void> | void;
 }
 
 export function PricingSection({ onNavigateLogin }: PricingSectionProps) {

@@ -213,15 +213,15 @@ export function ScoreRing({ score, size = 54 }: { score: number | null; size?: n
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const filled = score == null ? 0 : (value / 10) * c;
-  const color = score == null ? 'var(--fc-text-muted, #8E8D86)'
-    : value >= 8 ? '#166534'
-    : value >= 5 ? '#B45309'
-    : value >= 3 ? '#C2410C'
-    : '#991B1B';
+  const color = score == null ? 'var(--fc-text-muted, #71717A)'
+    : value >= 8 ? '#22C55E'
+    : value >= 5 ? '#F59E0B'
+    : value >= 3 ? '#FF7849'
+    : '#EF4444';
   return (
     <div className="score-ring" style={{ width: size, height: size }} title={score == null ? 'No score' : `Security score ${value}/10`}>
       <svg width={size} height={size}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--fc-border, #E7E4DE)" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--fc-border, rgba(255, 255, 255, 0.12))" strokeWidth={stroke} />
         <circle
           cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
           strokeLinecap="round" strokeDasharray={`${filled} ${c}`}
