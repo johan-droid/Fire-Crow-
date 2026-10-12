@@ -10,7 +10,7 @@ The backend is packaged using a multi-stage Docker build optimizing for small im
 
 ```dockerfile
 # Stage 1: Build binary
-FROM rust:1.85-bookworm AS builder
+FROM rust:1-bookworm AS builder
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
@@ -49,34 +49,47 @@ ENTRYPOINT ["/app/firecrow"]
 ```yaml
 services:
   - type: web
-    name: firecrow-api
+    name: firecrow-backend
     env: docker
     dockerfilePath: backend/Dockerfile
     dockerContext: backend
-    plan: standard
+    plan: free
     region: oregon
     healthCheckPath: /health
     envVars:
-      - key: PORT
-        value: 8080
       - key: DATABASE_URL
         fromDatabase:
           name: firecrow-db
           property: connectionString
-      - key: SESSION_SECRET
+      - key: SECRET_KEY
         generateValue: true
-      - key: JWT_SECRET
+      - key: ENCRYPTION_KEY
         generateValue: true
-      - key: JWT_ACCESS_TOKEN_EXPIRE_MINUTES
-        value: "15"
-      - key: CORS_ALLOWED_ORIGINS
-        value: "https://firecrow.dev,https://www.firecrow.dev"
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: AUTH_COOKIE_SAMESITE
+        value: "none"
+      - key: AUTH_COOKIE_SECURE
+        value: "true"
+      - key: DOCKER_HOST
+        sync: false
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
         value: "gemini-1.5-flash"
-      - key: WORK_DIR
-        value: "/tmp/firecrow"
+      - key: REDIS_URL
+        sync: false
+      - key: WORKSPACE_DIR
+        value: "/app"
+
+databases:
+  - name: firecrow-db
+    databaseName: firecrow
+    user: firecrow
+    plan: free
+    region: oregon
 ```
 
 ---

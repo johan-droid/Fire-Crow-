@@ -157,11 +157,10 @@ export default function LoginPage({
         {/* ─── LEFT PANEL: Studio Endorsement & Engineering Principles ─── */}
         <aside className="fc-auth-brand-panel" aria-label="Brand Overview">
           <div className="fc-auth-brand-content">
-            {/* NEXT LAB Endorsement Pill */}
+            {/* Next Lab Endorsement Pill */}
             <div className="fc-auth-studio-endorsement">
               <NextLabSymbol size={16} />
               <span>NEXT LAB</span>
-              <span className="fc-auth-studio-inc-badge">.inc</span>
               <span style={{ opacity: 0.6 }}>// STUDIO</span>
             </div>
 

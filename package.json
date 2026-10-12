@@ -6,9 +6,9 @@
     "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
     "frontend": "npm --prefix frontend run dev",
     "backend": "cd backend && cargo run",
-    "build": "npm --prefix frontend run build",
+    "build": "npm --prefix frontend install --include=dev && npm --prefix frontend run build",
     "cargo:check": "cargo check --manifest-path backend/Cargo.toml",
-    "vercel-build": "npm run build"
+    "vercel-build": "npm --prefix frontend install --include=dev && npm --prefix frontend run build"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

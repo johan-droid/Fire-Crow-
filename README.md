@@ -37,7 +37,7 @@
 
 ## 📖 Overview
 
-**FireCrow** is an enterprise-grade, deterministic repository security auditing engine and developer intelligence platform. Developed by **NEXT LAB.inc**, FireCrow addresses the critical flaws of modern automated auditing: hallucinated AI vulnerabilities, unbounded ingestion risks, and untrusted code execution on host machines.
+**FireCrow** is an enterprise-grade, deterministic repository security auditing engine and developer intelligence platform. Developed by **Next Lab**, FireCrow addresses the critical flaws of modern automated auditing: hallucinated AI vulnerabilities, unbounded ingestion risks, and untrusted code execution on host machines.
 
 FireCrow ingests immutable GitHub repository snapshots using **stream-bounded archive chunking**, executes genuine industry-standard security scanners (**Gitleaks**, **Semgrep**, **OSV-Scanner**) within **zero-privilege, ephemeral Docker micro-containers**, normalizes raw outputs into structured **Canonical Audit v1** ledgers, and derives mathematically reproducible risk scores (0–100).
 
@@ -452,8 +452,8 @@ Historic security reports and specialized references are retained in [`documenta
 
 Distributed under the **MIT License**. See [`LICENSE`](https://opensource.org/licenses/MIT) for terms.
 
-**FireCrow** is proudly engineered by **NEXT LAB.inc** as a flagship repository security auditing and deterministic vulnerability intelligence platform.
+**FireCrow** is proudly engineered by **Next Lab** as a flagship repository security auditing and deterministic vulnerability intelligence platform.
 
 <div align="center">
-<sub>Built with precision and zero trust. © 2026 NEXT LAB.inc. All rights reserved.</sub>
+<sub>Built with precision and zero trust. © 2026 Next Lab. All rights reserved.</sub>
 </div>

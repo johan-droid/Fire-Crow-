@@ -6,6 +6,8 @@
 .env
 .env.*
 !.env.example
+!frontend/.env.example
+!backend/.env.example
 *.env
 *.local
 *.pem
@@ -35,18 +37,23 @@ node_modules/
 **/node_modules/
 dist/
 dist-ssr/
+dist-tests/
 frontend/dist/
+frontend/dist-tests/
 build/
 .output/
 .next/
 out/
 .vercel/
+frontend/.vercel/
 .vite/
+frontend/.vite/
 .turbo/
 .parcel-cache/
 cache/
 *.tsbuildinfo
 tsconfig.tsbuildinfo
+frontend/tsconfig.tsbuildinfo
 # Vite / ESBuild
 *.vite
 
@@ -80,12 +87,19 @@ test-results/
 junit.xml
 *.lcov
 
+# Docker & Cloud Deployment
+docker-compose.override.yml
+.docker/
+.render/
+
 # IDE & Editor Settings
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
 !.vscode/tasks.json
 .idea/
+.zed/
+.fleet/
 .claude/
 .agents/
 .opencode/

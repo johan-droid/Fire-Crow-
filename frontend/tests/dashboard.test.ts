@@ -86,7 +86,7 @@ describe('No infrastructure clutter in console content', () => {
   });
 });
 
-describe('Ember graphite NEXT LAB.inc / Fire Crow identity', () => {
+describe('Ember graphite Next Lab / Fire Crow identity', () => {
   it('defines the restrained ember-graphite tokens', () => {
     assert.ok(dashboardCss.includes('--fc-canvas: #000000'), 'true black canvas token missing');
     assert.ok(dashboardCss.includes('--fc-surface: #000000'), 'surface token missing');
@@ -113,8 +113,8 @@ describe('Ember graphite NEXT LAB.inc / Fire Crow identity', () => {
     }
   });
 
-  it('brands the workspace as NEXT LAB.inc · Fire Crow', () => {
-    assert.ok(app.includes('NEXT LAB.inc · Fire Crow'), 'parent-brand/product eyebrow missing');
+  it('brands the workspace as Next Lab · Fire Crow', () => {
+    assert.ok(app.includes('Next Lab · Fire Crow'), 'parent-brand/product eyebrow missing');
   });
 
   it('supports reduced motion and small screens', () => {

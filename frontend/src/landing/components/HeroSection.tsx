@@ -61,11 +61,11 @@ jobs:
         <div className="fc-hero-layout">
           {/* Left Column: Value Proposition & CTAs */}
           <div className="fc-hero-copy">
-            {/* NEXT LAB.inc endorsement badge */}
-            <div className="fc-eyebrow-pill" aria-label="Endorsement by NEXT LAB.inc">
+            {/* Next Lab endorsement badge */}
+            <div className="fc-eyebrow-pill" aria-label="Endorsement by Next Lab">
               <span className="fc-brand-micro-tag">
                 <NextLabSymbol size={14} />
-                <span>NEXT LAB.inc</span>
+                <span>NEXT LAB</span>
               </span>
               <span className="fc-eyebrow-sep" aria-hidden="true">/</span>
               <span className="fc-eyebrow-text">

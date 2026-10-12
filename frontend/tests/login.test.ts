@@ -35,11 +35,10 @@ describe('LoginPage structural & a11y standards', () => {
     assert.ok(loginPage.includes('fc-auth-spinner'), 'loading spinner missing');
   });
 
-  it('contains NEXT LAB.inc studio endorsement and Fire Crow product symbols', () => {
+  it('contains Next Lab studio endorsement and Fire Crow product symbols', () => {
     assert.ok(loginPage.includes('NextLabSymbol'), 'NextLabSymbol missing');
     assert.ok(loginPage.includes('FireCrowSymbol'), 'FireCrowSymbol missing');
     assert.ok(loginPage.includes('NEXT LAB'), 'NEXT LAB text missing');
-    assert.ok(loginPage.includes('.inc'), '.inc badge missing');
   });
 
   it('contains the three deterministic engineering guarantees', () => {

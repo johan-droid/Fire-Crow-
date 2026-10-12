@@ -18,7 +18,7 @@ export function LandingFooter() {
                   Fire Crow
                 </span>
                 <span style={{ fontFamily: 'var(--fc-font-mono)', fontSize: '0.66rem', color: 'var(--fc-warm-subtle)', letterSpacing: '0.04em' }}>
-                  BY NEXT LAB.inc
+                  BY NEXT LAB
                 </span>
               </div>
             </div>
@@ -31,7 +31,7 @@ export function LandingFooter() {
             <div className="fc-footer-studio-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '16px' }}>
               <NextLabSymbol size={16} />
               <span style={{ fontFamily: 'var(--fc-font-mono)', fontSize: '0.72rem', color: 'var(--fc-warm-muted)' }}>
-                NEXT LAB.inc // ENGINEERING STUDIO
+                NEXT LAB // ENGINEERING STUDIO
               </span>
             </div>
           </div>
@@ -49,7 +49,7 @@ export function LandingFooter() {
 
           {/* Parent Company Ecosystem */}
           <div>
-            <div className="fc-footer-col-title">NEXT LAB.inc</div>
+            <div className="fc-footer-col-title">NEXT LAB</div>
             <ul className="fc-footer-links">
               <li><a href="#studio">Engineering Studio</a></li>
               <li><a href="#studio">Zero Black Boxes</a></li>
@@ -100,7 +100,7 @@ export function LandingFooter() {
         {/* Bottom Bar */}
         <div className="fc-footer-bottom">
           <div style={{ fontSize: '0.78rem', color: 'var(--fc-warm-subtle)' }}>
-            © {new Date().getFullYear()} <strong>NEXT LAB.inc</strong>. Fire Crow is a flagship security product by NEXT LAB.inc. All rights reserved.
+            © {new Date().getFullYear()} <strong>Next Lab</strong>. Fire Crow is a flagship security product by Next Lab. All rights reserved.
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>

@@ -1085,7 +1085,7 @@ function App() {
                   and how to fix it. */}
               <header className="page-head">
                 <div className="page-head-main">
-                  <p className="page-eyebrow">NEXT LAB.inc · Fire Crow</p>
+                  <p className="page-eyebrow">Next Lab · Fire Crow</p>
                   <h1 className="page-head-title">Overview</h1>
                   <p className="page-head-sub">
                     Developer security intelligence for your GitHub repositories — verified findings, evidence, and fixes.
@@ -1451,7 +1451,7 @@ function App() {
             <>
               <header className="page-head">
                 <div className="page-head-main">
-                  <p className="page-eyebrow">NEXT LAB.inc · Fire Crow</p>
+                  <p className="page-eyebrow">Next Lab · Fire Crow</p>
                   <h1 className="page-head-title">Repositories</h1>
                   <p className="page-head-sub">
                     Connected GitHub repositories and everything audited so far.
@@ -1664,7 +1664,7 @@ function App() {
             <>
               <header className="page-head">
                 <div className="page-head-main">
-                  <p className="page-eyebrow">NEXT LAB.inc · Fire Crow</p>
+                  <p className="page-eyebrow">Next Lab · Fire Crow</p>
                   <h1 className="page-head-title">Findings</h1>
                   <p className="page-head-sub">
                     Verified scanner evidence per audit run — severity, file and line, evidence, remediation, references.
@@ -1745,7 +1745,7 @@ function App() {
             <>
               <header className="page-head">
                 <div className="page-head-main">
-                  <p className="page-eyebrow">NEXT LAB.inc · Fire Crow</p>
+                  <p className="page-eyebrow">Next Lab · Fire Crow</p>
                   <h1 className="page-head-title">Settings</h1>
                   <p className="page-head-sub">
                     Your account and sign-in security.

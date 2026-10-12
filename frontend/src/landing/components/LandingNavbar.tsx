@@ -24,9 +24,9 @@ export function LandingNavbar({ user, onNavigateLogin }: LandingNavbarProps) {
   return (
     <nav className="fc-nav" aria-label="Main Navigation">
       <div className="fc-container fc-nav-container">
-        {/* Brand Lockup: Fire Crow as product, NEXT LAB.inc as parent */}
+        {/* Brand Lockup: Fire Crow as product, Next Lab as parent */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-          <a href="#top" className="fc-logo-group" onClick={closeMenu} aria-label="Fire Crow by NEXT LAB.inc Homepage">
+          <a href="#top" className="fc-logo-group" onClick={closeMenu} aria-label="Fire Crow by Next Lab Homepage">
             <BrandLockup compact={false} />
           </a>
           <a href="#workflow" className="fc-nav-status-pill" title="All 3 scanning engines healthy & operational">

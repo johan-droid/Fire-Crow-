@@ -30,7 +30,7 @@ export function FinalCTA({ onNavigateLogin }: FinalCTAProps) {
           <div className="fc-cta-brand-tag" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
             <NextLabSymbol size={16} />
             <span style={{ fontFamily: 'var(--fc-font-mono)', fontSize: '0.74rem', color: 'var(--fc-warm-muted)', letterSpacing: '0.06em' }}>
-              <ShinyText text="NEXT LAB.inc // FIRE CROW SECURITY" shineColor="#E5484D" />
+              <ShinyText text="NEXT LAB // FIRE CROW SECURITY" shineColor="#E5484D" />
             </span>
           </div>
 

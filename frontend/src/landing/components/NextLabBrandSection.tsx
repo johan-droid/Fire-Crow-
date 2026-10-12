@@ -21,7 +21,7 @@ export function NextLabBrandSection() {
           </h2>
 
           <p className="fc-section-desc" style={{ maxWidth: '600px', margin: '0', textAlign: 'left' }}>
-            <strong>NEXT LAB.inc</strong> is an independent, engineering-first software studio.
+            <strong>Next Lab</strong> is an independent, engineering-first software studio.
             We build precise, developer-centric tools designed to make complex systems more secure,
             transparent, and mathematically verifiable. Fire Crow is our flagship security auditing product.
           </p>
@@ -91,7 +91,7 @@ export function NextLabBrandSection() {
               </div>
               <h3 className="fc-studio-title">Architected for multiple tools</h3>
               <p className="fc-studio-p">
-                Fire Crow adopts NEXT LAB.inc’s unified visual grammar—precise grids, fine borders,
+                Fire Crow adopts Next Lab’s unified visual grammar—precise grids, fine borders,
                 layered surfaces, and purposeful motion. As the studio releases additional developer tools,
                 they share this foundation.
               </p>
@@ -108,7 +108,7 @@ export function NextLabBrandSection() {
             <div className="fc-blueprint-brand">
               <NextLabSymbol size={20} />
               <div>
-                <span className="fc-blueprint-parent">NEXT LAB.inc</span>
+                <span className="fc-blueprint-parent">NEXT LAB</span>
                 <span className="fc-blueprint-sub">Independent Developer Tools</span>
               </div>
             </div>

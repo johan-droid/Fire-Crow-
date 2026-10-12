@@ -29,7 +29,7 @@ export interface LandingPageProps {
 }
 
 /**
- * NEXT LAB.inc // Fire Crow — Flagship Developer Security Auditing Platform
+ * Next Lab // Fire Crow — Flagship Developer Security Auditing Platform
  *
  * Engineering-first brand identity: deep charcoal canvas, graphite surfaces,
  * warm off-white typography, restrained crimson, and distinctive burnt-orange accent.
@@ -87,7 +87,7 @@ export default function LandingPage({
           <ProductPreview onNavigateLogin={onNavigateLogin} />
         </Reveal>
 
-        {/* 04. Parent Brand & Engineering Studio (NEXT LAB.inc Positioning & Pillars) */}
+        {/* 04. Parent Brand & Engineering Studio (Next Lab Positioning & Pillars) */}
         <div id="studio" style={{ scrollMarginTop: '88px' }}>
           <Reveal>
             <NextLabBrandSection />

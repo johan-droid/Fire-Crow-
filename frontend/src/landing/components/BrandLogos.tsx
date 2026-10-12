@@ -12,7 +12,7 @@ export interface FireCrowSymbolProps extends LogoProps {
 }
 
 /**
- * NEXT LAB.inc — Parent Brand Geometric Symbol.
+ * Next Lab — Parent Brand Geometric Symbol.
  *
  * An engineered isometric prism with an offset forward accelerator vector ('>').
  * Represents experimental engineering, precision coordinates, and forward momentum.
@@ -37,7 +37,7 @@ export function NextLabSymbol({
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={`nextlab-symbol ${className}`}
-      aria-label="NEXT LAB.inc Symbol"
+      aria-label="Next Lab Symbol"
       style={{ flexShrink: 0, ...style }}
       {...props}
     >
@@ -82,12 +82,12 @@ export function NextLabSymbol({
 }
 
 /**
- * NEXT LAB.inc — Wordmark.
- * Precision editorial display typography paired with a monospace corporation badge.
+ * Next Lab — Wordmark.
+ * Precision editorial display typography.
  */
 export function NextLabWordmark({
   size = 18,
-  showInc = true,
+  showInc = false,
   className = '',
 }: {
   size?: number;
@@ -509,7 +509,7 @@ export function FireCrowWordmark({
             marginTop: '2px',
           }}
         >
-          by NEXT LAB.inc
+          by Next Lab
         </span>
       )}
     </span>
@@ -523,7 +523,7 @@ export function FireCrowWordmark({
  * - Geometric pattern-based animatic raven crest with tactical shield.
  * - Bold display typography ("FIRE CROW").
  * - Precision motto subtitle ("SECURE · SCAN · REMEDIATE").
- * - NEXT LAB.inc parent studio endorsement rule lockup.
+ * - Next Lab parent studio endorsement rule lockup.
  */
 export interface FireCrowLogoProps {
   size?: number;
@@ -630,7 +630,7 @@ export function FireCrowLogo({
                 marginTop: '1px',
               }}
             >
-              by NEXT LAB.inc
+              by Next Lab
             </div>
           )}
         </div>
@@ -719,7 +719,7 @@ export function FireCrowLogo({
                 display: 'inline-block',
               }}
             />
-            <span>NEXT LAB.inc</span>
+            <span>NEXT LAB</span>
             <span
               style={{
                 width: '32px',
@@ -737,7 +737,7 @@ export function FireCrowLogo({
 
 /**
  * Co-branded Dual Identity Lockup:
- * Highlights Fire Crow as the flagship security product while anchoring NEXT LAB.inc as the parent company.
+ * Highlights Fire Crow as the flagship security product while anchoring Next Lab as the parent company.
  */
 export function BrandLockup({
   compact = false,
@@ -808,7 +808,7 @@ export function BrandLockup({
           }}
         >
           <span>PRODUCT BY</span>
-          <strong style={{ color: '#F2F4F7', fontWeight: 600 }}>NEXT LAB.inc</strong>
+          <strong style={{ color: '#F2F4F7', fontWeight: 600 }}>NEXT LAB</strong>
         </span>
       </div>
     </div>

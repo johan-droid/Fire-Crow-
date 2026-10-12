@@ -1,6 +1,6 @@
 # FireCrow Engineering Handbook
 
-Welcome to the comprehensive engineering documentation system for **FireCrow** (`johan-droid/Fire-Crow-`), an enterprise-grade repository security auditing platform developed by NEXT LAB.inc.
+Welcome to the comprehensive engineering documentation system for **FireCrow** (`johan-droid/Fire-Crow-`), an enterprise-grade repository security auditing platform developed by Next Lab.
 
 FireCrow executes deterministic, sandboxed multi-engine security scans (Gitleaks, Semgrep, OSV-Scanner) inside zero-privilege Docker containers, normalizes results into immutable Canonical Audit v1 records, derives reproducible risk scores (0–100), and provides an isolated AI narrative layer that is strictly prevented from altering findings or scores.
 

@@ -26,6 +26,27 @@ services:
         sync: false
       - key: CORS_ORIGINS
         sync: false
+      # Cross-origin authentication (FC-DEP-01): when frontend is on Vercel (*.vercel.app)
+      # and backend is on Render (*.onrender.com), browsers require SameSite=none with Secure=true
+      # for credentials: 'include' session cookies to be transmitted across origins.
+      - key: AUTH_COOKIE_SAMESITE
+        value: "none"
+      - key: AUTH_COOKIE_SECURE
+        value: "true"
+      # Scanner execution (FC-DEP-04): points Axum backend to Docker daemon / proxy
+      # e.g., tcp://<host>:2375 (remote Docker engine, cloud VPS, or tunnel)
+      - key: DOCKER_HOST
+        sync: false
+      # AI Executive narrative generation
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: "gemini-1.5-flash"
+      # Optional Redis cache & rate limiting
+      - key: REDIS_URL
+        sync: false
+      - key: WORKSPACE_DIR
+        value: "/app"
 
 databases:
   - name: firecrow-db
