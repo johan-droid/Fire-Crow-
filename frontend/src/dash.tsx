@@ -213,20 +213,20 @@ export function ScoreRing({ score, size = 54 }: { score: number | null; size?: n
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const filled = score == null ? 0 : (value / 10) * c;
-  const color = score == null ? 'rgba(255,255,255,0.15)'
-    : value >= 8 ? '#30d158'
-    : value >= 5 ? '#ffd60a'
-    : value >= 3 ? '#ff8533'
-    : '#ff453a';
+  const color = score == null ? 'var(--fc-text-muted, #8E8D86)'
+    : value >= 8 ? '#166534'
+    : value >= 5 ? '#B45309'
+    : value >= 3 ? '#C2410C'
+    : '#991B1B';
   return (
     <div className="score-ring" style={{ width: size, height: size }} title={score == null ? 'No score' : `Security score ${value}/10`}>
       <svg width={size} height={size}>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--fc-border, #E7E4DE)" strokeWidth={stroke} />
         <circle
           cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
           strokeLinecap="round" strokeDasharray={`${filled} ${c}`}
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
-          style={{ transition: 'stroke-dasharray .8s cubic-bezier(.16,1,.3,1)' }}
+          style={{ transition: 'stroke-dasharray .6s cubic-bezier(.16,1,.3,1)' }}
         />
       </svg>
       <span className="score-ring-value" style={{ color, fontSize: size * 0.26 }}>
@@ -244,7 +244,7 @@ export function SeverityBars({ findings }: { findings: { severity: string }[] })
   }));
   const max = Math.max(1, ...counts.map((c) => c.n));
   const colors: Record<string, string> = {
-    critical: '#ff453a', high: '#ff8533', medium: '#ffd60a', low: '#2997ff', info: 'rgba(255,255,255,0.25)',
+    critical: '#991B1B', high: '#C2410C', medium: '#B45309', low: '#1E40AF', info: '#77766F',
   };
   return (
     <div className="sev-bars">
@@ -256,7 +256,6 @@ export function SeverityBars({ findings }: { findings: { severity: string }[] })
               style={{
                 height: `${Math.max(n > 0 ? 8 : 0, (n / max) * 100)}%`,
                 background: colors[sev],
-                boxShadow: n > 0 ? `0 0 8px ${colors[sev]}55` : 'none',
               }}
             />
           </div>

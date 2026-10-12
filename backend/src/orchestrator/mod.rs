@@ -372,6 +372,8 @@ pub async fn execute_audit_job(
         }
     }
 
+    broadcast_job_progress(pool, job_id).await;
+
     tracing::info!(
         "[orchestrator] Job {} finalized with status {:?} and score {:?}",
         job_id,
@@ -1156,6 +1158,7 @@ async fn log_phase_skipped(
         .bind(reason)
         .execute(pool)
         .await;
+    broadcast_job_progress(pool, job_id).await;
     Ok(())
 }
 
@@ -1168,6 +1171,7 @@ async fn log_phase_started(
     let id = generate_uuid();
     let _ = sqlx::query("INSERT INTO phase_ledger (id, job_id, execution_id, phase_name, status, mode, started_at) VALUES ($1,$2,$3,$4,'started','real',$5)")
         .bind(id).bind(job_id).bind(execution_id).bind(phase).bind(Utc::now().naive_utc()).execute(pool).await;
+    broadcast_job_progress(pool, job_id).await;
     Ok(())
 }
 
@@ -1183,5 +1187,47 @@ async fn log_phase_completed(
     let duration = (ended_at - started_at).num_milliseconds() as f64 / 1000.0;
     let _ = sqlx::query("UPDATE phase_ledger SET status=$1, ended_at=$2, duration_sec=$3, error_message=$4 WHERE id IN (SELECT id FROM phase_ledger WHERE job_id=$5 AND phase_name=$6 AND status='started' ORDER BY started_at DESC LIMIT 1)")
         .bind(status).bind(ended_at.naive_utc()).bind(duration).bind(error_message).bind(job_id).bind(phase).execute(pool).await;
+    broadcast_job_progress(pool, job_id).await;
     Ok(())
+}
+
+pub async fn broadcast_job_progress(pool: &PgPool, job_id: &str) {
+    let job: Option<crate::models::AuditJob> =
+        match sqlx::query_as::<_, crate::models::AuditJob>("SELECT * FROM audit_jobs WHERE id=$1")
+            .bind(job_id)
+            .fetch_optional(pool)
+            .await
+        {
+            Ok(j) => j,
+            Err(e) => {
+                tracing::warn!("Failed to fetch audit job {job_id} for broadcast: {e}");
+                return;
+            }
+        };
+
+    let Some(job) = job else {
+        return;
+    };
+
+    let phases: Vec<crate::models::PhaseLedgerModel> =
+        sqlx::query_as::<_, crate::models::PhaseLedgerModel>(
+            "SELECT * FROM phase_ledger WHERE job_id=$1 ORDER BY started_at ASC",
+        )
+        .bind(job_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+    let is_terminal = job.status.is_terminal();
+
+    let event = crate::state::JobBroadcastEvent {
+        job_id: job.id.clone(),
+        user_id: job.user_id.clone(),
+        status: job.status.as_str().to_string(),
+        job: Some(crate::schemas::audit_api::JobResponse::from(job)),
+        phases: Some(phases),
+        is_terminal,
+    };
+
+    let _ = crate::state::broadcast_job_event(event);
 }

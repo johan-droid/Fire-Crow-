@@ -279,24 +279,39 @@ fn frontend_does_not_render_engine_unavailable_as_a_pending_or_clean_scan() {
     )
     .expect("App.tsx must be readable");
 
+    // The findings explorer's empty branch (post explorer-refactor spelling).
     let at = src
-        .find("selectedJobDetail.findings.length === 0")
+        .find("explorerFindings.length === 0")
         .expect("the empty-findings branch must exist");
     let branch = &src[at..];
     let end = branch.find(") : (").unwrap_or(branch.len());
     let branch = &branch[..end];
 
+    // The detail panel owning the branch must handle engine_unavailable
+    // explicitly and say that no analysis was performed — not silence.
+    let panel_start = at.saturating_sub(3000);
+    let panel = &src[panel_start..(at + 3000).min(src.len())];
     assert!(
-        branch.contains("engine_unavailable"),
-        "the empty-findings branch must handle engine_unavailable explicitly"
+        panel.contains("engine_unavailable"),
+        "the findings panel must handle engine_unavailable explicitly"
     );
     assert!(
-        branch.contains("No analysis was performed"),
+        panel.contains("No analysis was performed"),
         "it must say that no analysis was performed"
     );
+
+    // The clean label may only be produced behind an explicit
+    // `status === 'completed'` guard inside the empty branch. An
+    // engine_unavailable (or any non-completed) job can never reach it.
+    let clean_at = branch
+        .find("'Clean audit")
+        .expect("the clean label lives in the empty branch");
+    let guard_start = branch[..clean_at]
+        .rfind("status ===")
+        .expect("the clean label must be guarded by a status check");
     assert!(
-        branch.find("engine_unavailable").unwrap()
-            < branch.find("'completed'").unwrap_or(usize::MAX),
-        "engine_unavailable must be checked BEFORE completed, or a clean-scan label could win"
+        branch[guard_start..clean_at].contains("'completed'"),
+        "the clean label must be guarded by status === 'completed', or an \
+         unavailable engine could render as a clean scan"
     );
 }

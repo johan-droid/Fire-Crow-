@@ -171,6 +171,10 @@ async fn infra_seeded_user_can_authenticate(pool: sqlx::PgPool) {
 async fn infra_internal_database_errors_are_not_leaked(pool: sqlx::PgPool) {
     let app = test_app(pool.clone()).await;
     let user = support::seed_user(&pool, "errleak").await;
+    // FC-AUTHZ-01: the list endpoint is platform-admin-only, so the fixture
+    // must hold platform authority to reach the handler's query at all — the
+    // leak under test is about the sanitizer, not the authorization gate.
+    support::grant_admin(&pool, &user).await;
 
     // Force the handler's query to fail at runtime. CASCADE is required because
     // role_permissions currently holds a foreign key onto iam_policies; this is a

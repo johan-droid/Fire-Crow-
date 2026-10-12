@@ -24,7 +24,13 @@ pub async fn list_tenants(
     let tenants = if user.tenant_id.is_empty() {
         Vec::new()
     } else {
-        TenantService::list_for_tenant(state.pool(), &user.tenant_id).await?
+        let tenants = TenantService::list_for_tenant(state.pool(), &user.tenant_id).await?;
+        // A deactivated tenant must not keep serving tenant data to members
+        // holding still-valid user sessions.
+        if tenants.iter().any(|t| !t.is_active) {
+            return Err(AppError::Forbidden("Tenant is not active".into()));
+        }
+        tenants
     };
     Ok(Json(tenants))
 }
@@ -49,22 +55,29 @@ pub async fn get_tenant(
         return Err(AppError::Forbidden("Tenant access denied".into()));
     }
     let t = TenantService::get_by_id(state.pool(), &id).await?;
-    if let Some(tenant) = t {
-        Ok(Json(tenant))
-    } else {
-        TenantService::get_by_slug(state.pool(), &id)
+    match t {
+        Some(tenant) if !tenant.is_active => {
+            Err(AppError::Forbidden("Tenant is not active".into()))
+        }
+        Some(tenant) => Ok(Json(tenant)),
+        None => TenantService::get_by_slug(state.pool(), &id)
             .await?
+            .filter(|tenant| tenant.is_active)
             .map(Json)
-            .ok_or_else(|| AppError::NotFound("Tenant not found".into()))
+            .ok_or_else(|| AppError::NotFound("Tenant not found".into())),
     }
 }
 
 pub async fn update_tenant(
     State(state): State<Arc<crate::AppState>>,
-    _admin: crate::middleware::auth::AdminUser,
+    // Tenant-scoped administration: platform admins may update any tenant; a
+    // tenant administrator may update only the tenant they belong to, and only
+    // while that tenant is active.
+    user: crate::middleware::auth::AuthenticatedUser,
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<Tenant>> {
+    crate::middleware::auth::authorize_tenant_admin(state.pool(), &user, &id).await?;
     let updates = TenantUpdate {
         name: payload
             .get("name")
@@ -108,9 +121,12 @@ pub async fn update_tenant(
 
 pub async fn deactivate_tenant(
     State(state): State<Arc<crate::AppState>>,
-    _admin: crate::middleware::auth::AdminUser,
+    // Same authority rule as update: platform admin, or the tenant's own
+    // administrator while the tenant is still active.
+    user: crate::middleware::auth::AuthenticatedUser,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
+    crate::middleware::auth::authorize_tenant_admin(state.pool(), &user, &id).await?;
     let ok = TenantService::deactivate(state.pool(), &id).await?;
     if ok {
         Ok(Json(serde_json::json!({"status": "deactivated", "id": id})))

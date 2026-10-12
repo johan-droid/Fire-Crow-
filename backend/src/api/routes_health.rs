@@ -15,6 +15,11 @@ pub async fn health_deep(State(state): State<Arc<crate::AppState>>) -> impl Into
             "status": if db_ok { "healthy" } else { "unhealthy" },
             "database": if db_ok { "ok" } else { "error" },
             "local_storage": "ok",
+            // Capability honesty (FC-DEP-04): scanner execution needs a Docker
+            // endpoint. Without DOCKER_HOST (or an equivalent daemon), scans
+            // fail closed with `engine_unavailable`; this field makes that
+            // deployment limitation visible before anyone submits a job.
+            "docker": if std::env::var("DOCKER_HOST").is_ok() { "configured" } else { "unavailable" },
             "version": env!("CARGO_PKG_VERSION")
         })),
     )

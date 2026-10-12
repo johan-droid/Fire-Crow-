@@ -13,12 +13,25 @@ mod support;
 use axum_test::TestServer;
 use sqlx::PgPool;
 
-/// Tokens minted by the login response: access from the JSON body, refresh
-/// from the `Set-Cookie` jar (`{cookie}_refresh`, with the legacy
-/// `refresh_token` name as fallback — mirroring the server's read order).
+/// Tokens minted by the login response, both read from the `Set-Cookie` jar:
+/// the access token is deliberately NOT in the JSON body (HttpOnly-cookie-only
+/// hardening), so the helper parses the `fc_access_token` cookie exactly as a
+/// browser jar would. Refresh comes from `{cookie}_refresh`, with the legacy
+/// `refresh_token` name as fallback — mirroring the server's read order.
 struct Session {
     access: String,
     refresh: String,
+}
+
+fn access_from_set_cookies(res: &axum_test::TestResponse) -> String {
+    for value in res.headers().get_all("set-cookie").iter() {
+        let pair = value.to_str().unwrap_or("").split(';').next().unwrap_or("");
+        let (name, val) = pair.split_once('=').unwrap_or(("", ""));
+        if name == "fc_access_token" && !val.is_empty() {
+            return val.to_string();
+        }
+    }
+    panic!("login must set an fc_access_token cookie")
 }
 
 fn refresh_from_set_cookies(res: &axum_test::TestResponse) -> String {
@@ -43,11 +56,7 @@ async fn login(app: &TestServer, pool: &PgPool) -> (support::SeededUser, Session
         .json(&serde_json::json!({"username": user.username, "password": user.password}))
         .await;
     assert_eq!(res.status_code(), 200, "login must succeed: {}", res.text());
-    let body: serde_json::Value = res.json();
-    let access = body["access_token"]
-        .as_str()
-        .expect("access token in body")
-        .to_string();
+    let access = access_from_set_cookies(&res);
     let refresh = refresh_from_set_cookies(&res);
     (user, Session { access, refresh })
 }
@@ -138,11 +147,7 @@ async fn v2_refresh_rotation_is_single_use(pool: PgPool) {
         "first refresh works: {}",
         res.text()
     );
-    let body: serde_json::Value = res.json();
-    let new_access = body["access_token"]
-        .as_str()
-        .expect("new access")
-        .to_string();
+    let new_access = access_from_set_cookies(&res);
     assert_eq!(me(&app, &new_access).await, 200, "rotated access works");
 
     let replay = refresh_with(&app, &session.refresh).await;
@@ -199,14 +204,12 @@ async fn v2_sessions_are_isolated(pool: PgPool) {
 
     let res_a = app.post("/api/v1/auth/login").json(&payload).await;
     assert_eq!(res_a.status_code(), 200);
-    let body_a: serde_json::Value = res_a.json();
-    let access_a = body_a["access_token"].as_str().unwrap().to_string();
+    let access_a = access_from_set_cookies(&res_a);
 
     let app2 = support::test_app(pool.clone()).await;
     let res_b = app2.post("/api/v1/auth/login").json(&payload).await;
     assert_eq!(res_b.status_code(), 200);
-    let body_b: serde_json::Value = res_b.json();
-    let access_b = body_b["access_token"].as_str().unwrap().to_string();
+    let access_b = access_from_set_cookies(&res_b);
     let refresh_b = refresh_from_set_cookies(&res_b);
 
     let out = app
@@ -250,11 +253,7 @@ async fn v2_concurrent_refresh_has_one_winner(pool: PgPool) {
     );
 
     let winner = if codes[0] == 200 { res_a } else { res_b };
-    let body: serde_json::Value = winner.json();
-    let winner_access = body["access_token"]
-        .as_str()
-        .expect("winner access")
-        .to_string();
+    let winner_access = access_from_set_cookies(&winner);
     let app_c = support::test_app(pool.clone()).await;
     assert_eq!(
         me(&app_c, &winner_access).await,

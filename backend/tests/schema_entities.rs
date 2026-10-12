@@ -100,6 +100,9 @@ async fn seed_artifact(pool: &PgPool, job_id: &str, user_id: &str) -> String {
 async fn sso_list_providers_decodes_seeded_rows(pool: PgPool) {
     let app = support::test_app(pool.clone()).await;
     let user = support::seed_user(&pool, "sso").await;
+    // FC-AUTHZ-01: this endpoint is platform-admin-only; the decode exercise
+    // needs an authorized fixture so the gate does not mask the FromRow check.
+    support::grant_admin(&pool, &user).await;
 
     // Empty table must still work.
     let empty = app
@@ -134,6 +137,9 @@ async fn sso_list_providers_decodes_seeded_rows(pool: PgPool) {
 async fn iam_list_policies_decodes_seeded_rows(pool: PgPool) {
     let app = support::test_app(pool.clone()).await;
     let user = support::seed_user(&pool, "iam").await;
+    // FC-AUTHZ-01: platform-admin-only endpoint; authorize the fixture so the
+    // decode check (not the gate) is what this test exercises.
+    support::grant_admin(&pool, &user).await;
 
     seed_policy(&pool).await;
     let res = app

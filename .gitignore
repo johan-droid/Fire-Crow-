@@ -90,6 +90,7 @@ junit.xml
 .agents/
 .opencode/
 .cursor/
+.playwright-mcp/
 *.swp
 *.swo
 *.suo

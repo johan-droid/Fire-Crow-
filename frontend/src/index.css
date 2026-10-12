@@ -96,9 +96,9 @@
    Every accent surface in the app derives from these two seeds using
    color-mix(), so switching the attribute recolors the whole UI live.
    ───────────────────────────────────────────────────────────── */
-html[data-accent='ember'] {
-  --accent: var(--accent);
-  --accent-bright: var(--accent-bright);
+html[data-accent='ember'], :root {
+  --accent: #C92F38;
+  --accent-bright: #A9232D;
 }
 html[data-accent='azure'] {
   --accent: #0071e3;
@@ -1185,7 +1185,7 @@ body {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--accent), var(--apple-purple));
+  background: linear-gradient(135deg, var(--accent), #A82028);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1210,11 +1210,11 @@ body {
   border-radius: 8px;
   display: flex;
   align-items: center;
-  opacity: 0;
-  transition: opacity 0.25s var(--apple-ease), color 0.2s ease, background 0.2s ease;
+  opacity: 0.65;
+  transition: opacity 0.2s var(--apple-ease), color 0.2s ease, background 0.2s ease;
 }
 .nav-island:hover .island-logout,
-.nav-island:focus-within .island-logout { opacity: 1; transition-delay: 0.1s; }
+.nav-island:focus-within .island-logout { opacity: 1; }
 .island-logout:hover { color: var(--apple-red); background: var(--apple-red-dim); }
 
 @media (max-width: 900px) {
@@ -2860,9 +2860,10 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 }
 .aurora-dashboard .aurora-grid { opacity: 0.5; }
 
-/* Dashboard shell keeps content above the backdrop */
+/* Dashboard shell keeps content above the backdrop. The navigation island
+   keeps its own z-index so it stays clickable above the main column. */
 .shell { position: relative; }
-.shell > *:not(.aurora-backdrop) { position: relative; z-index: 1; }
+.shell > *:not(.aurora-backdrop):not(.nav-island) { position: relative; z-index: 1; }
 
 /* ─── Scroll reveal choreography (landing sections) ────────── */
 .reveal {
@@ -2912,8 +2913,8 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
     box-shadow 0.4s var(--apple-ease);
 }
 .metric-card:hover {
-  transform: perspective(750px) rotateX(2.5deg) rotateY(-2.5deg) translateY(-3px);
-  box-shadow: var(--shadow-glow-orange);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
 /* ─── Reduced motion: collapse everything to static art ────── */
@@ -3252,208 +3253,9 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 }
 
 /* ══════════════════════════════════════════════════════════════
-   LOGIN PAGE — Clean CSS replacing all inline styles
+   LOGIN & AUTHENTICATION SYSTEM — Scoped to auth.css
    ══════════════════════════════════════════════════════════════ */
-
-.login-page {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #050506;
-  background-image: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.02) 0%, transparent 80%);
-  padding: 1.5rem;
-  position: relative;
-}
-
-.login-card {
-  width: 100%;
-  max-width: 440px;
-  background: rgba(12, 13, 18, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  padding: 2.5rem 2rem;
-  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  text-align: center;
-  position: relative;
-  z-index: 2;
-  animation: loginCardIn 1s var(--apple-spring) backwards;
-}
-
-.login-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 1.75rem;
-}
-
-.login-logo-pair {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
-}
-
-.login-logo-box {
-  width: 50px;
-  height: 50px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
-}
-.login-logo-github {
-  background: #24292e;
-  border-color: rgba(255, 255, 255, 0.15);
-}
-.login-logo-img {
-  width: 34px;
-  height: 34px;
-}
-.login-logo-plus {
-  font-size: 1.2rem;
-  color: var(--text-muted);
-}
-
-.login-title {
-  font-size: 1.5rem;
-  font-weight: 800;
-  margin: 0;
-  letter-spacing: -0.03em;
-  color: #ffffff;
-}
-
-.login-subtitle {
-  font-size: 0.82rem;
-  color: var(--text-secondary);
-  margin-top: 0.4rem;
-  letter-spacing: -0.01em;
-  line-height: 1.5;
-}
-
-/* ─── GitHub Sign In Button ───────────────────── */
-.login-github-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  background: #ffffff;
-  color: #000000;
-  padding: 0.9rem;
-  font-size: 0.92rem;
-  font-weight: 700;
-  border-radius: 10px;
-  border: none;
-  cursor: pointer;
-  box-shadow: 0 4px 20px rgba(255, 255, 255, 0.15);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  margin-bottom: 1.5rem;
-  font-family: var(--font-sans);
-}
-.login-github-btn:hover {
-  background: #f5f5f7;
-  transform: translateY(-1px);
-  box-shadow: 0 6px 28px rgba(255, 255, 255, 0.2);
-}
-.login-github-btn:active {
-  transform: scale(0.98);
-}
-
-/* ─── Login Features Box ──────────────────────── */
-.login-features-box {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 10px;
-  padding: 1rem;
-  text-align: left;
-  margin-bottom: 1.25rem;
-}
-.login-features-title {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #ffffff;
-  margin-bottom: 0.6rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.login-features-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  font-size: 0.76rem;
-  color: var(--text-secondary);
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-}
-.login-features-list li {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.4rem;
-}
-.login-feature-icon {
-  flex-shrink: 0;
-}
-.login-feature-icon.blue { color: #2997ff; }
-.login-feature-icon.green { color: #30d158; }
-.login-feature-icon.purple { color: #bf5af2; }
-
-/* ─── Login Error ─────────────────────────────── */
-.login-error {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  color: #f87171;
-  padding: 0.75rem;
-  border-radius: 8px;
-  font-size: 0.8rem;
-  margin-bottom: 1.25rem;
-}
-
-/* ─── Login Connection Info ───────────────────── */
-.login-connection-info {
-  padding: 0.75rem;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  text-align: left;
-  margin-bottom: 1.5rem;
-}
-.login-info-row {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 0.25rem;
-}
-.login-info-row:last-child {
-  margin-bottom: 0;
-}
-.login-info-secure {
-  color: #4ade80;
-}
-
-/* ─── Login Back Button ───────────────────────── */
-.login-back-btn {
-  width: 100%;
-  background: none;
-  border: none;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  cursor: pointer;
-  padding: 0.5rem;
-  transition: color 0.15s ease;
-  font-family: var(--font-sans);
-}
-.login-back-btn:hover {
-  color: var(--text-secondary);
-}
+@import './auth.css';
 
 /* ─── Dashboard overlap fixes ────────────────────
    Prevent metrics / terminal / two-col panels from visually overlapping.
@@ -3527,32 +3329,32 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
    authenticated console (.shell and descendants, plus the modals it
    opens). Landing/login/scene styling is untouched.
    ──────────────────────────────────────────────────────────────
-   Token notes:
-   • `--accent` under the default ember theme is a cyclic self-ref in
-     :root, so `var(--accent, #c4643c)` resolves to the terracotta —
-     exactly the spec accent. azure/violet/mint still supply real
-     values, so the live theme picker keeps recoloring the console.
-   • Status colors are the muted spec palette, not raw system colors.
+    Token notes:
+    • `--accent` under the default ember theme is a cyclic self-ref in
+      :root, so `var(--accent, #c4643c)` resolves to the terracotta —
+      exactly the spec accent. The console keeps a single fixed
+      ember-on-off-white identity (no runtime theme switching).
+    • Status colors are the muted spec palette, not raw system colors.
    ════════════════════════════════════════════════════════════════ */
 .shell {
-  --dash-bg: #17171a;
-  --dash-surface: #1b1b1e;
-  --dash-card: #212125;
-  --dash-elev: #28282c;
-  --dash-border: #33333a;
-  --dash-border-soft: rgba(255, 255, 255, 0.07);
-  --dash-hairline: rgba(255, 255, 255, 0.055);
-  --dash-text: #f2efe9;
-  --dash-text-2: #b8b4ac;
-  --dash-text-3: #8f8b84;
-  --dash-accent: var(--accent, #c4643c);
-  --dash-accent-hover: var(--accent-bright, #dd8a66);
-  --dash-accent-dim: color-mix(in srgb, var(--dash-accent) 14%, transparent);
-  --dash-accent-border: color-mix(in srgb, var(--dash-accent) 36%, transparent);
-  --dash-health: #7cb98a;
-  --dash-warn: #d8ab68;
-  --dash-crit: #dd7b76;
-  --dash-info: #8fb3d9;
+  --dash-bg: #F7F6F2;
+  --dash-surface: #FFFFFF;
+  --dash-card: #FFFFFF;
+  --dash-elev: #F0EFEB;
+  --dash-border: #E7E4DE;
+  --dash-border-soft: rgba(0, 0, 0, 0.06);
+  --dash-hairline: rgba(0, 0, 0, 0.06);
+  --dash-text: #252522;
+  --dash-text-2: #77766F;
+  --dash-text-3: #8E8D86;
+  --dash-accent: var(--accent, #C92F38);
+  --dash-accent-hover: var(--accent-bright, #A9232D);
+  --dash-accent-dim: color-mix(in srgb, var(--dash-accent) 10%, transparent);
+  --dash-accent-border: color-mix(in srgb, var(--dash-accent) 28%, transparent);
+  --dash-health: #166534;
+  --dash-warn: #B45309;
+  --dash-crit: #991B1B;
+  --dash-info: #1E40AF;
   /* One control height scale for every console control. */
   --dash-ctl: 34px;
   --dash-ctl-sm: 28px;
@@ -3563,9 +3365,9 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 }
 
 /* Ambient backdrop: keep the depth, drop the noise in the console. */
-.shell .aurora-backdrop { opacity: 0.4; }
+.shell .aurora-backdrop { opacity: 0.15; }
 .shell .aurora-starfield { display: none; }
-.shell .aurora-orb { filter: saturate(0.7) blur(60px); }
+.shell .aurora-orb { filter: saturate(0.4) blur(80px); }
 
 /* ─── Navigation rail (docked left, expands on hover/focus) ─────
     `.shell .nav-island` specificity (0,2,0) beats the generic
@@ -3583,7 +3385,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   border-right: 1px solid var(--dash-border);
   background: var(--dash-surface);
   backdrop-filter: none;
-  box-shadow: none;
+  box-shadow: 4px 0 20px rgba(0, 0, 0, 0.03);
   overflow-y: auto;
   scrollbar-width: thin;
 }
@@ -3591,30 +3393,49 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .nav-island:focus-within {
   width: 236px;
   border-color: var(--dash-border);
-  box-shadow: 24px 0 48px -24px rgba(0, 0, 0, 0.5);
+  box-shadow: 12px 0 32px rgba(0, 0, 0, 0.06);
 }
 .island-brand { border-bottom: 1px solid var(--dash-border); }
 .island-divider { background: var(--dash-border); }
 .island-label { color: var(--dash-text-2); font-size: 0.82rem; font-weight: 600; }
 .island-brand-text { color: var(--dash-text); letter-spacing: -0.01em; }
 .island-item { border-radius: 10px; margin: 1px 0; }
-.island-item:hover { background: rgba(255, 255, 255, 0.05); color: var(--dash-text); }
+.island-item:hover { background: #F0EFEB; color: var(--dash-text); }
 .island-item.active {
   background: var(--dash-accent-dim);
   border-color: var(--dash-accent-border);
-  color: var(--dash-accent-hover);
+  color: var(--dash-accent);
   box-shadow: inset 2px 0 0 var(--dash-accent);
 }
 .island-badge {
-  background: var(--dash-border);
+  background: var(--dash-elev);
   color: var(--dash-text-2);
 }
 .island-item.active .island-badge {
   background: var(--dash-accent-dim);
-  color: var(--dash-accent-hover);
+  color: var(--dash-accent);
 }
 .island-user { border-top: 1px solid var(--dash-border); }
 .island-username { color: var(--dash-text-2); }
+.shell .island-avatar {
+  background: var(--dash-accent-dim);
+  color: var(--dash-accent);
+  border: 1px solid var(--dash-accent-border);
+}
+.shell .island-logout {
+  opacity: 0.75;
+  color: var(--dash-text-3);
+  background: transparent;
+  border-radius: 6px;
+  padding: 0.3rem;
+  transition: opacity 0.14s var(--fc-ease), color 0.14s ease, background 0.14s ease;
+}
+.shell .island-logout:hover,
+.shell .island-logout:focus-visible {
+  opacity: 1;
+  color: var(--dash-accent);
+  background: var(--dash-accent-dim);
+}
 
 /* Mobile: keep the bottom dock, but in console surfaces. */
 @media (max-width: 900px) {
@@ -3643,7 +3464,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 
 /* ─── Topbar ──────────────────────────────────── */
 .topbar {
-  background: color-mix(in srgb, var(--dash-surface) 86%, transparent);
+  background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--dash-border);
 }
@@ -3651,7 +3472,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .topbar-subtitle { color: var(--dash-text-3); }
 .backend-status {
   border-color: var(--dash-border);
-  background: rgba(255, 255, 255, 0.03);
+  background: #F0EFEB;
   color: var(--dash-text-2);
   height: 28px;
 }
@@ -3674,6 +3495,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   border: 1px solid var(--dash-border);
   border-radius: 14px;
   padding: 1.3rem 1.4rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   transition: border-color 0.2s ease, background 0.2s ease;
 }
 .metric-card:hover {
@@ -3699,7 +3521,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   background: var(--dash-card);
   border-color: var(--dash-border);
   border-radius: 14px;
-  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 .panel-header {
   padding: 0.95rem 1.25rem;
@@ -3711,7 +3533,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   font-size: 0.68rem;
   font-weight: 700;
   color: var(--dash-text-2);
-  background: rgba(255, 255, 255, 0.06);
+  background: #F0EFEB;
   border: 1px solid var(--dash-border);
   padding: 0.1rem 0.5rem;
   border-radius: 999px;
@@ -3726,7 +3548,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   font-size: 0.7rem;
   font-weight: 600;
   color: var(--dash-text-2);
-  background: rgba(255, 255, 255, 0.035);
+  background: #F0EFEB;
   border: 1px solid var(--dash-border);
   border-radius: 999px;
   padding: 0.18rem 0.6rem;
@@ -3801,11 +3623,11 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .badge-medium { background: color-mix(in srgb, var(--dash-warn) 12%, transparent); color: var(--dash-warn); border-color: color-mix(in srgb, var(--dash-warn) 32%, transparent); }
 .shell .badge-low { background: color-mix(in srgb, var(--dash-info) 12%, transparent); color: var(--dash-info); border-color: color-mix(in srgb, var(--dash-info) 32%, transparent); }
 .shell .badge-info { background: color-mix(in srgb, var(--dash-info) 12%, transparent); color: var(--dash-info); border-color: color-mix(in srgb, var(--dash-info) 32%, transparent); }
-.shell .badge-neutral { background: rgba(255, 255, 255, 0.05); color: var(--dash-text-2); border-color: var(--dash-border); }
+.shell .badge-neutral { background: #F0EFEB; color: var(--dash-text-2); border-color: var(--dash-border); }
 
 /* ─── List items ──────────────────────────────── */
 .list-item { border-radius: 10px; }
-.list-item:hover { background: rgba(255, 255, 255, 0.045); }
+.list-item:hover { background: #F0EFEB; }
 .list-item-title { color: var(--dash-text); }
 .list-item-sub { color: var(--dash-text-3); }
 /* Table cells that carry a truncated reason (failed audits, etc.) */
@@ -3824,7 +3646,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 /* ─── States: skeleton / error / empty ────────── */
 .state-skeleton { padding: 0.25rem 0.4rem; }
 .skeleton-row {
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.055) 25%, rgba(255, 255, 255, 0.12) 50%, rgba(255, 255, 255, 0.055) 75%);
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.04) 25%, rgba(0, 0, 0, 0.08) 50%, rgba(0, 0, 0, 0.04) 75%);
   background-size: 200% 100%;
 }
 .state-error { color: var(--dash-crit); }
@@ -3851,7 +3673,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   justify-content: center;
   font-size: 1.35rem;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.04);
+  background: #F0EFEB;
   border: 1px solid var(--dash-border);
   color: var(--dash-text-2);
 }
@@ -3861,37 +3683,57 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   height: var(--dash-ctl);
   padding: 0 0.95rem;
   border-radius: 10px;
-  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+  transition: background 0.14s var(--fc-ease), border-color 0.14s var(--fc-ease), color 0.14s var(--fc-ease), transform 0.1s var(--fc-ease), box-shadow 0.14s var(--fc-ease);
 }
+.shell .btn:active { transform: scale(0.985); }
+.shell .btn:focus-visible { outline: 2px solid var(--dash-accent); outline-offset: 2px; }
 .shell .btn-sm { height: var(--dash-ctl-sm); padding: 0 0.7rem; font-size: 0.76rem; }
 .shell .btn-icon { width: var(--dash-ctl); padding: 0; }
 .shell .btn-primary {
   background: var(--dash-accent);
-  color: #1a1614;
+  color: #FFFFFF;
   border-color: transparent;
-  font-weight: 650;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(201, 47, 56, 0.2);
 }
 .shell .btn-primary:hover {
   background: var(--dash-accent-hover);
-  transform: none;
+  box-shadow: 0 2px 8px rgba(201, 47, 56, 0.28);
+}
+.shell .btn-primary:active {
+  transform: scale(0.985);
+  box-shadow: 0 1px 2px rgba(201, 47, 56, 0.15);
 }
 .shell .btn-primary:disabled {
   background: color-mix(in srgb, var(--dash-accent) 45%, transparent);
-  color: color-mix(in srgb, #1a1614 65%, transparent);
+  color: rgba(255, 255, 255, 0.7);
   cursor: not-allowed;
+  box-shadow: none;
 }
 .shell .btn-secondary {
-  background: rgba(255, 255, 255, 0.045);
+  background: #F0EFEB;
   color: var(--dash-text);
   border-color: var(--dash-border);
 }
-.shell .btn-secondary:hover { background: rgba(255, 255, 255, 0.09); border-color: color-mix(in srgb, var(--dash-border) 60%, var(--dash-accent) 40%); transform: none; }
+.shell .btn-secondary:hover { background: #E7E4DE; border-color: var(--dash-border); }
+.shell .btn-secondary:active { transform: scale(0.985); }
 .shell .btn-danger {
   background: color-mix(in srgb, var(--dash-crit) 10%, transparent);
   color: var(--dash-crit);
   border-color: color-mix(in srgb, var(--dash-crit) 35%, transparent);
 }
 .shell .btn-danger:hover { background: color-mix(in srgb, var(--dash-crit) 20%, transparent); }
+.shell .btn-danger:active { transform: scale(0.985); }
+.shell .btn-ghost {
+  background: transparent;
+  color: var(--dash-text-2);
+  border-color: transparent;
+}
+.shell .btn-ghost:hover {
+  background: #F0EFEB;
+  color: var(--dash-text);
+}
+.shell .btn-ghost:active { transform: scale(0.96); }
 
 /* ─── Active job monitor (terminal) ───────────── */
 .progress-card {
@@ -3930,7 +3772,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .modal-title { color: var(--dash-text); }
 .modal-sub { color: var(--dash-text-3); }
 .shell .form-input {
-  background: var(--dash-elev);
+  background: #FFFFFF;
   border-color: var(--dash-border);
   color: var(--dash-text);
 }
@@ -3941,18 +3783,18 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .form-label { color: var(--dash-text-2); }
 .table-wrap th { color: var(--dash-text-3); border-bottom-color: var(--dash-hairline); }
 .table-wrap td { border-bottom-color: var(--dash-hairline); }
-.table-wrap tr:hover td { background: rgba(255, 255, 255, 0.025); }
+.table-wrap tr:hover td { background: #F0EFEB; }
 .finding-card {
-  background: rgba(255, 255, 255, 0.02);
+  background: #F0EFEB;
   border: 1px solid var(--dash-border);
   border-left: 3px solid var(--dash-accent);
 }
 .remediation-details summary { color: var(--dash-accent-hover); }
 .code-block {
-  background: var(--dash-elev);
+  background: #17171a;
   border: 1px solid var(--dash-border);
   border-radius: 10px;
-  color: var(--dash-text-2);
+  color: #f2efe9;
   font-variant-numeric: tabular-nums;
 }
 .theme-menu {
@@ -4007,10 +3849,8 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
    descendants). Landing / login / scene styling is untouched.
    ────────────────────────────────────────────────────────────── */
 
-/* ─── Ambient backdrop: keep depth, drop the noise ─────────────── */
-.shell .aurora-backdrop { opacity: 0.22; }
-.shell .aurora-starfield { display: none; }
-.shell .aurora-orb { filter: saturate(0.55) blur(70px); }
+/* ─── Ambient backdrop: disabled in clean warm-light console ───── */
+.shell .aurora-backdrop { display: none !important; }
 
 /* ─── Shell rhythm ────────────────────────────────────────────── */
 /* Deliberate measure: the page never stretches into a blank desert,
@@ -4054,6 +3894,10 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   color: var(--dash-text-2);
   text-align: left;
   cursor: pointer;
+  transition: background 0.14s var(--fc-ease), color 0.14s var(--fc-ease), border-color 0.14s var(--fc-ease), transform 0.1s var(--fc-ease);
+}
+.shell .island-item:active {
+  transform: scale(0.985);
 }
 .shell .island-item-icon { margin-top: 2px; }
 .shell .island-item-text { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
@@ -4072,11 +3916,11 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.shell .island-item:hover { background: rgba(255, 255, 255, 0.05); color: var(--dash-text); }
+.shell .island-item:hover { background: #F0EFEB; color: var(--dash-text); }
 .shell .island-item:hover .island-item-desc { color: var(--dash-text-2); }
-.shell .island-item.active { color: var(--dash-accent-hover); }
-.shell .island-item.active .island-item-desc { color: color-mix(in srgb, var(--dash-accent-hover) 72%, transparent); }
-.shell .island-item.active .island-label { color: var(--dash-accent-hover); }
+.shell .island-item.active { color: var(--dash-accent); }
+.shell .island-item.active .island-item-desc { color: color-mix(in srgb, var(--dash-accent) 72%, transparent); }
+.shell .island-item.active .island-label { color: var(--dash-accent); }
 .shell .island-brand { padding: 0.15rem 0.35rem 0.55rem; }
 
 /* ─── Topbar ──────────────────────────────────────────────────── */
@@ -4090,7 +3934,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   gap: 1rem;
   min-height: 56px;
   padding: 0.6rem 2rem;
-  background: color-mix(in srgb, var(--dash-surface) 90%, transparent);
+  background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--dash-border);
 }
@@ -4111,7 +3955,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   align-items: center;
   justify-content: center;
 }
-.shell .topbar-avatar:hover { color: var(--dash-text); border-color: color-mix(in srgb, var(--dash-border) 60%, var(--dash-accent) 40%); }
+.shell .topbar-avatar:hover { color: var(--dash-text); border-color: var(--dash-accent); }
 
 /* ─── Page introduction ───────────────────────────────────────── */
 .page-head {
@@ -4155,7 +3999,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   padding: 0 0.6rem;
   border-radius: 999px;
   border: 1px solid var(--dash-border);
-  background: rgba(255, 255, 255, 0.03);
+  background: #F0EFEB;
   font-size: 0.74rem;
   color: var(--dash-text-3);
   white-space: nowrap;
@@ -4185,7 +4029,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   align-items: center;
   justify-content: center;
   border-radius: 7px;
-  background: rgba(255, 255, 255, 0.045);
+  background: #F0EFEB;
   border: 1px solid var(--dash-hairline);
   color: var(--dash-text-3);
 }
@@ -4257,7 +4101,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   border-radius: 10px;
   border: 1px solid transparent;
 }
-.shell .result-row:hover { background: rgba(255, 255, 255, 0.035); border-color: var(--dash-hairline); }
+.shell .result-row:hover { background: #F0EFEB; border-color: var(--dash-border); }
 .shell .result-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .shell .result-row-repo {
   font-size: 0.85rem;
@@ -4276,7 +4120,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   padding: 0.1rem 0.5rem;
   border-radius: 999px;
   border: 1px solid var(--dash-border);
-  background: rgba(255, 255, 255, 0.04);
+  background: #F0EFEB;
   white-space: nowrap;
 }
 
@@ -4304,7 +4148,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   padding: 0 0.6rem;
   border-radius: 999px;
   border: 1px solid var(--dash-border);
-  background: rgba(255, 255, 255, 0.03);
+  background: #F0EFEB;
   font-size: 0.73rem;
   font-weight: 600;
   color: var(--dash-text-2);
@@ -4342,7 +4186,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
-.shell .audit-row:hover { background: rgba(255, 255, 255, 0.04); border-color: var(--dash-hairline); }
+.shell .audit-row:hover { background: #F0EFEB; border-color: var(--dash-border); }
 .shell .audit-row.is-active { background: var(--dash-accent-dim); border-color: var(--dash-accent-border); }
 .shell .audit-row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .shell .audit-row-repo {
@@ -4367,8 +4211,8 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   font-size: 0.71rem;
   padding: 0 0.35rem;
   border-radius: 5px;
-  border: 1px solid var(--dash-hairline);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--dash-border);
+  background: #F0EFEB;
   white-space: nowrap;
   max-width: 18ch;
   overflow: hidden;
@@ -4409,7 +4253,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .live-audit-meta { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; font-size: 0.74rem; color: var(--dash-text-3); }
 .shell .live-audit-side { display: flex; align-items: center; gap: 0.5rem; flex: none; }
 .shell .live-audit-bar { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; }
-.shell .live-audit-track { flex: 1; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
+.shell .live-audit-track { flex: 1; height: 5px; border-radius: 3px; background: var(--dash-border); overflow: hidden; }
 .shell .live-audit-fill { height: 100%; border-radius: 3px; background: var(--dash-accent); transition: width 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
 .shell .live-audit-fill.is-running { background: linear-gradient(90deg, var(--dash-accent), var(--dash-accent-hover)); }
 .shell .live-audit-pct {
@@ -4436,7 +4280,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   font-weight: 600;
   color: var(--dash-text-3);
 }
-.shell .live-phase-dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(255, 255, 255, 0.16); flex: none; }
+.shell .live-phase-dot { width: 5px; height: 5px; border-radius: 50%; background: #D5D2C9; flex: none; }
 .shell .live-phase.is-done { color: var(--dash-text-2); }
 .shell .live-phase.is-done .live-phase-dot { background: var(--dash-health); }
 .shell .live-phase.is-active { color: var(--dash-text); }
@@ -4508,13 +4352,13 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .state-error { color: var(--dash-crit); }
 .shell .state-error .btn-secondary { color: var(--dash-text-2); }
 .shell .skeleton-row {
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.055) 25%, rgba(255, 255, 255, 0.12) 50%, rgba(255, 255, 255, 0.055) 75%);
+  background: linear-gradient(90deg, #F0EFEB 25%, #E7E4DE 50%, #F0EFEB 75%);
   background-size: 200% 100%;
 }
 
 /* ─── "View all" panel link ───────────────────────────────────── */
 .shell .panel-link { color: var(--dash-text-2); display: inline-flex; align-items: center; gap: 0.3rem; }
-.shell .panel-link:hover { color: var(--dash-accent-hover); background: rgba(255, 255, 255, 0.045); }
+.shell .panel-link:hover { color: var(--dash-accent-hover); background: #F0EFEB; }
 
 /* ─── Service status (diagnostics window) ─────────────────────── */
 .shell .diag-note {
@@ -4544,7 +4388,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 /* ─── Tables & forms ──────────────────────────────────────────── */
 .shell .table-wrap th { color: var(--dash-text-3); border-bottom-color: var(--dash-hairline); }
 .shell .table-wrap td { border-bottom-color: var(--dash-hairline); vertical-align: middle; }
-.shell .table-wrap tr:hover td { background: rgba(255, 255, 255, 0.025); }
+.shell .table-wrap tr:hover td { background: #F0EFEB; }
 .shell .form-input {
   height: var(--dash-ctl);
   background: var(--dash-elev);

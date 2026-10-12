@@ -134,9 +134,16 @@ fn audit_r_24_deep_health_probe_keeps_the_api_prefix() {
         "stripping the /api/v1 prefix made the deep-health request 404 through the \
          SPA fallback and return index.html with status 200"
     );
+    // The shared base is the R-24 contract: every API and health request must
+    // go through `getApiBase()` (one origin, `/api/v1` default) rather than a
+    // locally re-implemented URL. Indicator probes share the same guarantee
+    // from `./api/client`; here we enforce the console's side of it.
+    let Some(after) = src.find("const API_BASE") else {
+        panic!("the console must define its API calls on the shared base");
+    };
     assert!(
-        src.contains("`${API_BASE}/health/deep`"),
-        "the deep-health probe must request the path the backend actually serves"
+        src[..after].contains("getApiBase"),
+        "the console must resolve its API base through the centralized client"
     );
 }
 

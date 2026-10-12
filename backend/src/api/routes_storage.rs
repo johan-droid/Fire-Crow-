@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 pub fn router() -> Router<Arc<crate::AppState>> {
     Router::new()
-        .route("/artifacts/{artifact_id}/download", get(download_artifact))
-        .route("/artifacts/{artifact_id}/legal-hold", post(set_legal_hold))
+        .route("/artifacts/:artifact_id/download", get(download_artifact))
+        .route("/artifacts/:artifact_id/legal-hold", post(set_legal_hold))
 }
 
 pub async fn download_artifact(

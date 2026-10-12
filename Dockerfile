@@ -55,8 +55,10 @@ ENV WORKSPACE_DIR=/app
 
 EXPOSE 8000
 
+# FC-CONTRACT-01: the runtime port is injected by the platform (Render sets
+# PORT); the healthcheck must follow it instead of assuming 8000.
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/health || exit 1
+  CMD curl -f "http://localhost:${PORT:-8000}/health" || exit 1
 
 # Phase A (F1): never root. Port 8000 needs no privilege; the workspace the
 # backend writes to is owned by this user (see above).

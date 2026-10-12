@@ -1,6 +1,7 @@
 //! Phase 5B-1 authorization regression.
 //!
-//! The roles migration must be provably behaviour-preserving. `ADMIN_PERMISSIONS`,
+//! The roles migration must be provably behaviour-preserving. The platform
+//! admin permission list (FC-AUTHZ-01/03 split) and the AdminUser SQL query
 //! `AdminUser` and the AdminUser SQL query are unchanged by this phase.
 //!
 //! Two things are asserted:
@@ -22,7 +23,7 @@ use sqlx::PgPool;
 use std::collections::BTreeMap;
 
 /// The exact AdminUser query from `middleware/auth.rs`, with the exact
-/// 20-string `ADMIN_PERMISSIONS` constant. Duplicated deliberately: if either
+/// platform-admin permission constant. Duplicated deliberately: if either
 /// changes, these tests must fail rather than silently follow.
 const ADMIN_SQL: &str = r#"
     SELECT EXISTS(
@@ -34,10 +35,19 @@ const ADMIN_SQL: &str = r#"
     )
 "#;
 
-const ADMIN_PERMISSIONS: &[&str] = &[
+/// The exact platform-admin permission list from `middleware/auth.rs`, mirrored
+/// deliberately: if either side changes, these tests must fail rather than
+/// silently follow. FC-AUTHZ-01/03: `tenant_admin` and `tenant:manage` were
+/// removed from the platform list (tenant authority no longer implies platform
+/// authority) and the `platform:*` family was added.
+const PLATFORM_ADMIN_PERMISSIONS: &[&str] = &[
     "admin",
     "superadmin",
-    "tenant_admin",
+    "platform:admin",
+    "platform:*",
+    "platform:sso",
+    "platform:iam",
+    "platform:ops",
     "iam:manage",
     "iam:*",
     "iam:admin",
@@ -54,7 +64,6 @@ const ADMIN_PERMISSIONS: &[&str] = &[
     "user:admin",
     "billing:manage",
     "audit:admin",
-    "tenant:manage",
 ];
 
 // NOTE: `#[sqlx::test]` applies every migration *before* the test body runs, so a
@@ -70,7 +79,7 @@ const ADMIN_PERMISSIONS: &[&str] = &[
 async fn is_admin(pool: &PgPool, user_id: &str) -> bool {
     sqlx::query_scalar(ADMIN_SQL)
         .bind(user_id)
-        .bind(ADMIN_PERMISSIONS.to_vec())
+        .bind(PLATFORM_ADMIN_PERMISSIONS.to_vec())
         .fetch_one(pool)
         .await
         .expect("AdminUser query must succeed")
@@ -153,30 +162,68 @@ async fn seed_perm(pool: &PgPool, id: &str, role_id: &str, permission: &str, pat
 // Source guards
 // ---------------------------------------------------------------------------
 
-#[test]
-fn admin_permissions_source_is_unchanged() {
-    let auth = include_str!("../src/middleware/auth.rs");
-    let start = auth
-        .find("const ADMIN_PERMISSIONS")
-        .expect("constant must exist");
+/// Parse the string literals between `const <name> ... = &[` and its closing
+/// `];`, whatever the line layout: rustfmt collapses short arrays onto one
+/// line and splits long ones, so line-shape assumptions would rot.
+fn const_strings(auth: &str, name: &str) -> Vec<String> {
+    let start = auth.find(name).expect("constant must exist");
     let body = &auth[start..];
     let end = body.find("];").expect("constant must be terminated");
-    let listed: Vec<&str> = body[..end]
-        .lines()
-        .filter_map(|l| l.trim().strip_prefix('"'))
-        .filter_map(|l| l.split('"').next())
-        .collect();
+    let mut out = Vec::new();
+    for line in body[..end].lines() {
+        let mut parts = line.split('"');
+        let _ = parts.next(); // text before the first quote
+        loop {
+            match (parts.next(), parts.next()) {
+                (Some(lit), Some(_)) => out.push(lit.to_string()),
+                _ => break,
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn admin_permissions_source_is_deliberate() {
+    let auth = include_str!("../src/middleware/auth.rs");
+    let listed = const_strings(auth, "const PLATFORM_ADMIN_PERMISSIONS");
 
     assert_eq!(
         listed,
-        ADMIN_PERMISSIONS.to_vec(),
-        "ADMIN_PERMISSIONS changed; update this file deliberately, never silently"
+        PLATFORM_ADMIN_PERMISSIONS
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>(),
+        "PLATFORM_ADMIN_PERMISSIONS changed; update this file deliberately, never silently"
     );
     assert_eq!(
         listed.len(),
-        20,
-        "the constant must still hold exactly 20 strings"
+        23,
+        "the constant must still hold exactly 23 strings"
     );
+    // FC-AUTHZ-03: tenant-scoped strings must never imply platform authority.
+    assert!(
+        !listed.contains(&"tenant_admin".to_string())
+            && !listed.contains(&"tenant:manage".to_string()),
+        "tenant-scoped permissions must stay out of the platform list"
+    );
+}
+
+#[test]
+fn tenant_permissions_are_disjoint_from_platform() {
+    let auth = include_str!("../src/middleware/auth.rs");
+    let listed = const_strings(auth, "const TENANT_ADMIN_PERMISSIONS");
+
+    assert_eq!(
+        listed,
+        vec!["tenant_admin".to_string(), "tenant:manage".to_string()]
+    );
+    for p in &listed {
+        assert!(
+            !PLATFORM_ADMIN_PERMISSIONS.contains(&p.as_str()),
+            "{p} must not grant platform authority"
+        );
+    }
 }
 
 #[test]
@@ -263,7 +310,7 @@ async fn authz_routing_through_roles_gives_identical_verdicts(pool: PgPool) {
             WHERE u2.id = u.id AND rp.permission = ANY($1::text[])
          ) FROM users u ORDER BY u.id",
     )
-    .bind(ADMIN_PERMISSIONS.to_vec())
+    .bind(PLATFORM_ADMIN_PERMISSIONS.to_vec())
     .fetch_all(&pool)
     .await
     .unwrap();

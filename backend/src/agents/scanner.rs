@@ -1829,6 +1829,13 @@ pub async fn run_dependency_scan(
     sandbox: &SandboxManager,
     cancel: &(dyn Fn() -> bool + Sync),
 ) -> ScannerResult {
+    // Cancellation is an operator decision, not a failure, and it wins over
+    // everything: a scan cancelled before it started must report Cancelled
+    // even when the proxy is also missing — conflating the two would tell the
+    // operator their cancellation was a scanner fault.
+    if cancel() {
+        return cancelled_result(&Scanner::osv(), input);
+    }
     let proxy = match crate::services::egress_policy::resolve_osv_egress_proxy() {
         Ok(proxy) => proxy,
         Err(reason) => {

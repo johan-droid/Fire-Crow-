@@ -252,5 +252,6 @@ pub async fn build_state(
         crypto,
         redis,
         csrf: Arc::new(crate::services::csrf::CsrfStore::new()),
+        job_tx: crate::state::global_job_tx(),
     }))
 }

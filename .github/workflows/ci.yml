@@ -1,0 +1,58 @@
+name: CI
+
+# FC-DEP-02: the repository previously had an empty workflows directory, so no
+# push or pull request was ever checked. This workflow runs only offline/static
+# checks that need no secrets, no Docker, and no external services:
+#   * backend: compile + database-free unit/security suites
+#   * frontend: type check, unit tests, production build
+# Database-backed integration suites run via backend/scripts/test.sh against
+# the isolated tmpfs fixture and are intentionally not part of CI yet.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+      - name: Format check
+        run: cargo fmt --check
+      - name: Compile
+        run: cargo check --locked
+      - name: Unit tests (no database)
+        run: cargo test --lib --bins
+      - name: Config security suite (no database)
+        run: cargo test --test config_security
+      - name: Security regression suite (no database)
+        run: cargo test --test security_regressions
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Type check + unit tests
+        run: npm test
+      - name: Production build
+        run: npm run build

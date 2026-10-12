@@ -97,7 +97,6 @@ pub async fn exchange_token(
     Ok((
         jar,
         Json(serde_json::json!({
-            "access_token": access_token_str,
             "token_type": "bearer",
             "username": username,
             "user_id": user_id,
@@ -191,7 +190,7 @@ pub async fn refresh_token(
     Ok((
         jar,
         Json(
-            serde_json::json!({"access_token": access_token_str, "token_type": "bearer", "username": claims.claims.username, "user_id": claims.claims.sub}),
+            serde_json::json!({"token_type": "bearer", "username": claims.claims.username, "user_id": claims.claims.sub}),
         ),
     ))
 }
@@ -367,7 +366,7 @@ pub async fn login(
     Ok((
         jar,
         Json(
-            serde_json::json!({"access_token": access_token_str, "token_type": "bearer", "username": user.username, "user_id": user.id, "email": user.email}),
+            serde_json::json!({"token_type": "bearer", "username": user.username, "user_id": user.id, "email": user.email}),
         ),
     ))
 }

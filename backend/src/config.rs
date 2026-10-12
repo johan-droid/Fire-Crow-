@@ -36,9 +36,11 @@ pub struct Settings {
     pub secret_key: String,
     #[serde(default)]
     pub encryption_key: String,
+    #[serde(default)]
     pub frontend_url: String,
     #[serde(default = "default_backend_base_url")]
     pub backend_base_url: String,
+    #[serde(default)]
     pub cors_origins: String,
     pub database_url: String,
     #[serde(default = "default_pool_size")]
@@ -406,7 +408,7 @@ fn default_host() -> String {
     "0.0.0.0".into()
 }
 fn default_pool_size() -> u32 {
-    10
+    25
 }
 fn default_pool_timeout() -> u32 {
     30
@@ -430,7 +432,11 @@ fn default_login_failure_limit() -> i32 {
     5
 }
 fn default_jwt_expire() -> i64 {
-    60 * 24
+    // FC-AUTH-02 fix: Was 60 * 24 = 1440 minutes (24 hours), reduced to 15 minutes.
+    // Long-lived access tokens stay valid even after logout if Redis is unavailable.
+    // 15 minutes is the standard industry practice for short-lived access tokens
+    // paired with longer-lived refresh tokens.
+    15
 }
 fn default_auth_cookie_name() -> String {
     "fc_access_token".into()

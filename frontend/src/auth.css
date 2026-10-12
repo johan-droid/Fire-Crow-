@@ -1,0 +1,605 @@
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FIRE CROW — AUTHENTICATION SYSTEM STYLES (PEACH TRUE BLACK SYSTEM)
+   Understated, premium developer-tooling identity with NEXT LAB.inc studio endorsement.
+   Scoped to .fc-auth-* to prevent collisions with console or landing page.
+   Tokens: Canvas #000000, Surface #0A0A0C, Elevated #141418, Text #F5F5F7, Accent #FF9E7D
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.fc-auth-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--fc-bg-canvas, #000000);
+  background-image: radial-gradient(circle at 50% 20%, rgba(255, 158, 125, 0.08) 0%, transparent 60%);
+  padding: 1.5rem;
+  position: relative;
+  overflow-x: hidden;
+  font-family: var(--fc-font-sans, "Inter", sans-serif);
+  color: var(--fc-text-primary, #F5F5F7);
+}
+
+.fc-auth-container {
+  width: 100%;
+  max-width: 1040px;
+  background: #0A0A0C;
+  border: 1px solid var(--fc-border, rgba(255, 255, 255, 0.08));
+  border-radius: 20px;
+  box-shadow: 0 24px 70px -15px rgba(0, 0, 0, 0.95), 0 0 40px rgba(255, 158, 125, 0.06);
+  display: grid;
+  grid-template-columns: 1fr 1.15fr;
+  overflow: hidden;
+  position: relative;
+  z-index: 2;
+  animation: fcAuthFadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@keyframes fcAuthFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ─── LEFT: Brand & Architecture Panel ──────────────────────────── */
+.fc-auth-brand-panel {
+  padding: 3rem 2.5rem;
+  background: #050507;
+  border-right: 1px solid var(--fc-border, rgba(255, 255, 255, 0.08));
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+}
+
+.fc-auth-brand-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 28px 28px;
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.fc-auth-brand-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+}
+
+.fc-auth-studio-endorsement {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: #0F0F12;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
+  font-family: var(--fc-font-mono, "JetBrains Mono", monospace);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  color: var(--fc-text-secondary, #A1A1AA);
+  width: fit-content;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.fc-auth-studio-inc-badge {
+  font-size: 0.58rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  background: rgba(255, 158, 125, 0.12);
+  border: 1px solid rgba(255, 158, 125, 0.28);
+  color: var(--fc-ember, #FF9E7D);
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.fc-auth-brand-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.fc-auth-brand-hero-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.fc-auth-brand-title {
+  font-family: var(--fc-font-display, "Space Grotesk", sans-serif);
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--fc-text-primary, #FFFFFF);
+  line-height: 1.1;
+  margin: 0;
+}
+
+.fc-auth-brand-sub {
+  font-family: var(--fc-font-mono, "JetBrains Mono", monospace);
+  font-size: 0.68rem;
+  color: var(--fc-text-secondary, #A1A1AA);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-top: 3px;
+}
+
+.fc-auth-brand-desc {
+  font-size: 0.88rem;
+  color: var(--fc-text-secondary, #A1A1AA);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Guarantees list */
+.fc-auth-guarantees {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin-top: 0.5rem;
+}
+
+.fc-auth-guarantee-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.fc-auth-guarantee-num {
+  font-family: var(--fc-font-mono, "JetBrains Mono", monospace);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--fc-ember, #FF9E7D);
+  background: rgba(255, 158, 125, 0.12);
+  border: 1px solid rgba(255, 158, 125, 0.28);
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1.2;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.fc-auth-guarantee-text strong {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--fc-text-primary, #FFFFFF);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.fc-auth-guarantee-text p {
+  font-size: 0.76rem;
+  color: var(--fc-text-secondary, #A1A1AA);
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* Telemetry footer bar */
+.fc-auth-telemetry {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--fc-font-mono, "JetBrains Mono", monospace);
+  font-size: 0.65rem;
+  color: var(--fc-text-secondary, #A1A1AA);
+  letter-spacing: 0.04em;
+}
+
+.fc-auth-telemetry-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22C55E;
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
+  flex-shrink: 0;
+}
+
+/* ─── RIGHT: Form & Interaction Panel ──────────────────────────── */
+.fc-auth-form-panel {
+  padding: 3rem 2.75rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+  background: #0A0A0C;
+}
+
+.fc-auth-mobile-brand {
+  display: none;
+  margin-bottom: 1.5rem;
+  justify-content: center;
+}
+
+.fc-auth-header {
+  margin-bottom: 1.75rem;
+}
+
+.fc-auth-title {
+  font-family: var(--fc-font-display, "Space Grotesk", sans-serif);
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--fc-text-primary, #FFFFFF);
+  margin: 0 0 0.35rem 0;
+}
+
+.fc-auth-sub {
+  font-size: 0.84rem;
+  color: var(--fc-text-secondary, #A1A1AA);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Tab Segmented Control */
+.fc-auth-tabs {
+  display: flex;
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 3px;
+  margin-bottom: 1.5rem;
+  gap: 4px;
+}
+
+.fc-auth-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 7px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--fc-text-secondary, #A1A1AA);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: var(--fc-font-sans, "Inter", sans-serif);
+}
+
+.fc-auth-tab:hover {
+  color: var(--fc-text-primary, #FFFFFF);
+}
+
+.fc-auth-tab.active {
+  background: #141418;
+  color: var(--fc-text-primary, #FFFFFF);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+/* GitHub OAuth Button */
+.fc-auth-github-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: #141418;
+  color: #FFFFFF;
+  padding: 0.85rem 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: var(--fc-font-sans, "Inter", sans-serif);
+}
+
+.fc-auth-github-btn:hover:not(:disabled) {
+  background: #1C1C22;
+  border-color: rgba(255, 158, 125, 0.4);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+}
+
+.fc-auth-github-btn:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.fc-auth-github-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Divider */
+.fc-auth-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 1.5rem 0;
+}
+
+.fc-auth-divider::before,
+.fc-auth-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.fc-auth-divider span {
+  padding: 0 0.85rem;
+  font-family: var(--fc-font-mono, "JetBrains Mono", monospace);
+  font-size: 0.66rem;
+  color: var(--fc-text-muted, #71717A);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+/* Form Groups */
+.fc-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+}
+
+.fc-auth-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.fc-auth-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--fc-text-primary, #FFFFFF);
+  margin-bottom: 0.4rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.fc-auth-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.fc-auth-input {
+  width: 100%;
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 0.75rem 0.95rem;
+  color: var(--fc-text-primary, #FFFFFF);
+  font-size: 0.88rem;
+  font-family: var(--fc-font-sans, "Inter", sans-serif);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.fc-auth-input::placeholder {
+  color: #52525B;
+}
+
+.fc-auth-input:focus {
+  background: #050508;
+  border-color: var(--fc-ember, #FF9E7D);
+  box-shadow: 0 0 0 3px rgba(255, 158, 125, 0.18);
+  outline: none;
+}
+
+.fc-auth-input[aria-invalid="true"] {
+  border-color: #EF4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+}
+
+.fc-auth-input:disabled {
+  opacity: 0.55;
+  background: #050508;
+  cursor: not-allowed;
+}
+
+/* Password Toggle */
+.fc-auth-pw-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fc-text-secondary, #A1A1AA);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 0.15s ease;
+}
+
+.fc-auth-pw-toggle:hover {
+  color: var(--fc-text-primary, #FFFFFF);
+}
+
+.fc-auth-pw-toggle:focus-visible {
+  outline: 2px solid var(--fc-ember, #FF9E7D);
+}
+
+.fc-auth-field-error {
+  font-size: 0.73rem;
+  color: #EF4444;
+  margin-top: 0.35rem;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fc-auth-recovery-note {
+  font-family: var(--fc-font-mono, "JetBrains Mono", monospace);
+  font-size: 0.68rem;
+  color: var(--fc-text-secondary, #A1A1AA);
+  line-height: 1.45;
+  margin-top: 0.2rem;
+}
+
+/* Error Banner */
+.fc-auth-error-banner {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.28);
+  color: #EF4444;
+  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  animation: fcAuthFadeUp 0.25s ease backwards;
+}
+
+.fc-auth-error-banner svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* Submit Action Button */
+.fc-auth-submit-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #FFB299 0%, #FF9E7D 100%);
+  color: #000000 !important;
+  padding: 0.85rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 178, 153, 0.4);
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(255, 158, 125, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: var(--fc-font-sans, "Inter", sans-serif);
+  margin-top: 0.35rem;
+}
+
+.fc-auth-submit-btn:hover:not(:disabled) {
+  background: #FFB299;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 22px rgba(255, 158, 125, 0.5);
+}
+
+.fc-auth-submit-btn:active:not(:disabled) {
+  transform: scale(0.99);
+}
+
+.fc-auth-submit-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
+}
+
+.fc-auth-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(0, 0, 0, 0.3);
+  border-top-color: #000000;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Secondary Mode Switch */
+.fc-auth-switch-mode {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--fc-text-secondary, #A1A1AA);
+  margin-top: 1.15rem;
+}
+
+.fc-auth-text-link {
+  background: none;
+  border: none;
+  color: var(--fc-ember, #FF9E7D);
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.fc-auth-text-link:hover {
+  color: #FFB299;
+}
+
+/* Back Link */
+.fc-auth-back-btn {
+  width: 100%;
+  background: none;
+  border: none;
+  font-size: 0.78rem;
+  color: var(--fc-text-secondary, #A1A1AA);
+  cursor: pointer;
+  padding: 0.6rem;
+  margin-top: 0.75rem;
+  transition: color 0.15s ease;
+  font-family: var(--fc-font-sans, "Inter", sans-serif);
+  border-radius: 6px;
+}
+
+.fc-auth-back-btn:hover {
+  color: var(--fc-text-primary, #FFFFFF);
+}
+
+.fc-auth-back-btn:focus-visible {
+  outline: 2px solid var(--fc-ember, #FF9E7D);
+}
+
+/* ─── Responsive Viewports ──────────────────────────────────────── */
+@media (max-width: 860px) {
+  .fc-auth-container {
+    grid-template-columns: 1fr;
+    max-width: 480px;
+    border-radius: 16px;
+  }
+
+  .fc-auth-brand-panel {
+    display: none;
+  }
+
+  .fc-auth-mobile-brand {
+    display: flex;
+  }
+
+  .fc-auth-form-panel {
+    padding: 2.25rem 1.75rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .fc-auth-shell {
+    padding: 1rem 0.75rem;
+  }
+
+  .fc-auth-form-panel {
+    padding: 1.75rem 1.25rem;
+  }
+
+  .fc-auth-title {
+    font-size: 1.35rem;
+  }
+}
+
+/* ─── Reduced Motion ────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .fc-auth-container,
+  .fc-auth-error-banner {
+    animation: none !important;
+  }
+  .fc-auth-github-btn,
+  .fc-auth-submit-btn {
+    transition: none !important;
+    transform: none !important;
+  }
+}

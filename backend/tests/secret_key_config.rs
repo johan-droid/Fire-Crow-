@@ -283,12 +283,13 @@ fn secret_key_keeps_its_serde_default() {
     );
 }
 
-/// Records the sibling defect. Phase 7 is scoped to SECRET_KEY, so these three
-/// required variables still fail with serde's opaque `missing field` error. The
-/// test fails loudly if the set changes, so nothing is fixed or added silently.
+/// Records the sibling defect. `frontend_url` and `cors_origins` now carry
+/// `#[serde(default)]` (same-origin defaults), so only `database_url` still
+/// fails with serde's opaque `missing field` error. The test fails loudly if
+/// the set changes, so nothing is fixed or added silently.
 #[test]
 fn other_required_variables_with_the_same_defect_are_recorded() {
-    const KNOWN_OPAQUE_REQUIRED: &[&str] = &["frontend_url", "cors_origins", "database_url"];
+    const KNOWN_OPAQUE_REQUIRED: &[&str] = &["database_url"];
 
     let src = include_str!("../src/config.rs");
     let mut opaque: Vec<&str> = Vec::new();

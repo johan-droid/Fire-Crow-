@@ -49,26 +49,29 @@ pub async fn list_github_repos(
         .await
         .map_err(AppError::Database)?;
 
-    let token = if let Some(ref encrypted_token) = db_user.github_access_token {
-        if !encrypted_token.is_empty() {
-            state
-                .crypto()
-                .decrypt_secret(encrypted_token)
-                .unwrap_or_else(|_| state.settings().github_token.clone())
-        } else {
-            state.settings().github_token.clone()
+    // FC-AUTH-04 fix: Never fall back to operator PAT. If the user has no
+    // linked GitHub account (or the stored token is blank/undecodable), return
+    // `not_connected` immediately.  Falling back to `state.settings().github_token`
+    // would expose the operator's private repository list to arbitrary users.
+    let token = match db_user.github_access_token.as_deref() {
+        Some(enc) if !enc.is_empty() => match state.crypto().decrypt_secret(enc) {
+            Ok(t) if !t.is_empty() => t,
+            _ => {
+                return Ok(Json(serde_json::json!({
+                    "status": "not_connected",
+                    "message": "GitHub account not connected. Please sign in with GitHub.",
+                    "repositories": []
+                })));
+            }
+        },
+        _ => {
+            return Ok(Json(serde_json::json!({
+                "status": "not_connected",
+                "message": "GitHub account not connected. Please sign in with GitHub.",
+                "repositories": []
+            })));
         }
-    } else {
-        state.settings().github_token.clone()
     };
-
-    if token.is_empty() {
-        return Ok(Json(serde_json::json!({
-            "status": "not_connected",
-            "message": "GitHub account not connected or access token unavailable. Please sign in with GitHub.",
-            "repositories": []
-        })));
-    }
 
     // security_s_16: `Client::new()` has no timeout, so a stalled peer
     // pins a connection from a small pool for as long as it likes. The

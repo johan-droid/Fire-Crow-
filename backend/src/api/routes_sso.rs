@@ -21,7 +21,10 @@ pub fn router() -> Router<Arc<crate::AppState>> {
 
 pub async fn list_providers(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    // FC-AUTHZ-01: platform-global identity configuration is enumerable only by
+    // platform administrators. Response schema is unchanged for authorized
+    // callers.
+    _admin: crate::middleware::auth::AdminUser,
 ) -> Result<Json<Vec<SsoProvider>>> {
     SsoService::list_providers(state.pool()).await.map(Json)
 }
@@ -41,7 +44,9 @@ pub async fn create_provider(
 
 pub async fn get_provider(
     State(state): State<Arc<crate::AppState>>,
-    _user: crate::middleware::auth::AuthenticatedUser,
+    // FC-AUTHZ-01: by-ID reads are platform-admin-only, matching the list path —
+    // otherwise any account could fetch a known provider's configuration.
+    _admin: crate::middleware::auth::AdminUser,
     Path(id): Path<String>,
 ) -> Result<Json<SsoProvider>> {
     SsoService::get_provider(state.pool(), &id)

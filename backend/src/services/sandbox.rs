@@ -608,12 +608,34 @@ pub const APPROVED_SCANNER_EXECUTIONS: [(&str, NetworkMode); 3] = [
 /// cannot aim a read-only bind at host secrets or the Docker socket itself.
 /// Snapshot staging directories (server tempdirs) and the pinned ruleset
 /// directory are the only legitimate sources.
+/// Lexically normalize an absolute path (`.`, `..`, duplicate slashes)
+/// without touching the filesystem, so the denylist below judges what the
+/// path resolves to rather than how it is spelled. `..` past the root stays
+/// at the root. This does not resolve symlinks: a pre-existing symlink inside
+/// an allowed tree pointing at a sensitive target is out of scope for a
+/// string check and is contained instead by read-only mounts, `--user`,
+/// `--cap-drop=ALL`, and `no-new-privileges` on the container itself.
+fn canonical_host_path(host_path: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for component in host_path.split('/') {
+        match component {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            part => parts.push(part),
+        }
+    }
+    format!("/{}", parts.join("/"))
+}
+
 fn reject_sensitive_host_path(host_path: &str) -> Result<()> {
     if !host_path.starts_with('/') {
         return Err(AppError::BadRequest(
             "sandbox host path must be absolute".into(),
         ));
     }
+    let cleaned = canonical_host_path(host_path);
     const DENIED_EXACT: [&str; 2] = ["/", "/var/run/docker.sock"];
     const DENIED_PREFIXES: [&str; 7] = [
         "/proc/",
@@ -624,8 +646,14 @@ fn reject_sensitive_host_path(host_path: &str) -> Result<()> {
         "/var/run/",
         "/run/",
     ];
-    if DENIED_EXACT.contains(&host_path) || DENIED_PREFIXES.iter().any(|p| host_path.starts_with(p))
-    {
+    // Boundary-aware: `/etc` itself is denied, not just `/etc/...`, and the
+    // comparison runs on the canonicalized path so `/tmp/../etc/shadow` and
+    // `//etc/passwd` are judged as what they resolve to.
+    let denied = DENIED_EXACT.contains(&cleaned.as_str())
+        || DENIED_PREFIXES
+            .iter()
+            .any(|p| cleaned.starts_with(p) || cleaned == p.trim_end_matches('/'));
+    if denied {
         return Err(AppError::BadRequest(format!(
             "sandbox host path {host_path:?} is not an observable scanner input"
         )));
@@ -1045,12 +1073,18 @@ async fn terminate(child: &mut tokio::process::Child, name: &str) {
     let _ = tokio::time::timeout(KILL_GRACE, child.wait()).await;
     // The container, and every process inside it, goes now. `--rm` covers the
     // normal exit; this covers the abnormal one.
-    let _ = tokio::process::Command::new("docker")
-        .args(["rm", "-f", name])
+    // FC-SAND-03 fix: env_clear() prevents inheriting a tampered DOCKER_HOST
+    // or DOCKER_TLS_VERIFY from the environment; only the canonical DOCKER_HOST
+    // from our own process env is re-injected (if present).
+    let mut cmd = tokio::process::Command::new("docker");
+    cmd.args(["rm", "-f", name])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
-        .await;
+        .env_clear();
+    if let Ok(docker_host) = std::env::var("DOCKER_HOST") {
+        cmd.env("DOCKER_HOST", docker_host);
+    }
+    let _ = cmd.status().await;
     tracing::debug!(%name, "Sandbox terminated and container removed");
 }

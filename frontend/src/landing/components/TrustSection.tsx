@@ -1,9 +1,11 @@
+import { Reveal } from './Reveal';
+
 export function TrustSection() {
   return (
     <section id="trust" className="fc-section" aria-labelledby="trust-heading">
       <div className="fc-container">
         <div className="fc-section-header">
-          <div className="fc-section-eyebrow">Trust &amp; Architectural Integrity</div>
+          <div className="fc-section-eyebrow">OPERATIONAL HYGIENE // ARCHITECTURAL INTEGRITY</div>
           <h2 id="trust-heading" className="fc-section-title">
             Security Guarantees Grounded in Implementation
           </h2>
@@ -14,7 +16,7 @@ export function TrustSection() {
         </div>
 
         <div className="fc-trust-grid">
-          <div className="fc-trust-card">
+          <Reveal className="fc-trust-card" delay={0}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
               <span className="fc-badge fc-badge-low">ZERO RETENTION</span>
             </div>
@@ -24,9 +26,9 @@ export function TrustSection() {
               (<code>--cap-drop=ALL</code>) and read-only repository mounts. Source archives
               are destroyed immediately post-audit. Code is never retained, indexed, or shared.
             </p>
-          </div>
+          </Reveal>
 
-          <div className="fc-trust-card">
+          <Reveal className="fc-trust-card" delay={100}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
               <span className="fc-badge fc-badge-high">READ-ONLY AI</span>
             </div>
@@ -36,9 +38,9 @@ export function TrustSection() {
               narrative writer. LLM models produce executive summaries only—they have zero authority
               to invent, delete, or alter any finding or risk score.
             </p>
-          </div>
+          </Reveal>
 
-          <div className="fc-trust-card">
+          <Reveal className="fc-trust-card" delay={200}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
               <span className="fc-badge fc-badge-critical">HONEST SIGNALS</span>
             </div>
@@ -48,7 +50,7 @@ export function TrustSection() {
               <code>engine_unavailable</code> or <code>partial</code>. We never present a silent,
               artificial clean bill of health when a scan could not run.
             </p>
-          </div>
+          </Reveal>
         </div>
       </div>
     </section>

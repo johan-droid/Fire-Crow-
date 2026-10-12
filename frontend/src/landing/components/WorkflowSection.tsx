@@ -1,4 +1,5 @@
 import { WORKFLOW_STEPS } from '../data/landingData';
+import { Reveal } from './Reveal';
 
 export function WorkflowSection() {
   return (
@@ -16,8 +17,8 @@ export function WorkflowSection() {
         </div>
 
         <div className="fc-workflow-grid">
-          {WORKFLOW_STEPS.map((step) => (
-            <div key={step.number} className="fc-workflow-card">
+          {WORKFLOW_STEPS.map((step, idx) => (
+            <Reveal key={step.number} className="fc-workflow-card" delay={idx * 90}>
               <div>
                 <div className="fc-step-num">{step.number}</div>
                 <h3 className="fc-step-title">{step.title}</h3>
@@ -29,7 +30,7 @@ export function WorkflowSection() {
                   <li key={spec}>{spec}</li>
                 ))}
               </ul>
-            </div>
+            </Reveal>
           ))}
         </div>
       </div>

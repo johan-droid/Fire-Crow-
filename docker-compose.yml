@@ -22,8 +22,14 @@ services:
     container_name: firecrow-redis
     restart: unless-stopped
     command: "redis-server --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+    # FC-OPS-01: the password is provided to the container so the healthcheck
+    # can authenticate. `redis-cli ping` without credentials returns NOAUTH
+    # (an error exit), so the previous check reported an authenticated server
+    # as unhealthy forever.
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
       interval: 5s
       timeout: 5s
       retries: 5

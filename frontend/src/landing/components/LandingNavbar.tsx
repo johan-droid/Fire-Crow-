@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { BrandLockup } from './BrandLogos';
 
 interface LandingNavbarProps {
   onNavigateLogin: () => void;
@@ -22,25 +23,24 @@ export function LandingNavbar({ onNavigateLogin }: LandingNavbarProps) {
   return (
     <nav className="fc-nav" aria-label="Main Navigation">
       <div className="fc-container fc-nav-container">
-        {/* Brand */}
-        <a href="#top" className="fc-logo-group" onClick={closeMenu}>
-          <img src="/fire-crow-logo.png" alt="Fire Crow Logo" className="fc-logo-img" />
-          <span className="fc-logo-title">Fire Crow</span>
-          <span className="fc-logo-badge">SEC-OPS</span>
+        {/* Brand Lockup: Fire Crow as product, NEXT LAB.inc as parent */}
+        <a href="#top" className="fc-logo-group" onClick={closeMenu} aria-label="Fire Crow by NEXT LAB.inc Homepage">
+          <BrandLockup compact={false} />
         </a>
 
         {/* Desktop Links */}
         <div className="fc-nav-links">
           <a href="#capabilities" className="fc-nav-link">Capabilities</a>
           <a href="#workflow" className="fc-nav-link">Architecture</a>
-          <a href="#preview" className="fc-nav-link">Audit Preview</a>
+          <a href="#preview" className="fc-nav-link">Audit Walkthrough</a>
+          <a href="#studio" className="fc-nav-link">NEXT LAB Studio</a>
           <a href="#pricing" className="fc-nav-link">Pricing</a>
           <a href="#faq" className="fc-nav-link">FAQ</a>
           <a
             href="https://github.com/johan-droid/Fire-Crow-"
             target="_blank"
             rel="noreferrer"
-            className="fc-nav-link"
+            className="fc-nav-link fc-nav-github"
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -52,10 +52,10 @@ export function LandingNavbar({ onNavigateLogin }: LandingNavbarProps) {
 
         {/* Desktop Actions */}
         <div className="fc-nav-actions">
-          <button onClick={onNavigateLogin} className="fc-btn-ghost">
+          <button onClick={onNavigateLogin} className="fc-btn-ghost" type="button">
             Sign In
           </button>
-          <button onClick={onNavigateLogin} className="fc-btn-primary">
+          <button onClick={onNavigateLogin} className="fc-btn-primary" type="button">
             Launch Console →
           </button>
 
@@ -65,6 +65,7 @@ export function LandingNavbar({ onNavigateLogin }: LandingNavbarProps) {
             className="fc-mobile-toggle"
             aria-label="Toggle navigation menu"
             aria-expanded={isMobileMenuOpen}
+            type="button"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               {isMobileMenuOpen ? (
@@ -82,22 +83,37 @@ export function LandingNavbar({ onNavigateLogin }: LandingNavbarProps) {
         <div className="fc-mobile-drawer open" id="mobile-navigation" role="region" aria-label="Mobile Navigation">
           <a href="#capabilities" onClick={closeMenu}>Capabilities</a>
           <a href="#workflow" onClick={closeMenu}>Architecture</a>
-          <a href="#preview" onClick={closeMenu}>Audit Preview</a>
+          <a href="#preview" onClick={closeMenu}>Audit Walkthrough</a>
+          <a href="#studio" onClick={closeMenu}>NEXT LAB Studio</a>
           <a href="#pricing" onClick={closeMenu}>Pricing</a>
           <a href="#faq" onClick={closeMenu}>FAQ</a>
           <a href="https://github.com/johan-droid/Fire-Crow-" target="_blank" rel="noreferrer" onClick={closeMenu}>
             GitHub Repository ↗
           </a>
-          <button
-            onClick={() => {
-              closeMenu();
-              onNavigateLogin();
-            }}
-            className="fc-btn-primary"
-            style={{ width: '100%', justifyContent: 'center', marginTop: '8px' }}
-          >
-            Launch Console →
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+            <button
+              onClick={() => {
+                closeMenu();
+                onNavigateLogin();
+              }}
+              className="fc-btn-ghost"
+              style={{ width: '100%', justifyContent: 'center' }}
+              type="button"
+            >
+              Sign In
+            </button>
+            <button
+              onClick={() => {
+                closeMenu();
+                onNavigateLogin();
+              }}
+              className="fc-btn-primary"
+              style={{ width: '100%', justifyContent: 'center' }}
+              type="button"
+            >
+              Launch Console →
+            </button>
+          </div>
         </div>
       )}
     </nav>

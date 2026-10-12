@@ -95,7 +95,13 @@ impl StorageBackend for S3StorageBackend {
             .key(key)
             .send()
             .await
-            .map_err(|e| AppError::StorageError(format!("Cloudflare R2 download error: {}", e)))?;
+            .map_err(|e| {
+                use aws_sdk_s3::error::SdkError;
+                match &e {
+                    SdkError::ServiceError(ctx) => classify_get_object_error(ctx.err()),
+                    _ => AppError::StorageError(format!("Cloudflare R2 download error: {e}")),
+                }
+            })?;
 
         let data = output.body.collect().await.map_err(|e| {
             AppError::StorageError(format!("Failed reading R2 response body: {}", e))
@@ -167,7 +173,17 @@ impl StorageBackend for LocalStorageBackend {
         if key.contains("..") || key.starts_with('/') {
             return Err(AppError::Forbidden("Invalid key".into()));
         }
-        std::fs::read(self.base_dir.join(key)).map_err(|e| AppError::StorageError(format!("{e}")))
+        std::fs::read(self.base_dir.join(key)).map_err(|e| {
+            // A DB row whose backing object is gone (retention sweep, manual
+            // deletion, half-completed upload) is a missing resource, not a
+            // server fault: 404 lets the client distinguish "no such artifact"
+            // from a storage outage.
+            if e.kind() == std::io::ErrorKind::NotFound {
+                AppError::NotFound("Stored object not found".into())
+            } else {
+                AppError::StorageError(format!("{e}"))
+            }
+        })
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
@@ -242,5 +258,51 @@ impl StorageService {
         } else {
             self.local_backend.download(key).await
         }
+    }
+}
+
+/// Classify a GetObject service error: only a confirmed missing key is a 404.
+/// Access denials, missing buckets (unmodeled here), archived-object state,
+/// throttling, and transport failures stay 5xx, so a permissions or
+/// infrastructure problem is never misreported as "no such artifact".
+/// Mirrors the local backend's `NotFound` mapping for the same condition.
+fn classify_get_object_error(err: &aws_sdk_s3::operation::get_object::GetObjectError) -> AppError {
+    if err.is_no_such_key() {
+        AppError::NotFound("Stored object not found".into())
+    } else {
+        AppError::StorageError(format!("Cloudflare R2 download error: {err}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_s3_key_maps_to_not_found_without_masking_other_failures() {
+        use aws_sdk_s3::operation::get_object::GetObjectError;
+        use aws_sdk_s3::types::error::NoSuchKey;
+
+        let missing = GetObjectError::NoSuchKey(
+            NoSuchKey::builder()
+                .message("The specified key does not exist.")
+                .build(),
+        );
+        assert!(
+            matches!(classify_get_object_error(&missing), AppError::NotFound(_)),
+            "a confirmed missing key must be a 404 like the local backend"
+        );
+
+        // Anything else — archived state, unmodeled service errors — stays a
+        // 5xx so outages and permission problems are never reported as
+        // "no such artifact".
+        let archived = GetObjectError::unhandled("InvalidObjectState");
+        assert!(
+            matches!(
+                classify_get_object_error(&archived),
+                AppError::StorageError(_)
+            ),
+            "non-key failures must stay server errors"
+        );
     }
 }

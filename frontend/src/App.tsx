@@ -1,15 +1,13 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { AuroraBackdrop } from './scene';
 import LandingPage from './LandingPage';
 import LoginPage from './LoginPage';
+import { FireCrowSymbol } from './landing/components/BrandLogos';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { api } from './api/client';
+// Single API-origin contract (FC-DEP-01): base URL resolution, credentials,
+// and error handling live in ./api/client — never re-implemented here.
+import { api, getApiBase } from './api/client';
 import { ApiError } from './api/errors';
 import { parseSsePayload } from './api/sse';
-import { BackendStatusIndicator } from './api/BackendStatusIndicator';
-import { useToasts } from './api/toast';
-import { ToastHost } from './api/toast-host';
-import { transitionToast, TOAST_COPY } from './api/health';
 import { filterFindings, fromDetailFindings, fromReportFindings, isSafeExternalUrl } from './api/explorer';
 import { buildSubmitRequest, isValidCommitSha } from './api/validation';
 import type {
@@ -21,16 +19,13 @@ import type {
   ReportNarrative,
 } from './api/types';
 import {
-  PanelState, ScoreRing, HealthWidget, jobStatusInfo, severityClass,
+  PanelState, ScoreRing, jobStatusInfo, severityClass,
   fmtUtc, timeAgo, StatusPill, EmptyState, repoLabel,
-  type LoadState, type DeepHealth,
+  type LoadState,
 } from './dash';
 import {
   MetricCard,
-  SecurityTrendChart,
-  SeverityBreakdown,
   AuditTable,
-  ActionSidebar,
 } from './dashboard';
 import {
   ShieldCheck,
@@ -39,17 +34,6 @@ import {
   AlertTriangle,
   Plus,
 } from 'lucide-react';
-
-const getApiBase = (): string => {
-  const viteApiUrl = import.meta.env.VITE_API_URL;
-  if (viteApiUrl && typeof viteApiUrl === 'string' && viteApiUrl.trim().length > 0) {
-    return viteApiUrl.trim();
-  }
-  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    return 'http://localhost:8000/api/v1';
-  }
-  return '/api/v1';
-};
 
 const API_BASE = getApiBase();
 
@@ -79,61 +63,6 @@ interface Finding {
 
 /* Single job contract: canonical JobResponse from ./api/types (backend audit_api.rs). */
 
-interface SsoProvider {
-  id: string;
-  name: string;
-  provider_type: string;
-  issuer_url?: string | null;
-  client_id?: string | null;
-  enforce_mfa?: boolean;
-  auto_provision?: boolean;
-}
-
-interface PamRequest {
-  id: string;
-  user_id: string;
-  role_name: string;
-  permission: string;
-  reason: string;
-  requested_duration_minutes: number;
-  status: string;
-  created_at: string;
-}
-
-interface PamGrant {
-  id: string;
-  request_id: string;
-  granted_by: string;
-  expires_at: string;
-  revoked: boolean;
-  created_at: string;
-}
-
-interface IamPolicy {
-  id: string;
-  name: string;
-  effect: string;
-  actions: string;
-  resources: string;
-  priority: number;
-}
-
-interface DomainVerification {
-  id: string;
-  domain: string;
-  verified: boolean;
-  dns_txt_name?: string;
-  dns_txt_value?: string;
-  created_at: string;
-}
-
-interface ActivityEvent {
-  id: string;
-  action: string;
-  details_json?: string | null;
-  created_at: string;
-}
-
 interface MfaStatus {
   enabled: boolean;
   backup_codes_remaining: number;
@@ -162,8 +91,6 @@ const DASH_CACHE_TTL = 5000;
 function App() {
   const [view, setView] = useState<'landing' | 'login' | 'dashboard'>('landing');
   void view; void setView;
-  // Toasts: connection-state changes and user-facing errors. Never throws.
-  const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -172,13 +99,27 @@ function App() {
   type AuthState = 'initializing' | 'signed_out' | 'authenticated' | 'error';
   const [authState, setAuthState] = useState<AuthState>('initializing');
 
-  // Dashboard Tab state
-  type ConsoleWindow = 'overview' | 'jobs' | 'diagnostics' | 'sso' | 'pam' | 'iam' | 'domains' | 'mfa' | 'activity';
+  // Console navigation: the developer security workspace. Legacy admin routes
+  // (jobs, diagnostics, sso, pam, iam, domains, mfa, activity) resolve to the
+  // closest workspace window so old links and history entries keep working.
+  type ConsoleWindow = 'overview' | 'repositories' | 'audits' | 'findings' | 'settings';
+  const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
+    jobs: 'audits',
+    reports: 'audits',
+    diagnostics: 'settings',
+    sso: 'settings',
+    pam: 'settings',
+    iam: 'settings',
+    domains: 'settings',
+    mfa: 'settings',
+    activity: 'settings',
+  };
   const navigate = useNavigate();
   const location = useLocation();
   const getWindowFromPath = (): ConsoleWindow => {
-    const seg = location.pathname.replace(/^\/console\/?/, '').split('/')[0] as ConsoleWindow;
-    if (['overview','jobs','diagnostics','sso','pam','iam','domains','mfa','activity'].includes(seg)) return seg as ConsoleWindow;
+    const seg = location.pathname.replace(/^\/console\/?/, '').split('/')[0];
+    if (['overview', 'repositories', 'audits', 'findings', 'settings'].includes(seg)) return seg as ConsoleWindow;
+    if (seg in LEGACY_WINDOWS) return LEGACY_WINDOWS[seg];
     return 'overview';
   };
   const activeWindow = getWindowFromPath();
@@ -190,16 +131,9 @@ function App() {
     const w = getWindowFromPath();
     if (w !== dashTab) setDashTabRaw(w);
     if (location.pathname === '/console' || location.pathname === '/console/') navigate('/console/overview', { replace: true });
+    const seg = location.pathname.replace(/^\/console\/?/, '').split('/')[0];
+    if (seg in LEGACY_WINDOWS) navigate(`/console/${LEGACY_WINDOWS[seg]}`, { replace: true });
   }, [location.pathname]);
-  const [themeAccent, setThemeAccent] = useState<'ember' | 'azure' | 'violet' | 'mint'>(() => {
-    const stored = localStorage.getItem('fc-accent');
-    return stored === 'azure' || stored === 'violet' || stored === 'mint' || stored === 'ember' ? stored : 'ember';
-  });
-  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
-  useEffect(() => {
-    document.documentElement.dataset.accent = themeAccent;
-    localStorage.setItem('fc-accent', themeAccent);
-  }, [themeAccent]);
 
   // Live Backend Data States
   const [jobs, setJobs] = useState<JobResponse[]>([]);
@@ -236,21 +170,14 @@ function App() {
   }, [reportState, execReport, selectedJobDetail, findingQuery, findingSev]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [_selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
-  const [ssoProviders, setSsoProviders] = useState<SsoProvider[]>([]);
-  const [pamRequests, setPamRequests] = useState<PamRequest[]>([]);
-  const [_pamGrants, setPamGrants] = useState<PamGrant[]>([]);
-  const [iamPolicies, setIamPolicies] = useState<IamPolicy[]>([]);
-  const [domains, setDomains] = useState<DomainVerification[]>([]);
-  const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const [mfaStatus, setMfaStatus] = useState<MfaStatus>({ enabled: false, backup_codes_remaining: 0 });
   const [activeMonitorJobId, setActiveMonitorJobId] = useState<string | null>(null);
   const [monitorPhases, setMonitorPhases] = useState<PhaseLedgerEntry[]>([]);
 
-  // Dashboard state machine: loading → ready | error, with sync + health telemetry
+  // Dashboard state machine: loading → ready | error, with sync telemetry
   const [dashLoad, setDashLoad] = useState<LoadState>('loading');
   const [dashError, setDashError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<Date | null>(null);
-  const [deepHealth, setDeepHealth] = useState<DeepHealth | null>(null);
   const [cancellingIds, setCancellingIds] = useState<string[]>([]);
   const [mfaEnrollment, setMfaEnrollment] = useState<{ secret: string; uri: string; recovery_codes: string[] } | null>(null);
 
@@ -304,27 +231,6 @@ function App() {
     }
   }, [isLoadingRepos]);
 
-  const [isPamModalOpen, setIsPamModalOpen] = useState(false);
-  const [pamRole, setPamRole] = useState('production_admin');
-  const [pamPermission, setPamPermission] = useState('deploy:execute');
-  const [pamReason, setPamReason] = useState('');
-  const [pamDuration, setPamDuration] = useState('60');
-
-  const [isSsoModalOpen, setIsSsoModalOpen] = useState(false);
-  const [ssoName, setSsoName] = useState('');
-  const [ssoProviderType, setSsoProviderType] = useState('oidc');
-  const [ssoIssuer, setSsoIssuer] = useState('');
-
-  const [isDomainModalOpen, setIsDomainModalOpen] = useState(false);
-  const [newDomainName, setNewDomainName] = useState('');
-
-  // Dodo Payments Modal State
-  const [isDodoModalOpen, setIsDodoModalOpen] = useState(false);
-  const [dodoPackage, setDodoPackage] = useState<'starter' | 'pro' | 'enterprise'>('pro');
-  const [dodoCheckoutUrl, setDodoCheckoutUrl] = useState('');
-
-
-
   const handleInitiateDodoCheckout = async (amount: number, packageName: string) => {
     setIsSubmitting(true);
     setModalError('');
@@ -342,7 +248,6 @@ function App() {
       if (!res.ok) throw new Error('Failed to create Dodo Payments checkout session.');
       const data = await res.json();
       if (data.checkout_url) {
-        setDodoCheckoutUrl(data.checkout_url);
         window.open(data.checkout_url, '_blank');
       }
     } catch (err: any) {
@@ -358,16 +263,16 @@ function App() {
   // Dedupe guard for concurrent dashboard fetches
   const dashboardInflightRef = useRef(false);
 
-  // Fetch all dashboard data via SINGLE batched endpoint (remedy: 8 → 1 request).
-  // Falls back to legacy 8-call flow if batch endpoint is unavailable.
+  // Fetch workspace data via the SINGLE batched endpoint (remedy: 8 → 1 request).
+  // Only job and MFA state is consumed: the console is a security workspace,
+  // not an admin surface, so SSO/PAM/IAM/domain/activity payloads are ignored.
+  // Falls back to a jobs + MFA flow if the batch endpoint is unavailable.
   const fetchDashboardData = useCallback(async (showSpinner = false, opts: { force?: boolean } = {}) => {
     if (dashboardInflightRef.current) return;
     const now = Date.now();
     if (!opts.force && _dashboardCache && (now - _dashboardCache.ts) < DASH_CACHE_TTL) {
       const d = _dashboardCache.data;
-      setJobs(d.jobs || []); setSsoProviders(d.sso_providers || []); setPamRequests(d.pam_requests || []);
-      setPamGrants(d.pam_grants || []); setIamPolicies(d.iam_policies || []); setDomains(d.domains || []);
-      setActivities(d.activities || []); if (d.mfa_status) setMfaStatus(d.mfa_status);
+      setJobs(d.jobs || []); if (d.mfa_status) setMfaStatus(d.mfa_status);
       setLastSync(new Date(_dashboardCache.ts)); setDashError(null); setDashLoad('ready');
       return;
     }
@@ -379,31 +284,21 @@ function App() {
       if (batchRes.ok) {
         const d = await batchRes.json();
         _dashboardCache = { data: d, ts: Date.now() };
-        setJobs(d.jobs || []); setSsoProviders(d.sso_providers || []); setPamRequests(d.pam_requests || []);
-        setPamGrants(d.pam_grants || []); setIamPolicies(d.iam_policies || []); setDomains(d.domains || []);
-        setActivities(d.activities || []); if (d.mfa_status) setMfaStatus(d.mfa_status);
+        setJobs(d.jobs || []); if (d.mfa_status) setMfaStatus(d.mfa_status);
         setDashError(null); setDashLoad('ready'); setLastSync(new Date());
         return;
       }
       // Fallback: legacy fan-out (if backend not yet deployed) — keep working
       const results = await Promise.allSettled([
-        apiFetch('/audit/jobs'), apiFetch('/sso/providers'), apiFetch('/pam/requests'),
-        apiFetch('/pam/grants'), apiFetch('/iam/policies'), apiFetch('/verify/domains'),
-        apiFetch('/auth/activities'), apiFetch('/mfa/status'),
+        apiFetch('/audit/jobs'), apiFetch('/mfa/status'),
       ]) as PromiseSettledResult<Response>[];
-      const [jobsRes, ssoRes, pamReqRes, pamGrantRes, iamRes, domainRes, actRes, mfaRes] = results;
+      const [jobsRes, mfaRes] = results;
       let jobsOk = false;
       const jobsHttp = jobsRes.status === 'fulfilled' ? jobsRes.value.status : null;
       if (jobsRes.status === 'fulfilled' && jobsRes.value.ok) { setJobs(await jobsRes.value.json()); jobsOk = true; }
       else if (jobsRes.status === 'rejected') { throw jobsRes.reason; }
       else if (jobsHttp === 401) { throw new Error('Session expired — please sign in again.'); }
       else { throw new Error(`Audit API returned HTTP ${jobsHttp}`); }
-      if (ssoRes.status === 'fulfilled' && ssoRes.value.ok) setSsoProviders(await ssoRes.value.json());
-      if (pamReqRes.status === 'fulfilled' && pamReqRes.value.ok) setPamRequests(await pamReqRes.value.json());
-      if (pamGrantRes.status === 'fulfilled' && pamGrantRes.value.ok) setPamGrants(await pamGrantRes.value.json());
-      if (iamRes.status === 'fulfilled' && iamRes.value.ok) setIamPolicies(await iamRes.value.json());
-      if (domainRes.status === 'fulfilled' && domainRes.value.ok) setDomains(await domainRes.value.json());
-      if (actRes.status === 'fulfilled' && actRes.value.ok) setActivities(await actRes.value.json());
       if (mfaRes.status === 'fulfilled' && mfaRes.value.ok) setMfaStatus(await mfaRes.value.json());
       setDashError(null); setDashLoad('ready'); if (jobsOk) setLastSync(new Date());
     } catch (err: any) {
@@ -432,29 +327,6 @@ function App() {
       }
     }
   }, []);
-
-  // Deep health telemetry (public endpoint). Operational status only: a healthy
-  // database never implies any particular scan succeeded.
-  useEffect(() => {
-    if (!location.pathname.startsWith('/console')) return;
-    let alive = true;
-    const probe = async () => {
-      try {
-        // R-24: this used to strip the `/api/v1` prefix and request
-        // `${base}/health/deep`, which the backend never serves. Through the
-        // `_redirects` SPA fallback it received index.html with status 200, so
-        // the widget reported "database unreachable" permanently. Use API_BASE.
-        const res = await fetch(`${API_BASE}/health/deep`);
-        if (!alive) return;
-        setDeepHealth(res.ok ? await res.json() : { status: 'unhealthy', database: 'unavailable' });
-      } catch {
-        if (alive) setDeepHealth({ status: 'network_failure', database: 'unreachable' });
-      }
-    };
-    probe();
-    const t = setInterval(probe, 30000);
-    return () => { alive = false; clearInterval(t); };
-  }, [location.pathname]);
 
   // Cancel requests finalization; the worker owns the terminal write.
   const handleCancelJob = async (jobId: string) => {
@@ -641,9 +513,6 @@ function App() {
     };
   }, [location.pathname, activeMonitorJobId, fetchJobsLite]);
 
-
-
-
   // Auto-sync repositories — throttled to 30 s, manual refresh via button forces it
   useEffect(() => {
     if (user && view === 'dashboard') {
@@ -671,7 +540,10 @@ function App() {
           credit_balance: data.credit_balance,
         });
         setAuthState('authenticated');
-        navigate('/console/overview');
+        // Deep links survive session re-validation: an already-open console
+        // path (legacy admin routes remap below) is kept instead of being
+        // reset to Overview on every mount.
+        navigate(location.pathname.startsWith('/console') ? location.pathname : '/console/overview');
         fetchDashboardData(true, { force: true });
       } catch (err) {
         // No session (401) or unreachable backend: stay signed out, never
@@ -753,6 +625,46 @@ function App() {
     window.location.href = `${API_BASE}/auth/github?privacy_policy_accepted=true&privacy_policy_version=${privacyVersion}`;
   };
 
+  const handlePasswordLogin = async (identifier: string, password: string) => {
+    setIsLoading(true);
+    setError('');
+    setAuthFormError('');
+    try {
+      await api.login(identifier, password);
+      const me = await api.me();
+      setUser({
+        user_id: me.user_id,
+        username: me.username,
+        email: me.email,
+        credit_balance: me.credit_balance,
+      });
+      setAuthState('authenticated');
+      const returnTarget = (location.state as { returnTo?: string } | null)?.returnTo || '/console/overview';
+      navigate(returnTarget);
+      fetchDashboardData(true, { force: true });
+    } catch (err) {
+      console.warn('Password login failed:', err);
+      setAuthFormError(err instanceof ApiError ? err.message : 'Invalid credentials or network failure.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRegister = async (username: string, email: string, password: string) => {
+    setIsLoading(true);
+    setError('');
+    setAuthFormError('');
+    try {
+      await api.register(username, email, password);
+      // Automatically log the newly registered user in
+      await handlePasswordLogin(username, password);
+    } catch (err) {
+      console.warn('Registration failed:', err);
+      setAuthFormError(err instanceof ApiError ? err.message : 'Registration failed. Please try again.');
+      setIsLoading(false);
+    }
+  };
+
   const handleLogout = async () => {
     setIsLoading(true);
     try {
@@ -766,12 +678,6 @@ function App() {
       setJobs([]);
       setSelectedJobDetail(null);
       setSelectedFinding(null);
-      setSsoProviders([]);
-      setPamRequests([]);
-      setPamGrants([]);
-      setIamPolicies([]);
-      setDomains([]);
-      setActivities([]);
       setMfaStatus({ enabled: false, backup_codes_remaining: 0 });
       navigate('/');
       setIsLoading(false);
@@ -807,100 +713,6 @@ function App() {
     } catch (err) {
       // Values retained; no success screen on failure. 409 names the cap.
       setModalError(err instanceof ApiError ? err.message : 'Network error submitting scan job.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Submit real PAM Request
-  const handleCreatePamRequest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setModalError('');
-    setIsSubmitting(true);
-    try {
-      const res = await apiFetch('/pam/requests', {
-        method: 'POST',
-        body: JSON.stringify({
-          role_name: pamRole,
-          permission: pamPermission,
-          reason: pamReason,
-          requested_duration_minutes: parseInt(pamDuration) || 60,
-          ticket_ref: `REF-${Math.floor(Math.random() * 9000 + 1000)}`,
-          id: '',
-          user_id: '',
-          status: 'pending',
-          created_at: new Date().toISOString(),
-        }),
-      });
-      if (res.ok) {
-        setIsPamModalOpen(false);
-        setPamReason('');
-        fetchDashboardData(false, { force: true });
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        setModalError(errData.message || errData.error || 'Failed to create PAM request.');
-      }
-    } catch (err: any) {
-      setModalError(err.message || 'Network error creating PAM request.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Submit real SSO Provider
-  const handleCreateSsoProvider = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setModalError('');
-    setIsSubmitting(true);
-    try {
-      const res = await apiFetch('/sso/providers', {
-        method: 'POST',
-        body: JSON.stringify({
-          id: '',
-          name: ssoName,
-          provider_type: ssoProviderType,
-          issuer_url: ssoIssuer,
-          client_id: `client_${Math.random().toString(36).substring(2, 10)}`,
-          created_at: new Date().toISOString(),
-        }),
-      });
-      if (res.ok) {
-        setIsSsoModalOpen(false);
-        setSsoName('');
-        setSsoIssuer('');
-        fetchDashboardData(false, { force: true });
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        setModalError(errData.message || errData.error || 'Failed to save SSO provider.');
-      }
-    } catch (err: any) {
-      setModalError(err.message || 'Network error adding SSO provider.');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Initiate real Domain Verification
-  const handleInitiateDomain = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newDomainName) return;
-    setModalError('');
-    setIsSubmitting(true);
-    try {
-      const res = await apiFetch('/verify/domains/initiate', {
-        method: 'POST',
-        body: JSON.stringify({ domain: newDomainName }),
-      });
-      if (res.ok) {
-        setIsDomainModalOpen(false);
-        setNewDomainName('');
-        fetchDashboardData(false, { force: true });
-      } else {
-        const errData = await res.json().catch(() => ({}));
-        setModalError(errData.message || errData.error || 'Failed to initiate domain verification.');
-      }
-    } catch (err: any) {
-      setModalError(err.message || 'Network error initiating domain verification.');
     } finally {
       setIsSubmitting(false);
     }
@@ -1090,9 +902,17 @@ function App() {
   // Guard: unauthenticated console access returns to login (401 contract).
   useEffect(() => {
     if (isConsole && !user && (authState === 'signed_out' || authState === 'error')) {
-      navigate('/login');
+      navigate('/login', { state: { returnTo: location.pathname } });
     }
-  }, [isConsole, user, authState, navigate]);
+  }, [isConsole, user, authState, navigate, location.pathname]);
+
+  // Guard: already-authenticated user on /login returns to destination or overview
+  useEffect(() => {
+    if (isLogin && user && authState === 'authenticated') {
+      const returnTarget = (location.state as { returnTo?: string } | null)?.returnTo || '/console/overview';
+      navigate(returnTarget, { replace: true });
+    }
+  }, [isLogin, user, authState, navigate, location.state]);
 
   if (authState === 'initializing' || isLoading) {
     return (
@@ -1122,6 +942,8 @@ function App() {
       <LoginPage
         onNavigateLanding={() => navigate('/')}
         onGitHubLogin={handleGitHubLogin}
+        onPasswordLogin={handlePasswordLogin}
+        onRegister={handleRegister}
         error={error}
         authFormError={authFormError}
         clearErrors={() => { setError(''); setAuthFormError(''); }}
@@ -1129,7 +951,7 @@ function App() {
     );
   }
 
-  // Render Dashboard View — per-function windows with proper navigation
+  // Render Dashboard View — the developer security workspace
   if (!isConsole) {
     // fallback: unknown route -> landing
     return (
@@ -1138,13 +960,11 @@ function App() {
   }
   return (
     <div className="shell">
-      {/* Ambient 3D Aurora Backdrop */}
-      <AuroraBackdrop variant="dashboard" />
-
-      {/* Hover Navigation Island — collapses to icon rail, expands on hover */}
-      <nav className="nav-island" aria-label="Dashboard navigation">
+      {/* Workspace navigation — product surfaces only: the security workflow.
+          Infrastructure and administration never appear here. */}
+      <nav className="nav-island" aria-label="Security workspace navigation">
         <div className="island-brand">
-          <img src="/fire-crow-logo.png" alt="Fire Crow" className="island-logo" />
+          <FireCrowSymbol size={24} className="island-logo" />
           <span className="island-label island-brand-text">Fire Crow</span>
         </div>
 
@@ -1152,44 +972,27 @@ function App() {
 
         {([
           {
-            group: 'Security work',
+            group: 'Security workspace',
             items: [
-              { id: 'overview', label: 'Overview', desc: 'Audit activity and next steps', icon: (
+              { id: 'overview', label: 'Overview', desc: 'What needs attention', icon: (
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
               ) },
-              { id: 'jobs', label: 'Audit Jobs', desc: 'Every repository audit', badge: jobs.length, icon: (
+              { id: 'repositories', label: 'Repositories', desc: 'Audited code, history, actions', icon: (
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="12" r="2.5"/><path d="M6 8.5v7M8 7l7.5 3.8M8 17l7.5-3.8"/></svg>
+              ) },
+              { id: 'audits', label: 'Audits', desc: 'Every repository audit run', badge: jobs.length, icon: (
                 <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15h6M9 11h3"/></svg>
               ) },
-            ],
-          },
-          {
-            group: 'Operations',
-            items: [
-              { id: 'diagnostics', label: 'Service Status', desc: 'Health of the audit service', icon: (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+              { id: 'findings', label: 'Findings', desc: 'Evidence and how to fix it', icon: (
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
               ) },
             ],
           },
           {
-            group: 'Access & administration',
+            group: 'Account',
             items: [
-              { id: 'sso', label: 'SSO', desc: 'Sign-on providers', badge: ssoProviders.length, icon: (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-              ) },
-              { id: 'pam', label: 'PAM', desc: 'Privileged access requests', badge: pamRequests.length, icon: (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              ) },
-              { id: 'iam', label: 'IAM', desc: 'Access policies', badge: iamPolicies.length, icon: (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
-              ) },
-              { id: 'domains', label: 'Domains', desc: 'Domain verification', badge: domains.length, icon: (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 4 9 15 15 0 0 1-4 9 15 15 0 0 1-4-9 15 15 0 0 1 4-9z"/></svg>
-              ) },
-              { id: 'mfa', label: 'MFA', desc: 'Two-factor authentication', badge: mfaStatus.enabled ? 1 : 0, icon: (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/><circle cx="12" cy="16" r="1"/></svg>
-              ) },
-              { id: 'activity', label: 'Activity', desc: 'Security event log', badge: activities.length, icon: (
-                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+              { id: 'settings', label: 'Settings', desc: 'Account and security', icon: (
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.9 2.9l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.9-2.9l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.9-2.9l.1.1a1.7 1.7 0 0 0 1.9.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5h0a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.9 2.9l-.1.1a1.7 1.7 0 0 0-.3 1.9v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
               ) },
             ],
           },
@@ -1239,14 +1042,10 @@ function App() {
           {activeWindow !== 'overview' && (
             <div>
               <div className="topbar-title">
-                {activeWindow === 'jobs' && 'Audit Jobs'}
-                {activeWindow === 'diagnostics' && 'Service Status'}
-                {activeWindow === 'sso' && 'SSO Providers'}
-                {activeWindow === 'pam' && 'Privileged Access'}
-                {activeWindow === 'iam' && 'IAM Policies'}
-                {activeWindow === 'domains' && 'Domain Verification'}
-                {activeWindow === 'mfa' && 'MFA & Keys'}
-                {activeWindow === 'activity' && 'Activity & Logs'}
+                {activeWindow === 'repositories' && 'Repositories'}
+                {activeWindow === 'audits' && 'Audits'}
+                {activeWindow === 'findings' && 'Findings'}
+                {activeWindow === 'settings' && 'Settings'}
               </div>
               <div className="topbar-subtitle">
                 Signed in as {user?.username ?? 'unknown'}
@@ -1255,45 +1054,6 @@ function App() {
           )}
 
           <div className="topbar-right">
-            <ToastHost toasts={toasts} onDismiss={dismissToast} />
-
-            {/* Dynamic Theme Picker */}
-            <div className={`theme-picker ${themeMenuOpen ? 'open' : ''}`} onMouseLeave={() => setThemeMenuOpen(false)}>
-              <button
-                className={`theme-btn ${themeMenuOpen ? 'active' : ''}`}
-                onClick={() => setThemeMenuOpen((open) => !open)}
-                onMouseEnter={() => setThemeMenuOpen(true)}
-                title="Theme"
-                aria-label="Change accent theme"
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <circle cx="12" cy="12" r="9"/>
-                  <path d="M12 3a9 9 0 0 0 0 18c1.5 0 2-.8 2-1.6 0-1.3-1.2-1.6-1.2-2.7 0-.9.7-1.7 1.9-1.7H16a5 5 0 0 0 5-5c0-3.9-4-7-9-7z"/>
-                </svg>
-              </button>
-              <div className="theme-menu">
-                {([
-                  { id: 'ember', color: '#ff6b00', name: 'Ember' },
-                  { id: 'azure', color: '#2997ff', name: 'Azure' },
-                  { id: 'violet', color: '#bf5af2', name: 'Violet' },
-                  { id: 'mint', color: '#4ade80', name: 'Mint' },
-                ] as const).map((t) => (
-                  <button
-                    key={t.id}
-                    className={`theme-swatch ${themeAccent === t.id ? 'selected' : ''}`}
-                    onClick={() => { setThemeAccent(t.id); setThemeMenuOpen(false); }}
-                    title={t.name}
-                  >
-                    <span className="swatch-dot" style={{ background: t.color }} />
-                    <span className="island-label">{t.name}</span>
-                    {themeAccent === t.id && (
-                      <svg className="swatch-check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             <button onClick={handleLogout} className="topbar-avatar" title="Sign Out" aria-label="Sign out">
               {user?.username ? user.username[0].toUpperCase() : 'U'}
             </button>
@@ -1308,19 +1068,19 @@ function App() {
               {dashLoad === 'error' && (
                 <div className="dash-error-banner">
                   <span>{dashError}</span>
-                  <button className="btn btn-secondary btn-sm" onClick={() => fetchDashboardData(true, { force: true })}>Retry</button>
+                  <button className="fc-btn-secondary fc-btn-sm" onClick={() => fetchDashboardData(true, { force: true })}>Retry</button>
                 </div>
               )}
 
-              {/* Page introduction: customer-facing heading, one obvious action.
-                  Infrastructure identifiers never appear here — service health
-                  lives in the Service Status window. */}
+              {/* Page introduction: the product promise in one glance —
+                  which repositories were audited, what needs attention,
+                  and how to fix it. */}
               <header className="page-head">
                 <div className="page-head-main">
-                  <p className="page-eyebrow">Security workspace</p>
+                  <p className="page-eyebrow">NEXT LAB.inc · Fire Crow</p>
                   <h1 className="page-head-title">Overview</h1>
                   <p className="page-head-sub">
-                    Track repository audits, review findings and reports, and start the next audit.
+                    Developer security intelligence for your GitHub repositories — verified findings, evidence, and fixes.
                   </p>
                 </div>
                 <div className="page-head-side">
@@ -1330,14 +1090,6 @@ function App() {
                       Synced {timeAgo(lastSync.toISOString())}
                     </span>
                   )}
-                  {/* Audit-service availability: reporting-only, never a scan claim. */}
-                  <BackendStatusIndicator
-                    onTransition={(prev, next) => {
-                      const decision = transitionToast(prev, next);
-                      if (decision === 'none') return;
-                      pushToast(TOAST_COPY[decision].tone, TOAST_COPY[decision].message);
-                    }}
-                  />
                   <button onClick={() => { openScanModal(); }} className="fc-btn-primary">
                     <Plus size={15} />
                     New audit
@@ -1371,25 +1123,13 @@ function App() {
                 <MetricCard
                   icon={<AlertTriangle size={16} />}
                   label="Needs attention"
-                  value={jobs.filter(j => j.status === 'failed' || j.status === 'cancelled').length}
-                  hint="failed or cancelled audits"
-                  tone={jobs.some(j => j.status === 'failed' || j.status === 'cancelled') ? 'crit' : 'neutral'}
+                  value={jobs.filter(j => ['failed', 'cancelled', 'partial', 'engine_unavailable'].includes(j.status)).length}
+                  hint="failed, partial, or incomplete audits"
+                  tone={jobs.some(j => ['failed', 'cancelled', 'partial', 'engine_unavailable'].includes(j.status)) ? 'crit' : 'neutral'}
                 />
               </div>
 
-              {/* Data Visualization Grid: Security Score Trend & Severity Breakdown */}
-              <div className="fc-charts-grid">
-                <SecurityTrendChart
-                  jobs={jobs}
-                  onSelectAudit={(jobId) => { handleViewJobDetail(jobId); setActiveMonitorJobId(jobId); }}
-                />
-                <SeverityBreakdown
-                  findings={selectedJobDetail?.findings ?? []}
-                  auditTitle={selectedJobDetail ? `Audit: ${repoLabel(selectedJobDetail.job.repo_url)}` : undefined}
-                />
-              </div>
-
-              {/* Live audit — only while a job is genuinely running or queued */}
+              {/* Live audit — only while a job is genuinely running or queued. */}
               {(() => {
                 const activeMonitorJob = jobs.find(j => j.id === (activeMonitorJobId || ''));
                 const job = (activeMonitorJob && (activeMonitorJob.status === 'running' || activeMonitorJob.status === 'queued'))
@@ -1436,7 +1176,7 @@ function App() {
                         <StatusPill status={job.status} />
                         <button
                           onClick={() => { handleViewJobDetail(job.id); setActiveMonitorJobId(job.id); }}
-                          className="btn btn-secondary btn-sm"
+                          className="fc-btn-secondary fc-btn-sm"
                         >
                           View progress
                         </button>
@@ -1472,7 +1212,9 @@ function App() {
                 );
               })()}
 
-              {/* Operational Surface: Audit Table + Actions Sidebar */}
+              {/* Decision surface: the audits that need a developer first.
+                  Failed, partial, and engine-missing runs are never presented
+                  as clean — each row says what happened and what to do next. */}
               <div className="fc-main-grid">
                 <AuditTable
                   jobs={jobs}
@@ -1487,71 +1229,114 @@ function App() {
                   onDownloadReport={handleDownloadReport}
                 />
 
-                <ActionSidebar
-                  jobs={jobs}
-                  userRepos={userRepos}
-                  reposStatus={reposStatus}
-                  deepHealth={deepHealth}
-                  onStartAudit={openScanModal}
-                  onNavigate={(route) => navigate(route)}
-                  onViewJobDetail={(jobId) => { handleViewJobDetail(jobId); setActiveMonitorJobId(jobId); }}
-                />
+                <div className="fc-side-stack">
+                  <section className="fc-panel" aria-label="What needs your attention">
+                    <div className="fc-panel-header">
+                      <div>
+                        <h2 className="fc-panel-title">Needs attention</h2>
+                        <p className="fc-panel-subtitle">Incomplete or failed audits first — never mistaken for clean</p>
+                      </div>
+                    </div>
+                    {(() => {
+                      const attention = jobs
+                        .filter(j => ['failed', 'cancelled', 'partial', 'engine_unavailable', 'running', 'queued'].includes(j.status))
+                        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+                        .slice(0, 5);
+                      if (attention.length === 0) {
+                        return (
+                          <p className="fc-calm-note">
+                            {jobs.length === 0
+                              ? 'No audits yet. Submit a repository to get your first verified findings.'
+                              : 'Nothing waiting — every finished audit completed. New failures or partial runs will appear here.'}
+                          </p>
+                        );
+                      }
+                      const reason = (j: JobResponse): string => {
+                        switch (j.status) {
+                          case 'failed': return j.error_message || 'The audit failed before producing a report.';
+                          case 'cancelled': return 'Cancelled before completion — no verdict was reached.';
+                          case 'partial': return 'Partial coverage: some scanners did not finish. Not a complete audit.';
+                          case 'engine_unavailable': return 'No scan engine ran for this audit. Not a clean result.';
+                          case 'running': return 'Scan in progress — findings appear when it finishes.';
+                          default: return 'Queued — waiting for a scan slot.';
+                        }
+                      };
+                      const retryable = (s: string) => ['failed', 'cancelled', 'partial', 'engine_unavailable'].includes(s);
+                      return (
+                        <ul className="fc-attention-list">
+                          {attention.map(j => (
+                            <li key={j.id} className="fc-attention-item">
+                              <div className="fc-attention-main">
+                                <div className="fc-attention-top">
+                                  <span className="fc-attention-repo">{repoLabel(j.repo_url)}</span>
+                                  <StatusPill status={j.status} />
+                                </div>
+                                <p className="fc-attention-reason" title={reason(j)}>{reason(j)}</p>
+                                <p className="fc-attention-meta">{j.repo_branch} · {timeAgo(j.created_at) || 'just now'}</p>
+                              </div>
+                              <div className="fc-attention-actions">
+                                <button
+                                  type="button"
+                                  className="fc-btn-secondary fc-btn-sm"
+                                  onClick={() => { handleViewJobDetail(j.id); setActiveMonitorJobId(j.id); }}
+                                >
+                                  Inspect
+                                </button>
+                                {retryable(j.status) && (
+                                  <button
+                                    type="button"
+                                    className="fc-btn-secondary fc-btn-sm"
+                                    disabled={retryBusy}
+                                    onClick={() => void handleRetryJob(j.id)}
+                                  >
+                                    Retry
+                                  </button>
+                                )}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      );
+                    })()}
+                  </section>
+
+                  <section className="fc-panel" aria-label="How Fire Crow works">
+                    <div className="fc-panel-header">
+                      <div>
+                        <h2 className="fc-panel-title">How an audit works</h2>
+                        <p className="fc-panel-subtitle">Scanner evidence first, AI explanation optional</p>
+                      </div>
+                    </div>
+                    <ol className="fc-how-list">
+                      <li><strong>Submit a repository.</strong> Audit a branch head or a pinned commit.</li>
+                      <li><strong>Scanners inspect it.</strong> Secrets, vulnerable dependencies, risky code patterns.</li>
+                      <li><strong>Evidence is consolidated.</strong> One canonical report per attempt — file, line, evidence, scanner provenance.</li>
+                      <li><strong>You prioritize and fix.</strong> Severity first, with remediation guidance and references.</li>
+                    </ol>
+                    <p className="fc-calm-note">AI can explain a finding, but never invents one: severity always comes from scanner evidence.</p>
+                  </section>
+                </div>
               </div>
+
             </>
           )}
 
-          {/* Window: Service Status — operational infrastructure detail,
-              intentionally secondary: service availability, never scan claims.
-              Audit-level outcomes live on each audit job, not here. */}
-          {activeWindow === 'diagnostics' && (
-            <div className="panel">
-              <div className="panel-header">
+          {/* Window: Audits — execution history. Each row is one audit run with
+              its own status, score, and report; attempts are never merged. */}
+          {activeWindow === 'audits' && (
+            <div className="fc-panel">
+              <div className="fc-panel-header">
                 <div>
-                  <h2 className="panel-title">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                    Service status
-                  </h2>
-                  <p className="panel-sub">Availability of the audit service and its internal dependencies.</p>
-                </div>
-                {(() => {
-                  const cbOpen = Object.values(deepHealth?.circuit_breakers || {}).some(cb => cb.state !== 'closed');
-                  const ok = !!(deepHealth
-                    && (deepHealth.database === 'ok' || deepHealth.database === 'connected')
-                    && (deepHealth.local_storage == null || deepHealth.local_storage === 'ok')
-                    && (deepHealth.object_storage == null || deepHealth.object_storage === 'ok' || deepHealth.object_storage === 'disabled')
-                    && !cbOpen);
-                  if (!deepHealth) return <span className="health-chip probe">Probing</span>;
-                  return ok
-                    ? <span className="health-chip ok">Operational</span>
-                    : <span className="health-chip degraded">Degraded</span>;
-                })()}
-              </div>
-              <div className="panel-body">
-                <div className="diag-note">
-                  Operational status of the audit service — API reachability, storage and internal
-                  dependencies. A healthy service never implies any audit succeeded: per-audit results,
-                  scores and findings are reported on each audit job.
-                </div>
-                <HealthWidget deep={deepHealth} />
-              </div>
-            </div>
-          )}
-
-          {/* Tab 2: Audit Jobs */}
-          {activeWindow === 'jobs' && (
-            <div className="panel">
-              <div className="panel-header">
-                <div>
-                  <h2 className="panel-title">Audit Jobs ({jobs.length})</h2>
-                  {dashLoad === 'ready' && lastSync && (
-                    <p className="panel-sub">Synced {timeAgo(lastSync.toISOString())}</p>
-                  )}
+                  <h2 className="fc-panel-title">Audits ({jobs.length})</h2>
+                  <p className="fc-panel-subtitle">
+                    {dashLoad === 'ready' && lastSync ? `Synced ${timeAgo(lastSync.toISOString())}` : 'Repository audit execution history'}
+                  </p>
                 </div>
                 <div className="panel-actions">
-                  <button onClick={() => fetchDashboardData(true, { force: true })} className="btn btn-secondary btn-sm" disabled={dashLoad === 'loading'}>
+                  <button onClick={() => fetchDashboardData(true, { force: true })} className="fc-btn-secondary fc-btn-sm" disabled={dashLoad === 'loading'}>
                     {dashLoad === 'loading' ? 'Syncing…' : 'Refresh'}
                   </button>
-                  <button onClick={() => { openScanModal(); }} className="btn btn-primary btn-sm">New audit</button>
+                  <button onClick={() => { openScanModal(); }} className="fc-btn-primary fc-btn-sm">New audit</button>
                 </div>
               </div>
 
@@ -1574,22 +1359,22 @@ function App() {
                       title="No audits yet"
                       body="Submit a repository to run your first audit. Every audit attempt, score and report is listed here."
                       action={
-                        <button onClick={() => { openScanModal(); }} className="btn btn-primary btn-sm">
+                        <button onClick={() => { openScanModal(); }} className="fc-btn-primary fc-btn-sm">
                           Start an audit
                         </button>
                       }
                     />
                   ) : (
-                    <div className="table-wrap">
-                      <table>
+                    <div className="fc-table-responsive-wrap">
+                      <table className="fc-table">
                         <thead>
                           <tr>
-                            <th>Job</th>
-                            <th>Repository</th>
-                            <th>Status</th>
-                            <th>Score</th>
-                            <th>Created</th>
-                            <th style={{ textAlign: 'right' }}>Actions</th>
+                            <th scope="col" style={{ width: '90px' }}>Job</th>
+                            <th scope="col">Repository</th>
+                            <th scope="col">Status</th>
+                            <th scope="col">Score</th>
+                            <th scope="col">Created</th>
+                            <th scope="col" style={{ textAlign: 'right' }}>Actions</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1597,33 +1382,35 @@ function App() {
                             const isActive = j.status === 'queued' || j.status === 'running';
                             const busy = cancellingIds.includes(j.id);
                             return (
-                              <tr key={j.id} style={{ opacity: busy ? 0.55 : 1 }}>
-                                <td className="mono" style={{ fontSize: '0.78rem' }}>{j.id.substring(0, 8)}</td>
+                              <tr key={j.id} className="fc-table-row" style={{ opacity: busy ? 0.55 : 1 }}>
+                                <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.74rem', color: 'var(--fc-text-muted)' }}>{j.id.substring(0, 8)}</td>
                                 <td>
-                                  <div style={{ fontWeight: 600 }}>{repoLabel(j.repo_url)}</div>
-                                  <code style={{ fontSize: '0.72rem', color: 'var(--dash-text-3)' }}>⎇ {j.repo_branch}</code>
-                                  {(j.commit_sha || j.requested_commit_sha) ? (
-                                    <code style={{ fontSize: '0.72rem', color: 'var(--dash-text-3)', marginLeft: '0.5rem' }} title={`Pinned snapshot ${j.commit_sha || j.requested_commit_sha}`}>⏺ {((j.commit_sha || j.requested_commit_sha) ?? '').substring(0, 8)}</code>
-                                  ) : null}
+                                  <div style={{ fontWeight: 600, color: 'var(--fc-text-primary)' }}>{repoLabel(j.repo_url)}</div>
+                                  <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', marginTop: '0.15rem' }}>
+                                    <span className="fc-branch-tag">⎇ {j.repo_branch}</span>
+                                    {(j.commit_sha || j.requested_commit_sha) ? (
+                                      <span className="fc-sha-tag font-mono" title={`Pinned snapshot ${j.commit_sha || j.requested_commit_sha}`}>⏺ {((j.commit_sha || j.requested_commit_sha) ?? '').substring(0, 8)}</span>
+                                    ) : null}
+                                  </div>
                                 </td>
                                 <td>
                                   <StatusPill status={j.status} />
                                   {(j.status === 'failed') && j.error_message && (
-                                    <div className="cell-error" title={j.error_message}>
+                                    <div className="fc-repo-error-hint" title={j.error_message}>
                                       {j.error_message}
                                     </div>
                                   )}
                                 </td>
-                                <td><ScoreRing score={j.security_score ?? null} size={38} /></td>
-                                <td style={{ color: 'var(--dash-text-3)', fontSize: '0.78rem' }} title={fmtUtc(j.created_at)}>{timeAgo(j.created_at)}</td>
+                                <td><ScoreRing score={j.security_score ?? null} size={34} /></td>
+                                <td style={{ color: 'var(--fc-text-secondary)', fontSize: '0.74rem' }} title={fmtUtc(j.created_at)}>{timeAgo(j.created_at)}</td>
                                 <td>
-                                  <div className="row-actions">
-                                    <button onClick={() => handleViewJobDetail(j.id)} className="btn btn-secondary btn-sm">Inspect</button>
+                                  <div className="fc-actions-group">
+                                    <button onClick={() => handleViewJobDetail(j.id)} className="fc-btn-action">Inspect</button>
                                     {j.status === 'completed' && (
-                                      <button onClick={() => handleDownloadReport(j.id)} className="btn btn-secondary btn-sm" title="Download report">Report</button>
+                                      <button onClick={() => handleDownloadReport(j.id)} className="fc-btn-action" title="Download report">Report</button>
                                     )}
                                     {isActive && (
-                                      <button onClick={() => handleCancelJob(j.id)} className="btn btn-danger btn-sm" disabled={busy}>
+                                      <button onClick={() => handleCancelJob(j.id)} className="fc-btn-secondary fc-btn-sm" style={{ color: 'var(--fc-critical)' }} disabled={busy}>
                                         {busy ? '…' : 'Cancel'}
                                       </button>
                                     )}
@@ -1641,123 +1428,319 @@ function App() {
             </div>
           )}
 
-          {/* Window: SSO Providers — per-function */}
-          {activeWindow === 'sso' && (
-            <div className="panel" style={{ maxWidth: '900px', margin: '0 auto', width: '100%' }}>
-              <div className="panel-header">
-                <div className="panel-title">SSO Providers ({ssoProviders.length})</div>
-                <button onClick={() => setIsSsoModalOpen(true)} className="btn btn-secondary btn-sm">+ Provider</button>
-              </div>
-              <div className="panel-body" style={{ padding: '0.75rem' }}>
-                <PanelState state={dashLoad} error={dashError} empty={ssoProviders.length === 0} emptyIcon="🔑" rows={2} onRetry={() => fetchDashboardData(true, { force: true })}>
-                  {ssoProviders.length === 0 ? <p>No SSO providers configured yet.</p> : ssoProviders.map(p => (
-                    <div key={p.id} className="list-item" style={{ cursor: 'default' }}>
-                      <div className="list-item-info"><div className="list-item-title">{p.name}</div><div className="list-item-sub">Type: {p.provider_type} • Issuer: {p.issuer_url || 'N/A'}</div></div>
-                      <span className="badge badge-success">ACTIVE</span>
-                    </div>
-                  ))}
-                </PanelState>
-              </div>
-            </div>
+          {/* Window: Repositories — identity, branches/commits, audit history,
+              and the supported audit action. Groups real audit runs by repo. */}
+          {activeWindow === 'repositories' && (
+            <>
+              <header className="page-head">
+                <div className="page-head-main">
+                  <p className="page-eyebrow">NEXT LAB.inc · Fire Crow</p>
+                  <h1 className="page-head-title">Repositories</h1>
+                  <p className="page-head-sub">
+                    Connected GitHub repositories and everything audited so far.
+                  </p>
+                </div>
+                <div className="page-head-side">
+                  <button onClick={() => { openScanModal(); }} className="fc-btn-primary">
+                    <Plus size={15} />
+                    New audit
+                  </button>
+                </div>
+              </header>
+
+              <section className="fc-panel" aria-label="Connected GitHub repositories">
+                <div className="fc-panel-header">
+                  <div>
+                    <h2 className="fc-panel-title">Connected repositories</h2>
+                    <p className="fc-panel-subtitle">Synced from your GitHub account</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void fetchUserRepos(true)}
+                    className="fc-btn-secondary fc-btn-sm"
+                    disabled={isLoadingRepos}
+                  >
+                    {isLoadingRepos ? 'Syncing…' : 'Sync repositories'}
+                  </button>
+                </div>
+                {reposStatus === 'loading' || reposStatus === 'idle' ? (
+                  <div className="state-skeleton" aria-busy="true">
+                    {[0, 1, 2].map(i => <div key={i} className="skeleton-row" style={{ animationDelay: `${i * 0.12}s`, width: `${88 - i * 8}%` }} />)}
+                  </div>
+                ) : reposStatus === 'not_connected' ? (
+                  <p className="fc-calm-note">GitHub is not connected — sign in with GitHub to list repositories here, or audit any public repository URL directly.</p>
+                ) : (reposStatus === 'github_error' || reposStatus === 'network_error') ? (
+                  <div className="state-error">
+                    <span>Repository sync failed{reposMessage ? `: ${reposMessage}` : '.'} You can still audit a public URL.</span>
+                    <button className="fc-btn-secondary fc-btn-sm" onClick={() => void fetchUserRepos(true)}>Retry</button>
+                  </div>
+                ) : userRepos.length === 0 ? (
+                  <p className="fc-calm-note">No repositories found on the connected account. Audit a public URL instead.</p>
+                ) : (
+                  <ul className="fc-repo-list">
+                    {userRepos.map(r => {
+                      const url = r.clone_url || r.html_url || '';
+                      return (
+                        <li key={String(r.id ?? r.full_name)} className="fc-repo-item">
+                          <div className="fc-repo-main">
+                            <span className="fc-repo-name">{r.full_name}</span>
+                            <span className="fc-repo-meta">
+                              <span className={`badge ${r.private ? 'badge-neutral' : 'badge-success'}`}>{r.private ? 'Private' : 'Public'}</span>
+                              <span className="mono">⎇ {r.default_branch || 'main'}</span>
+                            </span>
+                            {r.description && <span className="fc-repo-desc">{r.description}</span>}
+                          </div>
+                          {url && (
+                            <button
+                              type="button"
+                              className="fc-btn-secondary fc-btn-sm"
+                              onClick={() => { setNewRepoUrl(url); setNewRepoBranch(r.default_branch || 'main'); openScanModal(); }}
+                            >
+                              Audit
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+
+              <section className="fc-panel" aria-label="Audit history by repository">
+                <div className="fc-panel-header">
+                  <div>
+                    <h2 className="fc-panel-title">Audit history</h2>
+                    <p className="fc-panel-subtitle">Runs grouped by repository — newest activity first</p>
+                  </div>
+                </div>
+                {(() => {
+                  const groups = new Map<string, JobResponse[]>();
+                  for (const j of jobs) {
+                    const key = j.repo_url || 'unknown';
+                    const list = groups.get(key) ?? [];
+                    list.push(j);
+                    groups.set(key, list);
+                  }
+                  const ordered = [...groups.entries()].sort(([, a], [, b]) => ((a[0]?.created_at ?? '') < (b[0]?.created_at ?? '') ? 1 : -1));
+                  if (ordered.length === 0) {
+                    return (
+                      <EmptyState
+                        title="No audited repositories"
+                        body="Submit a repository to run your first audit."
+                        action={
+                          <button onClick={() => { openScanModal(); }} className="fc-btn-primary fc-btn-sm">
+                            Start an audit
+                          </button>
+                        }
+                      />
+                    );
+                  }
+                  return (
+                    <ul className="fc-repo-list">
+                      {ordered.map(([repoUrl, runs]) => {
+                        const latest = [...runs].sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+                        const sha = latest.commit_sha || latest.requested_commit_sha;
+                        return (
+                          <li key={repoUrl} className="fc-repo-item">
+                            <div className="fc-repo-main">
+                              <span className="fc-repo-name">{repoLabel(repoUrl)}</span>
+                              <span className="fc-repo-meta">
+                                <span>{runs.length} {runs.length === 1 ? 'audit' : 'audits'}</span>
+                                <span aria-hidden="true">·</span>
+                                <span className="mono">⎇ {latest.repo_branch}{sha ? ` · ${sha.substring(0, 8)}` : ''}</span>
+                                <span aria-hidden="true">·</span>
+                                <span>{timeAgo(latest.created_at) || 'just now'}</span>
+                              </span>
+                            </div>
+                            <div className="fc-repo-side">
+                              <StatusPill status={latest.status} />
+                              <button
+                                type="button"
+                                className="fc-btn-secondary fc-btn-sm"
+                                onClick={() => { handleViewJobDetail(latest.id); setActiveMonitorJobId(latest.id); }}
+                              >
+                                Inspect latest
+                              </button>
+                              <button
+                                type="button"
+                                className="fc-btn-secondary fc-btn-sm"
+                                onClick={() => { setNewRepoUrl(repoUrl); setNewRepoBranch(latest.repo_branch || 'main'); openScanModal(); }}
+                              >
+                                Audit again
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  );
+                })()}
+              </section>
+            </>
           )}
 
-          {/* Window: PAM Requests — per-function */}
-          {activeWindow === 'pam' && (
-            <div className="panel" style={{ maxWidth: '900px', margin: '0 auto', width: '100%' }}>
-              <div className="panel-header">
-                <div className="panel-title">PAM Elevation Requests ({pamRequests.length})</div>
-                <button onClick={() => setIsPamModalOpen(true)} className="btn btn-secondary btn-sm">+ Request</button>
-              </div>
-              <div className="panel-body" style={{ padding: '0.75rem' }}>
-                <PanelState state={dashLoad} error={dashError} empty={pamRequests.length === 0} emptyIcon="🔐" rows={2} onRetry={() => fetchDashboardData(true, { force: true })}>
-                  {pamRequests.length === 0 ? <p>No PAM elevation requests submitted.</p> : pamRequests.map(r => (
-                    <div key={r.id} className="list-item" style={{ cursor: 'default' }}>
-                      <div className="list-item-info"><div className="list-item-title">{r.role_name} ({r.permission})</div><div className="list-item-sub">{r.reason} • {r.requested_duration_minutes}m</div></div>
-                      <span className="badge badge-medium">{r.status}</span>
-                    </div>
-                  ))}
+          {/* Window: Findings — what was detected, why it matters, where, and
+              how to fix it. Findings live per audit run: pick a run to
+              investigate its verified, evidence-backed findings. */}
+          {activeWindow === 'findings' && (
+            <>
+              <header className="page-head">
+                <div className="page-head-main">
+                  <p className="page-eyebrow">NEXT LAB.inc · Fire Crow</p>
+                  <h1 className="page-head-title">Findings</h1>
+                  <p className="page-head-sub">
+                    Verified scanner evidence per audit run — severity, file and line, evidence, remediation, references.
+                  </p>
+                </div>
+              </header>
+
+              <section className="fc-panel" aria-label="Investigate audit findings">
+                <div className="fc-panel-header">
+                  <div>
+                    <h2 className="fc-panel-title">Investigate an audit</h2>
+                    <p className="fc-panel-subtitle">Finding counts and severity come from the audit report — never estimated here</p>
+                  </div>
+                </div>
+                <PanelState
+                  state={dashLoad}
+                  error={dashError}
+                  empty={jobs.length === 0}
+                  rows={4}
+                  onRetry={() => fetchDashboardData(true, { force: true })}
+                >
+                  {jobs.length === 0 ? (
+                    <EmptyState
+                      title="No audits to investigate"
+                      body="Findings appear after your first audit finishes."
+                      action={
+                        <button onClick={() => { openScanModal(); }} className="fc-btn-primary fc-btn-sm">
+                          Start an audit
+                        </button>
+                      }
+                    />
+                  ) : (
+                    <ul className="fc-repo-list">
+                      {[...jobs].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).map(j => {
+                        const sha = j.commit_sha || j.requested_commit_sha;
+                        const incomplete = ['partial', 'engine_unavailable', 'failed', 'cancelled'].includes(j.status);
+                        return (
+                          <li key={j.id} className="fc-repo-item">
+                            <div className="fc-repo-main">
+                              <span className="fc-repo-name">{repoLabel(j.repo_url)}</span>
+                              <span className="fc-repo-meta">
+                                <span className="mono">⎇ {j.repo_branch}{sha ? ` · ${sha.substring(0, 8)}` : ''}</span>
+                                <span aria-hidden="true">·</span>
+                                <span>{timeAgo(j.created_at) || 'just now'}</span>
+                              </span>
+                              {incomplete && (
+                                <span className="fc-attention-reason">
+                                  {j.status === 'partial' && 'Partial coverage — findings below are incomplete, not a full audit.'}
+                                  {j.status === 'engine_unavailable' && 'No scan engine ran — there are no verified findings to show.'}
+                                  {j.status === 'failed' && (j.error_message || 'This run failed before producing findings.')}
+                                  {j.status === 'cancelled' && 'Cancelled before completion — no verdict was reached.'}
+                                </span>
+                              )}
+                            </div>
+                            <div className="fc-repo-side">
+                              {j.security_score != null && <ScoreRing score={j.security_score} size={34} />}
+                              <StatusPill status={j.status} />
+                              <button
+                                type="button"
+                                className="fc-btn-secondary fc-btn-sm"
+                                onClick={() => { handleViewJobDetail(j.id); setActiveMonitorJobId(j.id); }}
+                              >
+                                Investigate
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
                 </PanelState>
-              </div>
-            </div>
+              </section>
+            </>
           )}
 
-          {/* Window: IAM Policies — per-function */}
-          {activeWindow === 'iam' && (
-            <div className="panel" style={{ maxWidth: '900px', margin: '0 auto', width: '100%' }}>
-              <div className="panel-header">
-                <div className="panel-title">IAM Policies ({iamPolicies.length})</div>
-                <span className="badge badge-neutral">{iamPolicies.length} policies</span>
-              </div>
-              <div className="panel-body" style={{ padding: '0.75rem' }}>
-                <PanelState state={dashLoad} error={dashError} empty={iamPolicies.length === 0} emptyIcon="🛡️" rows={2} onRetry={() => fetchDashboardData(true, { force: true })}>
-                  {iamPolicies.length === 0 ? <p>No IAM policies defined.</p> : iamPolicies.map((pol: any) => (
-                    <div key={pol.id} className="list-item" style={{ cursor: 'default' }}>
-                      <div className="list-item-info"><div className="list-item-title">{pol.name}</div><div className="list-item-sub">{pol.effect} • {pol.actions} → {pol.resources}</div></div>
-                      <span className="badge badge-info">P{pol.priority}</span>
-                    </div>
-                  ))}
-                </PanelState>
-              </div>
-            </div>
-          )}
+          {/* Window: Settings — only supported account and application settings. */}
+          {activeWindow === 'settings' && (
+            <>
+              <header className="page-head">
+                <div className="page-head-main">
+                  <p className="page-eyebrow">NEXT LAB.inc · Fire Crow</p>
+                  <h1 className="page-head-title">Settings</h1>
+                  <p className="page-head-sub">
+                    Your account and sign-in security.
+                  </p>
+                </div>
+              </header>
 
-          {/* Window: Domains — per-function */}
-          {activeWindow === 'domains' && (
-            <div className="panel" style={{ maxWidth: '900px', margin: '0 auto', width: '100%' }}>
-              <div className="panel-header">
-                <div className="panel-title">Domain Verifications ({domains.length})</div>
-                <button onClick={() => setIsDomainModalOpen(true)} className="btn btn-secondary btn-sm">+ Add Domain</button>
-              </div>
-              <div className="panel-body" style={{ padding: '0.75rem' }}>
-                <PanelState state={dashLoad} error={dashError} empty={domains.length === 0} emptyIcon="🌐" rows={2} onRetry={() => fetchDashboardData(true, { force: true })}>
-                  {domains.length === 0 ? <p>No domain verifications registered.</p> : domains.map(d => (
-                    <div key={d.id} className="list-item" style={{ cursor: 'default' }}>
-                      <div className="list-item-info"><div className="list-item-title">{d.domain}</div><div className="list-item-sub">{d.verified ? 'Domain verified' : 'Pending DNS verification'}</div></div>
-                      <span className={`badge ${d.verified ? 'badge-success' : 'badge-medium'}`}>{d.verified ? 'VERIFIED' : 'PENDING DNS'}</span>
-                    </div>
-                  ))}
-                </PanelState>
-              </div>
-            </div>
-          )}
-
-                    {/* Window: MFA — per-function */}
-          {activeWindow === 'mfa' && (
-            <div className="panel" style={{ maxWidth: '700px', margin: '0 auto', width: '100%' }}>
-              <div className="panel-header">
-                <div className="panel-title">MFA Authentication Status</div>
-                <span className={`badge ${mfaStatus.enabled ? 'badge-success' : 'badge-neutral'}`}>{mfaStatus.enabled ? 'ACTIVE' : 'DISABLED'}</span>
-              </div>
-              <div className="panel-body">
-                <PanelState state={dashLoad} error={dashError} onRetry={() => fetchDashboardData(true, { force: true })}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div><div style={{ fontWeight: 600, fontSize: '0.9rem' }}>TOTP Authenticator App</div><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{mfaStatus.enabled ? `Protected • ${mfaStatus.backup_codes_remaining} recovery codes remaining` : 'Two-factor protection is not enrolled'}</div></div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      {mfaStatus.enabled ? <button onClick={handleMfaDisable} className="btn btn-danger btn-sm">Disable MFA</button> : <button onClick={handleMfaEnroll} className="btn btn-primary btn-sm">Enroll TOTP App</button>}
+              <div className="fc-settings-grid">
+                <section className="fc-panel" aria-label="Account">
+                  <div className="fc-panel-header">
+                    <div>
+                      <h2 className="fc-panel-title">Account</h2>
+                      <p className="fc-panel-subtitle">Signed-in identity for this workspace</p>
                     </div>
                   </div>
-                </PanelState>
-              </div>
-            </div>
-          )}
-
-          {/* Window: Activity — per-function */}
-          {activeWindow === 'activity' && (
-            <div className="panel" style={{ maxWidth: '900px', margin: '0 auto', width: '100%' }}>
-              <div className="panel-header"><div className="panel-title">User Security Activities ({activities.length})</div></div>
-              <div className="panel-body" style={{ padding: '0.75rem', maxHeight: '520px', overflowY: 'auto' }}>
-                <PanelState state={dashLoad} error={dashError} empty={activities.length === 0} emptyIcon="🧾" rows={4} onRetry={() => fetchDashboardData(true, { force: true })}>
-                  {activities.length === 0 ? <p>No security events recorded yet.</p> : activities.map(act => (
-                    <div key={act.id} className="list-item" style={{ cursor: 'default' }}>
-                      <div className="list-item-info"><div className="list-item-title">{act.action}</div>{act.details_json && <div className="list-item-sub">{act.details_json}</div>}</div>
-                      <span className="badge badge-neutral" title={fmtUtc(act.created_at)}>{timeAgo(act.created_at)}</span>
+                  <dl className="fc-settings-list">
+                    <div className="fc-settings-row">
+                      <dt>Username</dt>
+                      <dd>{user?.username ?? '—'}</dd>
                     </div>
-                  ))}
-                </PanelState>
+                    <div className="fc-settings-row">
+                      <dt>Email</dt>
+                      <dd>{user?.email ?? '—'}</dd>
+                    </div>
+                  </dl>
+                  <div style={{ marginTop: '1rem' }}>
+                    <button onClick={handleLogout} className="fc-btn-secondary fc-btn-sm">
+                      Sign out
+                    </button>
+                  </div>
+                </section>
+
+                <section className="fc-panel" aria-label="Two-factor authentication">
+                  <div className="fc-panel-header">
+                    <div>
+                      <h2 className="fc-panel-title">Two-factor authentication</h2>
+                      <p className="fc-panel-subtitle">TOTP authenticator protection for your account</p>
+                    </div>
+                    <span className={`badge ${mfaStatus.enabled ? 'badge-success' : 'badge-neutral'}`}>{mfaStatus.enabled ? 'Active' : 'Disabled'}</span>
+                  </div>
+                  <PanelState state={dashLoad} error={dashError} onRetry={() => fetchDashboardData(true, { force: true })}>
+                    <p className="fc-calm-note">
+                      {mfaStatus.enabled
+                        ? `Protected · ${mfaStatus.backup_codes_remaining} recovery codes remaining.`
+                        : 'Two-factor protection is not enrolled.'}
+                    </p>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                      {mfaStatus.enabled
+                        ? <button onClick={handleMfaDisable} className="fc-btn-danger fc-btn-sm">Disable MFA</button>
+                        : <button onClick={handleMfaEnroll} className="fc-btn-primary fc-btn-sm">Enroll TOTP app</button>}
+                    </div>
+                  </PanelState>
+                </section>
+
+                <section className="fc-panel" aria-label="About Fire Crow">
+                  <div className="fc-panel-header">
+                    <div>
+                      <h2 className="fc-panel-title">About this workspace</h2>
+                      <p className="fc-panel-subtitle">What Fire Crow does and does not claim</p>
+                    </div>
+                  </div>
+                  <p className="fc-calm-note">
+                    Fire Crow audits GitHub repositories with established scanners and consolidates their
+                    output into one evidence-backed report per attempt: severity, file and line, evidence,
+                    remediation, and references.
+                  </p>
+                  <p className="fc-calm-note">
+                    AI explanations are optional annotations. Incomplete, failed, or engine-missing runs are
+                    always labeled as such — never as a clean bill of health.
+                  </p>
+                </section>
               </div>
-            </div>
+            </>
           )}
 
           {/* Modal: MFA Enrollment (POST /mfa/enroll response) */}
@@ -1784,13 +1767,13 @@ function App() {
                     <label className="form-label">Emergency Recovery Codes — store securely, shown once</label>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
                       {(mfaEnrollment.recovery_codes || []).map((c) => (
-                        <code key={c} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)', borderRadius: '6px', padding: '0.35rem 0.55rem' }}>{c}</code>
+                        <code key={c} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', background: 'var(--fc-surface-elevated, #F0EFEB)', border: '1px solid var(--fc-border, #E7E4DE)', color: 'var(--fc-text-primary, #252522)', borderRadius: '6px', padding: '0.35rem 0.55rem' }}>{c}</code>
                       ))}
                     </div>
                   </div>
                 </div>
                 <div className="modal-footer">
-                  <button onClick={() => setMfaEnrollment(null)} className="btn btn-primary">I've stored my codes</button>
+                  <button onClick={() => setMfaEnrollment(null)} className="fc-btn-primary">I've stored my codes</button>
                 </div>
               </div>
             </div>
@@ -1812,14 +1795,14 @@ function App() {
 
             <form onSubmit={handleStartScan}>
               <div className="modal-body">
-                <div className="form-group" style={{ marginBottom: '1.25rem', background: 'rgba(255, 255, 255, 0.02)', padding: '0.85rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                <div className="form-group" style={{ marginBottom: '1.25rem', background: 'var(--fc-surface-elevated, #F0EFEB)', padding: '0.85rem', borderRadius: '8px', border: '1px solid var(--fc-border, #E7E4DE)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
                     <label className="form-label" style={{ margin: 0 }}>Your GitHub repositories</label>
                     <button 
                       type="button" 
                       onClick={() => fetchUserRepos(true)} 
-                      className="btn btn-ghost btn-sm"
-                      style={{ padding: '0.15rem 0.5rem', fontSize: '0.72rem', color: 'var(--apple-blue-light)' }}
+                      className="fc-btn-ghost fc-btn-sm"
+                      style={{ padding: '0.15rem 0.5rem', fontSize: '0.72rem', color: 'var(--fc-accent, #C92F38)' }}
                     >
                       {isLoadingRepos ? 'Syncing...' : '🔄 Sync Account Repos'}
                     </button>
@@ -1893,8 +1876,8 @@ function App() {
               </div>
 
               <div className="modal-footer">
-                <button type="button" onClick={() => setIsScanModalOpen(false)} className="btn btn-secondary">Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={isSubmitting || !newRepoUrl.trim()}>
+                <button type="button" onClick={() => setIsScanModalOpen(false)} className="fc-btn-secondary">Cancel</button>
+                <button type="submit" className="fc-btn-primary" disabled={isSubmitting || !newRepoUrl.trim()}>
                   {isSubmitting ? 'Submitting...' : 'Submit Job'}
                 </button>
               </div>
@@ -1971,11 +1954,11 @@ function App() {
                       {reportState === 'error' && (
                         <div className="error-box" role="alert" style={{ marginBottom: '0.75rem' }}>
                           {reportError || 'Report unavailable.'}{' '}
-                          <button className="btn btn-secondary btn-sm" onClick={() => void selectExecution(selectedJobDetail.job.id, selectedExecutionId)}>Retry</button>
+                          <button className="fc-btn-secondary fc-btn-sm" onClick={() => void selectExecution(selectedJobDetail.job.id, selectedExecutionId)}>Retry</button>
                         </div>
                       )}
                       {reportState === 'ready' && execReport && (
-                        <div style={{ marginBottom: '0.75rem', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}>
+                        <div style={{ marginBottom: '0.75rem', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid var(--fc-border, #E7E4DE)', background: 'var(--fc-surface-elevated, #F0EFEB)' }}>
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '0.3rem' }}>
                             Attempt #{execReport.identity.attempt_number} • exec {execReport.identity.execution_id.substring(0, 8)} • snapshot {(execReport.identity.snapshot_commit ?? '').substring(0, 8) || 'branch head'}
                           </div>
@@ -2116,7 +2099,7 @@ function App() {
                         </div>
                       )}
                       {narrativeState === 'ready' && narrative && (
-                        <div style={{ fontSize: '0.8rem', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                        <div style={{ fontSize: '0.8rem', padding: '0.6rem 0.75rem', borderRadius: '8px', border: '1px solid var(--fc-border, #E7E4DE)', background: 'var(--fc-surface-elevated, #F0EFEB)' }}>
                           <p style={{ margin: '0 0 0.5rem' }}>{narrative.executive_summary}</p>
                           {narrative.finding_explanations.map(e => (
                             <div key={e.finding_id} style={{ marginBottom: '0.4rem' }}>
@@ -2191,209 +2174,6 @@ function App() {
                 <button onClick={() => handleDownloadReport(selectedJobDetail.job.id)} className="btn btn-secondary">↓ Download Report</button>
               )}
               <button onClick={() => closeInspector()} className="btn btn-primary" autoFocus>Close</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: PAM Elevation */}
-      {isPamModalOpen && (
-        <div className="modal-backdrop" onClick={() => setIsPamModalOpen(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-head">
-              <div>
-                <div className="modal-title">Request Privileged Access (PAM)</div>
-                <div className="modal-sub">Submit temporary access request to backend</div>
-              </div>
-              <button onClick={() => setIsPamModalOpen(false)} className="btn btn-ghost btn-icon">✕</button>
-            </div>
-
-            <form onSubmit={handleCreatePamRequest}>
-              <div className="modal-body">
-                {modalError && <div className="error-box" style={{ marginBottom: '1rem' }}>{modalError}</div>}
-                <div className="form-group">
-                  <label className="form-label">Role</label>
-                  <input type="text" className="form-input" value={pamRole} onChange={e => setPamRole(e.target.value)} required />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Permission</label>
-                  <input type="text" className="form-input" value={pamPermission} onChange={e => setPamPermission(e.target.value)} required />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Reason / Justification</label>
-                  <textarea 
-                    className="form-input" 
-                    rows={3} 
-                    placeholder="Audit, code deployment..." 
-                    value={pamReason}
-                    onChange={e => setPamReason(e.target.value)}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Duration (minutes)</label>
-                  <input type="number" className="form-input" value={pamDuration} onChange={e => setPamDuration(e.target.value)} required />
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" onClick={() => setIsPamModalOpen(false)} className="btn btn-secondary">Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                  {isSubmitting ? 'Submitting...' : 'Submit Request'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Add SSO Provider */}
-      {isSsoModalOpen && (
-        <div className="modal-backdrop" onClick={() => setIsSsoModalOpen(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-head">
-              <div>
-                <div className="modal-title">Configure SSO Provider</div>
-                <div className="modal-sub">Register new OIDC / SAML single sign-on provider</div>
-              </div>
-              <button onClick={() => setIsSsoModalOpen(false)} className="btn btn-ghost btn-icon">✕</button>
-            </div>
-
-            <form onSubmit={handleCreateSsoProvider}>
-              <div className="modal-body">
-                {modalError && <div className="error-box" style={{ marginBottom: '1rem' }}>{modalError}</div>}
-                <div className="form-group">
-                  <label className="form-label">Provider Name</label>
-                  <input type="text" className="form-input" placeholder="Okta / Azure AD" value={ssoName} onChange={e => setSsoName(e.target.value)} required />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Provider Type</label>
-                  <select className="form-input" value={ssoProviderType} onChange={e => setSsoProviderType(e.target.value)}>
-                    <option value="oidc">OIDC (OpenID Connect)</option>
-                    <option value="saml">SAML 2.0</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Issuer URL</label>
-                  <input type="url" className="form-input" placeholder="https://dev-1234.okta.com" value={ssoIssuer} onChange={e => setSsoIssuer(e.target.value)} />
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" onClick={() => setIsSsoModalOpen(false)} className="btn btn-secondary">Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                  {isSubmitting ? 'Saving...' : 'Save Provider'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Initiate Domain Verification */}
-      {isDomainModalOpen && (
-        <div className="modal-backdrop" onClick={() => setIsDomainModalOpen(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-head">
-              <div>
-                <div className="modal-title">Initiate Domain Verification</div>
-                <div className="modal-sub">Generate DNS TXT token for domain ownership</div>
-              </div>
-              <button onClick={() => setIsDomainModalOpen(false)} className="btn btn-ghost btn-icon">✕</button>
-            </div>
-
-            <form onSubmit={handleInitiateDomain}>
-              <div className="modal-body">
-                {modalError && <div className="error-box" style={{ marginBottom: '1rem' }}>{modalError}</div>}
-                <div className="form-group">
-                  <label className="form-label">Domain Name</label>
-                  <input type="text" className="form-input" placeholder="org.example.com" value={newDomainName} onChange={e => setNewDomainName(e.target.value)} required />
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button type="button" onClick={() => setIsDomainModalOpen(false)} className="btn btn-secondary">Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                  {isSubmitting ? 'Initiating...' : 'Initiate'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Dodo Payments Checkout */}
-      {isDodoModalOpen && (
-        <div className="modal-backdrop" onClick={() => setIsDodoModalOpen(false)}>
-          <div className="modal" style={{ maxWidth: '520px' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-head">
-              <div>
-                <div className="modal-title">💳 Dodo Payments Checkout</div>
-                <div className="modal-sub">Select credit package to top-up account balance</div>
-              </div>
-              <button onClick={() => setIsDodoModalOpen(false)} className="btn btn-ghost btn-icon">✕</button>
-            </div>
-
-            <div className="modal-body">
-              {modalError && <div className="error-box" style={{ marginBottom: '1rem' }}>{modalError}</div>}
-              
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1.25rem' }}>
-                <div 
-                  className={`panel ${dodoPackage === 'starter' ? 'active' : ''}`}
-                  style={{ cursor: 'pointer', padding: '1rem', border: dodoPackage === 'starter' ? '2px solid var(--accent)' : '1px solid var(--border)' }}
-                  onClick={() => setDodoPackage('starter')}
-                >
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>STARTER</div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#ffffff' }}>$10</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--green)' }}>+10 Scan Credits</div>
-                </div>
-
-                <div 
-                  className={`panel ${dodoPackage === 'pro' ? 'active' : ''}`}
-                  style={{ cursor: 'pointer', padding: '1rem', border: dodoPackage === 'pro' ? '2px solid var(--accent)' : '1px solid var(--border)' }}
-                  onClick={() => setDodoPackage('pro')}
-                >
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>PRO (POPULAR)</div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#ffffff' }}>$25</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--green)' }}>+30 Scan Credits (+20% Bonus)</div>
-                </div>
-
-                <div 
-                  className={`panel ${dodoPackage === 'enterprise' ? 'active' : ''}`}
-                  style={{ cursor: 'pointer', padding: '1rem', border: dodoPackage === 'enterprise' ? '2px solid var(--accent)' : '1px solid var(--border)', gridColumn: 'span 2' }}
-                  onClick={() => setDodoPackage('enterprise')}
-                >
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>ENTERPRISE UNLIMITED</div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#ffffff' }}>$100</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--purple)' }}>+150 Credits + Priority Docker Sandbox</div>
-                </div>
-              </div>
-
-              {dodoCheckoutUrl && (
-                <div style={{ marginBottom: '1rem', padding: '0.75rem', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: '8px', fontSize: '0.8rem', color: '#86efac' }}>
-                  ✓ Checkout URL generated: <a href={dodoCheckoutUrl} target="_blank" rel="noreferrer" style={{ color: '#60a5fa' }}>{dodoCheckoutUrl}</a>
-                </div>
-              )}
-            </div>
-
-            <div className="modal-footer">
-              <button type="button" onClick={() => setIsDodoModalOpen(false)} className="btn btn-secondary">Cancel</button>
-              <button 
-                type="button" 
-                onClick={() => {
-                  const amount = dodoPackage === 'starter' ? 10 : dodoPackage === 'pro' ? 25 : 100;
-                  handleInitiateDodoCheckout(amount, dodoPackage);
-                }} 
-                className="btn btn-primary" 
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? 'Generating Link...' : 'Pay with Dodo Payments 💳'}
-              </button>
             </div>
           </div>
         </div>

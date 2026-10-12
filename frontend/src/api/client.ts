@@ -29,14 +29,23 @@ import type {
 export type ReportFormat = 'markdown' | 'json' | 'html';
 
 export function getApiBase(): string {
+  // Single API-origin contract (FC-DEP-01): every call goes through this one
+  // resolver with one credential policy (`credentials: 'include'`), no tokens
+  // in URLs.
+  //
+  // Default: same-origin `/api/v1`. Locally, the Vite dev server proxies
+  // `/api` to the backend (vite.config.ts). Deployments that put a reverse
+  // proxy or rewrite in front of `/api/*` keep the identical path contract.
+  //
+  // Committed vercel.json deliberately declares NO external /api rewrite
+  // (Phase 24 fail-closed policy, see src/api/deploy.ts): Vercel does not
+  // interpolate env vars in rewrites, so a committed upstream would drag
+  // every Preview deployment to whatever host is written in the file.
+  // Per-environment wiring uses VITE_API_URL; when that sets a cross-origin
+  // backend, the backend must run in the documented cross-origin cookie mode
+  // (documentation/API_TOPOLOGY.md).
   const viteUrl = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
   if (viteUrl) return viteUrl.replace(/\/$/, '');
-  if (
-    typeof window !== 'undefined' &&
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-  ) {
-    return 'http://localhost:8000/api/v1';
-  }
   return '/api/v1';
 }
 

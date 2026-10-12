@@ -1,3 +1,5 @@
+import { NextLabSymbol } from './BrandLogos';
+
 interface FinalCTAProps {
   onNavigateLogin: () => void;
 }
@@ -7,6 +9,13 @@ export function FinalCTA({ onNavigateLogin }: FinalCTAProps) {
     <section className="fc-section" style={{ borderBottom: 'none', paddingBottom: '40px' }} aria-labelledby="cta-heading">
       <div className="fc-container">
         <div className="fc-final-cta-card">
+          <div className="fc-cta-brand-tag" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+            <NextLabSymbol size={16} />
+            <span style={{ fontFamily: 'var(--fc-font-mono)', fontSize: '0.74rem', color: 'var(--fc-warm-muted)', letterSpacing: '0.06em' }}>
+              NEXT LAB.inc // FIRE CROW SECURITY
+            </span>
+          </div>
+
           <h2 id="cta-heading" className="fc-cta-title">
             Ready to audit your repository?
           </h2>
@@ -16,7 +25,7 @@ export function FinalCTA({ onNavigateLogin }: FinalCTAProps) {
           </p>
 
           <div style={{ display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
-            <button onClick={onNavigateLogin} className="fc-btn-hero-primary">
+            <button onClick={onNavigateLogin} className="fc-btn-hero-primary" type="button">
               Launch Security Console →
             </button>
             <a

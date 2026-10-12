@@ -229,6 +229,7 @@ pub async fn run_audit_job(
                 &e.to_string(),
             )
             .await;
+            crate::orchestrator::broadcast_job_progress(pool, job_id).await;
         }
         Err(_) => {
             error!("Worker: job {} timed out after 30 minutes", job_id);
@@ -238,6 +239,7 @@ pub async fn run_audit_job(
                 "Job timed out after 30 minutes",
             )
             .await;
+            crate::orchestrator::broadcast_job_progress(pool, job_id).await;
         }
         Ok(Ok(state)) => {
             // 19.11: one structured completion event per audit. Identifiers,
@@ -392,6 +394,7 @@ impl WorkerPool {
                         "execution owner stopped heartbeating (recovered by reaper)",
                     )
                     .await;
+                    crate::orchestrator::broadcast_job_progress(&pool, &job_id).await;
                 }
             }
         });
@@ -437,6 +440,7 @@ impl WorkerPool {
 
             if let Some(job) = claimed {
                 info!("Worker {}: claimed job {}", id, job.id);
+                crate::orchestrator::broadcast_job_progress(&pool, &job.id).await;
 
                 {
                     let mut active = active_jobs.write().await;

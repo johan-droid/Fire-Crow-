@@ -3,7 +3,7 @@ services:
     name: firecrow-backend
     env: docker
     dockerfilePath: backend/Dockerfile
-    dockerContext: .
+    dockerContext: backend
     region: oregon
     plan: free
     healthCheckPath: /health

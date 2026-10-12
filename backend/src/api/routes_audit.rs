@@ -349,6 +349,7 @@ pub async fn cancel_job(
             "Job not found, already finished, or access denied".into(),
         ));
     }
+    crate::orchestrator::broadcast_job_progress(state.pool(), &job_id).await;
     Ok(Json(
         serde_json::json!({"status": "cancellation_requested"}),
     ))
@@ -415,6 +416,7 @@ pub async fn retry_job(
             "job {job_id} cannot be retried from its current state"
         )));
     }
+    crate::orchestrator::broadcast_job_progress(state.pool(), &job_id).await;
     Ok(Json(serde_json::json!({"status": "queued"})))
 }
 

@@ -33,10 +33,21 @@ async fn dashboard_summary(
     State(state): State<Arc<crate::AppState>>,
     user: crate::middleware::auth::AuthenticatedUser,
 ) -> Result<Json<DashboardSummary>> {
+    // FC-AUTHZ-01: the SSO/IAM sections of this aggregate are platform-global
+    // administrative configuration. They are included only for platform
+    // administrators; everyone else receives empty arrays, which preserves the
+    // response schema and every user-specific section unchanged. The admin
+    // flag participates in the cache key so a privilege change can never serve
+    // a stale privileged payload (or its absence) to the wrong audience.
+    let platform_admin = crate::middleware::auth::is_platform_admin(state.pool(), &user.user_id)
+        .await
+        .unwrap_or(false);
+    let scope = if platform_admin { "admin" } else { "user" };
+
     // Short-lived Redis cache (5 s) per user — avoids thundering herd when
     // multiple dashboard tabs poll concurrently.
     if let Some(redis) = state.redis() {
-        let cache_key = format!("firecrow:dashboard:{}", user.user_id);
+        let cache_key = format!("firecrow:dashboard:{}:{}", user.user_id, scope);
         let mut conn = redis.clone();
         let cached: Option<String> = conn.get(&cache_key).await.unwrap_or(None);
         if let Some(json_str) = cached {
@@ -52,14 +63,28 @@ async fn dashboard_summary(
     let user_id = user.user_id.clone();
 
     // Run all 8 fetches concurrently.  Failures for non-critical sections
-    // degrade to empty lists so the dashboard still renders.
+    // degrade to empty lists so the dashboard still renders. The two
+    // platform-global fetches are skipped entirely for non-admins — the data
+    // must not even be loaded for a caller who may not see it.
     let jobs_fut = fetch_jobs(&pool, &user_id);
-    let sso_fut = crate::services::sso_service::SsoService::list_providers(&pool);
+    let sso_fut = async {
+        if platform_admin {
+            crate::services::sso_service::SsoService::list_providers(&pool).await
+        } else {
+            Ok(Vec::new())
+        }
+    };
     let pam_req_fut =
         crate::services::pam_service::PamService::list_requests(&pool, Some(&user_id));
     let pam_grant_fut =
         crate::services::pam_service::PamService::list_grants(&pool, Some(&user_id));
-    let iam_fut = crate::services::iam_service::IamService::list_policies(&pool);
+    let iam_fut = async {
+        if platform_admin {
+            crate::services::iam_service::IamService::list_policies(&pool).await
+        } else {
+            Ok(Vec::new())
+        }
+    };
     let domain_fut = crate::services::domain_verify::DomainVerifyService::list(&pool, &user_id);
     let activities_fut = crate::services::user_activity::list_user_activities(&pool, &user_id, 50);
     let mfa_fut = fetch_mfa_status(&pool, &user_id);
@@ -99,7 +124,7 @@ async fn dashboard_summary(
 
     // Cache for 5 s in Redis (best-effort, ignore errors)
     if let Some(redis) = state.redis() {
-        let cache_key = format!("firecrow:dashboard:{}", user.user_id);
+        let cache_key = format!("firecrow:dashboard:{}:{}", user.user_id, scope);
         let mut conn = redis.clone();
         if let Ok(json_str) = serde_json::to_string(&summary) {
             let _: redis::RedisResult<()> = conn.set_ex(cache_key, json_str, 5).await;

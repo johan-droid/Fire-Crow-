@@ -20,7 +20,11 @@ pub fn router() -> Router<Arc<crate::AppState>> {
 
 pub async fn list_policies(
     State(state): State<Arc<crate::AppState>>,
-    user: crate::middleware::auth::AuthenticatedUser,
+    // FC-AUTHZ-01: policy configuration is enumerable only by platform
+    // administrators. `iam_policies` are non-enforcing configuration metadata
+    // (no evaluator exists), but their rules reveal internal resource and
+    // action naming, so ordinary accounts must not enumerate them.
+    _admin: crate::middleware::auth::AdminUser,
 ) -> Result<Json<Vec<IamPolicy>>> {
     let policies = IamService::list_policies(state.pool()).await?;
     Ok(Json(policies))
@@ -52,6 +56,41 @@ pub async fn delete_policy(
     }
 }
 
+/// The exact set of permission strings the API will ever write into
+/// `role_permissions`. FC-AUTHZ-03: without an allowlist, any platform
+/// administrator call could mint arbitrary strings — and before the platform/
+/// tenant split, any *tenant* administrator could mint `superadmin` for their
+/// own role. Unknown strings are rejected loudly rather than stored, so the
+/// permission vocabulary stays auditable.
+const GRANTABLE_PERMISSIONS: &[&str] = &[
+    // platform administration
+    "platform:admin",
+    "platform:*",
+    "platform:sso",
+    "platform:iam",
+    "platform:ops",
+    // tenant administration (never implies platform authority)
+    "tenant_admin",
+    "tenant:manage",
+    // feature administration (platform-scoped until tenant ownership ships)
+    "iam:manage",
+    "iam:*",
+    "iam:admin",
+    "sso:manage",
+    "sso:*",
+    "sso:admin",
+    "pam:approve",
+    "pam:manage",
+    "pam:*",
+    "pam:admin",
+    "mfa:admin",
+    "mfa:enforce",
+    "user:manage",
+    "user:admin",
+    "billing:manage",
+    "audit:admin",
+];
+
 pub async fn assign_permission(
     State(state): State<Arc<crate::AppState>>,
     _admin: crate::middleware::auth::AdminUser,
@@ -69,6 +108,24 @@ pub async fn assign_permission(
         .get("resource_pattern")
         .and_then(|v| v.as_str())
         .unwrap_or("*");
+
+    if !GRANTABLE_PERMISSIONS.contains(&permission) {
+        return Err(AppError::BadRequest(
+            "Unknown permission string; only explicit grantable permissions may be assigned".into(),
+        ));
+    }
+
+    // The role must actually exist (roles are provisioned out-of-band; see
+    // documentation/BOOTSTRAP_ADMIN.md). A typo'd or invented role id must not
+    // silently create an orphaned grant.
+    let role_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM roles WHERE id = $1)")
+        .bind(role_id)
+        .fetch_one(state.pool())
+        .await
+        .map_err(AppError::Database)?;
+    if !role_exists {
+        return Err(AppError::NotFound("Role not found".into()));
+    }
 
     IamService::assign_permission(state.pool(), role_id, permission, resource_pattern)
         .await
