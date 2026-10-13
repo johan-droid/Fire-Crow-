@@ -1,0 +1,87 @@
+/* Console theme — loaded after index.css. Ink workbench that matches the
+   light landing page: one family (Bricolage + Hanken), ember used for action
+   and severity only, left rail navigation, no all-caps labels. */
+
+.shell {
+  --dash-bg: #0e1017;
+  --dash-surface: #141722;
+  --dash-card: #141722;
+  --dash-elev: #1b1f2e;
+  --dash-border: #2b3042;
+  --dash-border-soft: #222637;
+  --dash-hairline: #222637;
+  --dash-text: #eceef4;
+  --dash-text-2: #a9afc0;
+  --dash-text-3: #8a91a4;
+  --dash-accent: #ff7a45;
+  --dash-accent-hover: #ff9468;
+  --dash-accent-dim: rgba(255, 122, 69, 0.14);
+  --dash-accent-border: rgba(255, 122, 69, 0.38);
+  --dash-health: #5fd3a0;
+  --dash-warn: #f2b544;
+  --dash-crit: #ff6b5e;
+  --dash-info: #8fb4ff;
+  --dash-radius: 10px;
+  --console-rail: 232px;
+  --font-sans: 'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --console-display: 'Bricolage Grotesque', 'Hanken Grotesk', system-ui, sans-serif;
+  font-family: var(--font-sans);
+  letter-spacing: 0;
+}
+.shell h1, .shell h2, .shell h3, .shell .page-head-title, .shell .panel-title { font-family: var(--console-display); letter-spacing: -0.015em; }
+.shell .page-head-title { font-size: clamp(1.9rem, 3vw, 2.5rem); font-weight: 700; line-height: 1.1; }
+.shell .page-eyebrow { display: none; }
+
+/* Labels: sentence case, no tracking */
+.shell .metric-label, .shell .fc-metric-label, .shell th, .shell .live-audit-eyebrow,
+.shell [class*='eyebrow'], .shell .panel-label, .shell .sev-label {
+  text-transform: none; letter-spacing: 0; font-size: .875rem; font-weight: 600;
+}
+
+/* Backdrop: plain ink, no ambient orbs */
+.shell .aurora-backdrop { display: none; }
+.shell { background: var(--dash-bg); }
+
+/* Left rail (desktop) */
+@media (min-width: 961px) {
+  .shell .dyn-island {
+    top: 0; left: 0; bottom: 0; transform: none;
+    width: var(--console-rail); max-width: none;
+    flex-direction: column; align-items: stretch; gap: 6px;
+    padding: 20px 14px 16px;
+    background: #0a0c12; border: 0; border-right: 1px solid var(--dash-border-soft);
+    border-radius: 0; box-shadow: none; animation: none; overflow-y: auto;
+  }
+  .shell .dyn-brand { width: auto; height: auto; display: flex; align-items: center; gap: 10px; padding: 6px 8px 18px; justify-content: flex-start; border-radius: 8px; }
+  .shell .dyn-brand-name { font: 700 1.25rem/1 var(--console-display); letter-spacing: -0.01em; color: var(--dash-text); }
+  .shell .dyn-sep { width: auto; height: 1px; margin: 8px 0; background: var(--dash-border-soft); }
+  .shell .dyn-options { flex-direction: column; align-items: stretch; gap: 2px; overflow: visible; }
+  .shell .dyn-item { justify-content: flex-start; gap: 12px; min-height: 40px; padding: 0 12px; border-radius: 8px; font-size: .9375rem; font-weight: 600; border: 1px solid transparent; }
+  .shell .dyn-item .dyn-item-label { display: inline; }
+  .shell .dyn-item.active { background: var(--dash-elev); border-color: var(--dash-border); color: var(--dash-text); box-shadow: inset 3px 0 0 var(--dash-accent); }
+  .shell .dyn-badge { margin-left: auto; }
+  .shell .dyn-live { max-width: none; width: 100%; }
+  .shell .dyn-live-repo, .shell .dyn-live-track { display: block; }
+  .shell .dyn-audit { width: 100%; justify-content: center; min-height: 40px; background: var(--dash-accent); color: #14100d; border-color: var(--dash-accent); font-weight: 700; }
+  .shell .dyn-audit:hover { background: var(--dash-accent-hover); }
+  .shell .dyn-audit .dyn-audit-label { display: inline; }
+  .shell .dyn-user { margin-top: auto; justify-content: space-between; padding: 12px 8px 0; border-top: 1px solid var(--dash-border-soft); }
+  .main-content { padding-top: 0; padding-left: var(--console-rail); max-height: none; }
+  .shell .page-body { max-width: 1120px; margin: 0; align-self: flex-start; padding: 40px 40px 64px; }
+}
+@media (max-width: 960px) { .shell .dyn-brand-name { display: none; } }
+
+/* Metric strip: one connected band instead of four identical cards */
+.shell .fc-metrics-grid { gap: 0; border: 1px solid var(--dash-border); border-radius: var(--dash-radius); background: var(--dash-card); overflow: hidden; }
+.shell .fc-metric-card { border: 0; border-radius: 0; background: transparent; box-shadow: none; border-right: 1px solid var(--dash-border-soft); }
+.shell .fc-metric-card:last-child { border-right: 0; }
+.shell .fc-metric-value { font-family: var(--console-display); font-weight: 700; letter-spacing: -0.02em; }
+
+/* Panels: flat, hairline, tighter radius */
+.shell .panel, .shell .progress-card, .shell .live-audit { border-radius: var(--dash-radius); box-shadow: none; background: var(--dash-card); }
+.shell .live-audit { border-color: var(--dash-accent-border); }
+
+/* Primary action = ember with dark label (AA) */
+.shell .fc-btn-primary { background: var(--dash-accent); color: #14100d; border-color: var(--dash-accent); font-weight: 700; box-shadow: none; }
+.shell .fc-btn-primary:hover { background: var(--dash-accent-hover); border-color: var(--dash-accent-hover); }
+.shell :focus-visible { outline: 3px solid var(--dash-accent); outline-offset: 2px; }

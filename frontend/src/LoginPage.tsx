@@ -1,22 +1,10 @@
-import { useState, type FormEvent, useEffect, useRef } from 'react';
-import {
-  NextLabSymbol,
-  FireCrowSymbol,
-  BrandLockup,
-} from './landing/components/BrandLogos';
-import { Eye, EyeOff, AlertCircle, ArrowRight } from 'lucide-react';
-import './landing/styles/landing.css';
-import './auth.css';
+import { useState, type FormEvent, useEffect, useRef, type ReactNode } from 'react';
+import { Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { BrandMark } from './BrandMark';
+import './login-site.css';
 
-/* ─── GitHub SVG Icon ────────────────────────────────────────── */
 const GitHubIcon = ({ size = 20 }: { size?: number }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="currentColor"
-    aria-hidden="true"
-  >
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     <path
       fillRule="evenodd"
       clipRule="evenodd"
@@ -25,7 +13,28 @@ const GitHubIcon = ({ size = 20 }: { size?: number }) => (
   </svg>
 );
 
-/* ─── Types ─────────────────────────────────────────────────── */
+interface FieldProps {
+  id: string;
+  label: string;
+  error?: string;
+  children: ReactNode;
+}
+
+function Field({ id, label, error, children }: FieldProps) {
+  return (
+    <div className="lg-field">
+      <label htmlFor={id}>{label}</label>
+      {children}
+      {error && (
+        <span id={`${id}-err`} className="lg-field-error" role="alert">
+          <AlertCircle size={14} aria-hidden="true" />
+          <span>{error}</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
 export interface LoginPageProps {
   onNavigateLanding: () => void;
   onGitHubLogin: () => void;
@@ -153,373 +162,190 @@ export default function LoginPage({
     setFieldErrors({});
   }, [mode]);
 
+  const errId = (id: string, key: string) => (fieldErrors[key] ? `${id}-err` : undefined);
+
   return (
-    <div className="fc-auth-shell">
-      <main className="fc-auth-container" aria-label="Fire Crow Authentication">
-        {/* ─── LEFT PANEL: Studio Endorsement & Engineering Principles ─── */}
-        <aside className="fc-auth-brand-panel" aria-label="Brand Overview">
-          <div className="fc-auth-brand-content">
-            {/* Next Lab Endorsement Pill */}
-            <div className="fc-auth-studio-endorsement">
-              <NextLabSymbol size={16} />
-              <span>NEXT LAB</span>
-              <span style={{ opacity: 0.6 }}>// STUDIO</span>
-            </div>
-
-            {/* Fire Crow Product Hero */}
-            <div className="fc-auth-brand-hero">
-              <FireCrowSymbol size={48} animated={true} state="idle" />
-              <div className="fc-auth-brand-hero-text">
-                <h1 className="fc-auth-brand-title">
-                  <span>Fire </span>
-                  <span style={{ color: 'var(--fc-accent, #C92F38)' }}>Crow</span>
-                </h1>
-                <span className="fc-auth-brand-sub" style={{ letterSpacing: '0.12em' }}>
-                  SECURE · SCAN · REMEDIATE
-                </span>
-              </div>
-            </div>
-
-            <p className="fc-auth-brand-desc">
-              Deterministic security auditing, ephemeral container SAST verification, and
-              compiler-checked remediations for mission-critical codebases.
-            </p>
-
-            {/* Engineering Guarantees */}
-            <div className="fc-auth-guarantees">
-              <div className="fc-auth-guarantee-item">
-                <span className="fc-auth-guarantee-num">01</span>
-                <div className="fc-auth-guarantee-text">
-                  <strong>Zero Code Retention</strong>
-                  <p>Ephemeral scratch containers are mounted strictly read-only and destroyed immediately upon run completion.</p>
-                </div>
-              </div>
-
-              <div className="fc-auth-guarantee-item">
-                <span className="fc-auth-guarantee-num">02</span>
-                <div className="fc-auth-guarantee-text">
-                  <strong>Deterministic Ledgers</strong>
-                  <p>Immutable scoring formulas anchored to verified CWE identifiers and CVSS vectors with zero LLM hallucinations.</p>
-                </div>
-              </div>
-
-              <div className="fc-auth-guarantee-item">
-                <span className="fc-auth-guarantee-num">03</span>
-                <div className="fc-auth-guarantee-text">
-                  <strong>Airgapped Execution</strong>
-                  <p>Scanners run with Linux privileges dropped (--cap-drop=ALL) under strict network isolation ceilings.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Telemetry Footer */}
-          <div className="fc-auth-telemetry" aria-hidden="true">
-            <span className="fc-auth-telemetry-dot" />
-            <span>CORE ENGINE v2.4 · TLS 1.3 · SESSION ISOLATION</span>
-          </div>
-        </aside>
-
-        {/* ─── RIGHT PANEL: Authentication Interaction Form ─── */}
-        <section className="fc-auth-form-panel" aria-labelledby="fc-auth-heading">
-          {/* Mobile-only compact brand lockup */}
-          <div className="fc-auth-mobile-brand">
-            <BrandLockup compact={true} />
-          </div>
-
-          <div className="fc-auth-header">
-            <h2 id="fc-auth-heading" className="fc-auth-title">
-              {mode === 'signin' ? 'Sign in to Fire Crow' : 'Create an Account'}
-            </h2>
-            <p className="fc-auth-sub">
-              {mode === 'signin'
-                ? 'Authenticate to access your security workspace and repository audits.'
-                : 'Register a new engineering profile to start containerized security scans.'}
-            </p>
-          </div>
-
-          {/* Segmented mode selector — a pair of toggle buttons, not ARIA tabs:
-              there is no tabpanel and no roving arrow-key focus. */}
-          <div className="fc-auth-tabs" role="group" aria-label="Authentication mode">
-            <button
-              type="button"
-              aria-pressed={mode === 'signin'}
-              className={`fc-auth-tab ${mode === 'signin' ? 'active' : ''}`}
-              onClick={() => handleTabChange('signin')}
-            >
-              Sign In
-            </button>
-            <button
-              type="button"
-              aria-pressed={mode === 'register'}
-              className={`fc-auth-tab ${mode === 'register' ? 'active' : ''}`}
-              onClick={() => handleTabChange('register')}
-            >
-              Register
-            </button>
-          </div>
-
-          {/* OAuth: GitHub Authentication Button */}
+    <div className="lg">
+      <main className="lg-grid" aria-labelledby="lg-heading">
+        <section className="lg-form-side">
           <button
             type="button"
-            onClick={onGitHubLogin}
-            className="fc-auth-github-btn"
-            disabled={isSubmitting}
-            aria-label="Continue with GitHub"
+            className="lg-brand"
+            onClick={() => {
+              clearErrors();
+              onNavigateLanding();
+            }}
+            aria-label="Fire Crow home"
           >
-            <GitHubIcon />
-            <span>Continue with GitHub</span>
+            <BrandMark />
+            <span>Fire Crow</span>
           </button>
 
-          {/* Geometric Divider */}
-          <div className="fc-auth-divider" aria-hidden="true">
-            <span>OR CONTINUE WITH CREDENTIALS</span>
-          </div>
+          <div className="lg-card">
+            <h1 id="lg-heading">{mode === 'signin' ? 'Sign in' : 'Create your account'}</h1>
+            <p className="lg-sub">
+              {mode === 'signin'
+                ? 'Open your workspace to run audits and read reports.'
+                : 'Pick a username and a password of at least 10 characters.'}
+            </p>
 
-          {/* Active Error Banner */}
-          {activeError && (
-            <div className="fc-auth-error-banner" role="alert" aria-live="assertive">
-              <AlertCircle size={16} />
-              <span>{activeError}</span>
-            </div>
-          )}
+            <button type="button" onClick={onGitHubLogin} className="lg-github" disabled={isSubmitting}>
+              <GitHubIcon />
+              <span>Continue with GitHub</span>
+            </button>
 
-          {/* Credentials Form */}
-          <form className="fc-auth-form" onSubmit={handleCredentialSubmit} noValidate>
-            {mode === 'signin' ? (
-              <>
-                {/* Identifier: Email or Username */}
-                <div className="fc-auth-field">
-                  <label htmlFor="fc-auth-identifier" className="fc-auth-label">
-                    <span>Email or Username</span>
-                  </label>
-                  <div className="fc-auth-input-wrapper">
+            <p className="lg-or" aria-hidden="true"><span>or use a password</span></p>
+
+            {activeError && (
+              <div className="lg-error" role="alert">
+                <AlertCircle size={16} aria-hidden="true" />
+                <span>{activeError}</span>
+              </div>
+            )}
+
+            <form className="lg-form" onSubmit={handleCredentialSubmit} noValidate>
+              {mode === 'signin' ? (
+                <>
+                  <Field id="lg-identifier" label="Email or username" error={fieldErrors.identifier}>
                     <input
                       ref={identifierInputRef}
-                      id="fc-auth-identifier"
+                      id="lg-identifier"
                       name="username"
                       type="text"
                       autoComplete="username"
                       value={identifier}
                       onChange={(e) => setIdentifier(e.target.value)}
-                      placeholder="developer@company.com or username"
-                      className="fc-auth-input"
                       disabled={isSubmitting}
                       aria-invalid={Boolean(fieldErrors.identifier)}
-                      aria-describedby={fieldErrors.identifier ? 'fc-auth-id-err' : undefined}
+                      aria-describedby={errId('lg-identifier', 'identifier')}
                       required
                     />
-                  </div>
-                  {fieldErrors.identifier && (
-                    <span id="fc-auth-id-err" className="fc-auth-field-error" role="alert">
-                      <AlertCircle size={13} aria-hidden="true" />
-                      <span>{fieldErrors.identifier}</span>
-                    </span>
-                  )}
-                </div>
-
-                {/* Password Field */}
-                <div className="fc-auth-field">
-                  <label htmlFor="fc-auth-password" className="fc-auth-label">
-                    <span>Password</span>
-                  </label>
-                  <div className="fc-auth-input-wrapper">
-                    <input
-                      id="fc-auth-password"
-                      name="password"
-                      type={showPassword ? 'text' : 'password'}
-                      autoComplete="current-password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••••••"
-                      className="fc-auth-input"
-                      disabled={isSubmitting}
-                      aria-invalid={Boolean(fieldErrors.password)}
-                      aria-describedby={fieldErrors.password ? 'fc-auth-pw-err' : undefined}
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((prev) => !prev)}
-                      className="fc-auth-pw-toggle"
-                      aria-label={showPassword ? 'Hide password' : 'Show password'}
-                      aria-pressed={showPassword}
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                  {fieldErrors.password && (
-                    <span id="fc-auth-pw-err" className="fc-auth-field-error" role="alert">
-                      <AlertCircle size={13} aria-hidden="true" />
-                      <span>{fieldErrors.password}</span>
-                    </span>
-                  )}
-                  <p className="fc-auth-recovery-note">
-                    Self-service reset is disabled for zero-retention accounts. Contact your organization admin for password updates.
+                  </Field>
+                  <Field id="lg-password" label="Password" error={fieldErrors.password}>
+                    <div className="lg-pw">
+                      <input
+                        id="lg-password"
+                        name="password"
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete="current-password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        disabled={isSubmitting}
+                        aria-invalid={Boolean(fieldErrors.password)}
+                        aria-describedby={errId('lg-password', 'password')}
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((p) => !p)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        aria-pressed={showPassword}
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </Field>
+                  <p className="lg-hint">
+                    Self-service password reset isn&rsquo;t available. Ask your organization admin to reset it.
                   </p>
-                </div>
-              </>
-            ) : (
-              <>
-                {/* Registration: Username */}
-                <div className="fc-auth-field">
-                  <label htmlFor="fc-reg-username" className="fc-auth-label">
-                    <span>Username</span>
-                  </label>
-                  <div className="fc-auth-input-wrapper">
+                </>
+              ) : (
+                <>
+                  <Field id="lg-reg-username" label="Username" error={fieldErrors.registerUsername}>
                     <input
                       ref={identifierInputRef}
-                      id="fc-reg-username"
+                      id="lg-reg-username"
                       name="username"
                       type="text"
                       autoComplete="username"
                       value={registerUsername}
                       onChange={(e) => setRegisterUsername(e.target.value)}
-                      placeholder="e.g. dev_analyst"
-                      className="fc-auth-input"
                       disabled={isSubmitting}
                       aria-invalid={Boolean(fieldErrors.registerUsername)}
-                      aria-describedby={fieldErrors.registerUsername ? 'fc-reg-user-err' : undefined}
+                      aria-describedby={errId('lg-reg-username', 'registerUsername')}
                       required
                     />
-                  </div>
-                  {fieldErrors.registerUsername && (
-                    <span id="fc-reg-user-err" className="fc-auth-field-error" role="alert">
-                      <AlertCircle size={13} aria-hidden="true" />
-                      <span>{fieldErrors.registerUsername}</span>
-                    </span>
-                  )}
-                </div>
-
-                {/* Registration: Email */}
-                <div className="fc-auth-field">
-                  <label htmlFor="fc-reg-email" className="fc-auth-label">
-                    <span>Email Address (Optional)</span>
-                  </label>
-                  <div className="fc-auth-input-wrapper">
+                  </Field>
+                  <Field id="lg-reg-email" label="Email (optional)" error={fieldErrors.registerEmail}>
                     <input
-                      id="fc-reg-email"
+                      id="lg-reg-email"
                       name="email"
                       type="email"
                       autoComplete="email"
                       value={registerEmail}
                       onChange={(e) => setRegisterEmail(e.target.value)}
-                      placeholder="developer@company.com"
-                      className="fc-auth-input"
                       disabled={isSubmitting}
                       aria-invalid={Boolean(fieldErrors.registerEmail)}
-                      aria-describedby={fieldErrors.registerEmail ? 'fc-reg-email-err' : undefined}
+                      aria-describedby={errId('lg-reg-email', 'registerEmail')}
                     />
-                  </div>
-                  {fieldErrors.registerEmail && (
-                    <span id="fc-reg-email-err" className="fc-auth-field-error" role="alert">
-                      <AlertCircle size={13} aria-hidden="true" />
-                      <span>{fieldErrors.registerEmail}</span>
-                    </span>
-                  )}
-                </div>
-
-                {/* Registration: Password */}
-                <div className="fc-auth-field">
-                  <label htmlFor="fc-reg-password" className="fc-auth-label">
-                    <span>Password (Minimum 10 characters)</span>
-                  </label>
-                  <div className="fc-auth-input-wrapper">
-                    <input
-                      id="fc-reg-password"
-                      name="password"
-                      type={showPassword ? 'text' : 'password'}
-                      autoComplete="new-password"
-                      value={registerPassword}
-                      onChange={(e) => setRegisterPassword(e.target.value)}
-                      placeholder="••••••••••••"
-                      className="fc-auth-input"
-                      disabled={isSubmitting}
-                      aria-invalid={Boolean(fieldErrors.registerPassword)}
-                      aria-describedby={fieldErrors.registerPassword ? 'fc-reg-pw-err' : undefined}
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((prev) => !prev)}
-                      className="fc-auth-pw-toggle"
-                      aria-label={showPassword ? 'Hide password' : 'Show password'}
-                      aria-pressed={showPassword}
-                    >
-                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                  {fieldErrors.registerPassword && (
-                    <span id="fc-reg-pw-err" className="fc-auth-field-error" role="alert">
-                      <AlertCircle size={13} aria-hidden="true" />
-                      <span>{fieldErrors.registerPassword}</span>
-                    </span>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* Submit Action */}
-            <button
-              type="submit"
-              className="fc-auth-submit-btn"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? (
-                <>
-                  <span className="fc-auth-spinner" aria-hidden="true" />
-                  <span>Authenticating...</span>
-                </>
-              ) : (
-                <>
-                  <span>
-                    {mode === 'signin' ? 'Sign In to Workspace' : 'Create Account & Sign In'}
-                  </span>
-                  <ArrowRight size={16} />
+                  </Field>
+                  <Field id="lg-reg-password" label="Password (10 characters or more)" error={fieldErrors.registerPassword}>
+                    <div className="lg-pw">
+                      <input
+                        id="lg-reg-password"
+                        name="password"
+                        type={showPassword ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        value={registerPassword}
+                        onChange={(e) => setRegisterPassword(e.target.value)}
+                        disabled={isSubmitting}
+                        aria-invalid={Boolean(fieldErrors.registerPassword)}
+                        aria-describedby={errId('lg-reg-password', 'registerPassword')}
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((p) => !p)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        aria-pressed={showPassword}
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </Field>
                 </>
               )}
-            </button>
-          </form>
 
-          {/* Mode Switch Helper */}
-          <div className="fc-auth-switch-mode">
-            {mode === 'signin' ? (
-              <span>
-                New to Fire Crow?{' '}
-                <button
-                  type="button"
-                  onClick={() => handleTabChange('register')}
-                  className="fc-auth-text-link"
-                >
-                  Create an account
-                </button>
-              </span>
-            ) : (
-              <span>
-                Already registered?{' '}
-                <button
-                  type="button"
-                  onClick={() => handleTabChange('signin')}
-                  className="fc-auth-text-link"
-                >
-                  Sign in
-                </button>
-              </span>
-            )}
+              <button type="submit" className="lg-submit" disabled={isSubmitting}>
+                {isSubmitting
+                  ? mode === 'signin' ? 'Signing in…' : 'Creating account…'
+                  : mode === 'signin' ? 'Sign in' : 'Create account'}
+              </button>
+            </form>
+
+            <p className="lg-switch">
+              {mode === 'signin' ? 'New to Fire Crow? ' : 'Already have an account? '}
+              <button type="button" onClick={() => handleTabChange(mode === 'signin' ? 'register' : 'signin')}>
+                {mode === 'signin' ? 'Create an account' : 'Sign in'}
+              </button>
+            </p>
           </div>
-
-          {/* Back to landing */}
-          <button
-            type="button"
-            onClick={() => {
-              clearErrors();
-              onNavigateLanding();
-            }}
-            className="fc-auth-back-btn"
-          >
-            ← Back to landing page
-          </button>
         </section>
+
+        <aside className="lg-panel" aria-label="What happens after you sign in">
+          <div className="lg-panel-inner">
+            <h2>Every audit ends in a record, not a guess.</h2>
+            <ul className="lg-points">
+              <li>
+                <strong>Your code is deleted after the run.</strong>
+                <span>Scanners get a read-only copy in a throwaway container with no network access.</span>
+              </li>
+              <li>
+                <strong>The score comes from findings only.</strong>
+                <span>The same findings always give the same score. AI summaries can&rsquo;t change it.</span>
+              </li>
+              <li>
+                <strong>A failed scan says so.</strong>
+                <span>If a scanner times out, the report is marked partial instead of clean.</span>
+              </li>
+            </ul>
+            <div className="lg-sample" aria-hidden="true">
+              <span className="lg-sample-sev">high</span>
+              <span className="lg-sample-text">Known prototype pollution in dependency</span>
+              <span className="lg-sample-file">package.json:28</span>
+            </div>
+          </div>
+        </aside>
       </main>
     </div>
   );

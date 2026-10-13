@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { BrandMark } from './BrandMark';
 import { Ledger } from './landing/site/Ledger';
 import { CAPABILITIES, FAQ_ITEMS, PIPELINE_STAGES } from './landing/data/landingData';
 import './landing/site/landing-site.css';
@@ -35,16 +36,6 @@ const FAILURE_ROWS = [
   { when: 'The archive is over 50 MB', status: 'stopped at intake', note: 'No scanner starts. Nothing is unpacked past the limit.' },
 ];
 
-function Mark() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true">
-      <rect width="28" height="28" rx="7" fill="var(--lp-ink)" />
-      <path d="M7 19.5c3.6-.3 5.4-2.4 6.3-5.6.5-1.8 1.9-3.2 4-3.4L21 10l-1.5 2.3c1 .2 1.6.8 1.8 1.7-1.5-.4-2.6 0-3.2 1.1-1 2-3.3 4.2-8.1 4.4z" fill="#fff" />
-      <path d="M13.8 22c.2-1.8 1.3-3 3.2-3.6-.1 1.6-.8 2.8-3.2 3.6z" fill="var(--lp-ember)" />
-    </svg>
-  );
-}
-
 export default function LandingPage({ user, onNavigateLogin, onNavigateConsole }: LandingPageProps) {
   const [menu, setMenu] = useState(false);
   const [email, setEmail] = useState('');
@@ -73,7 +64,7 @@ export default function LandingPage({ user, onNavigateLogin, onNavigateConsole }
       <header className="lp-nav">
         <div className="lp-wrap lp-nav-inner">
           <a href="#top" className="lp-brand" aria-label="Fire Crow home">
-            <Mark />
+            <BrandMark />
             <span>Fire Crow</span>
             <small>by Next Lab</small>
           </a>
