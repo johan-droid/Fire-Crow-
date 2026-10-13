@@ -145,9 +145,11 @@ export default function LoginPage({
   };
 
   // Switch tabs cleanly without lingering errors
+  const clearErrorsRef = useRef(clearErrors);
+  clearErrorsRef.current = clearErrors;
   useEffect(() => {
     // Clear errors when mode changes
-    clearErrors();
+    clearErrorsRef.current();
     setFieldErrors({});
   }, [mode]);
 

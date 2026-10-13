@@ -20,6 +20,19 @@ export function LandingNavbar({ user, onNavigateLogin, onNavigateConsole }: Land
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isMobileMenuOpen]);
 
+  useEffect(() => {
+    if (!isMobileMenuOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const mq = window.matchMedia('(min-width: 769px)');
+    const onChange = (e: MediaQueryListEvent) => { if (e.matches) setIsMobileMenuOpen(false); };
+    mq.addEventListener('change', onChange);
+    return () => {
+      document.body.style.overflow = prev;
+      mq.removeEventListener('change', onChange);
+    };
+  }, [isMobileMenuOpen]);
+
   const closeMenu = () => setIsMobileMenuOpen(false);
 
   return (
@@ -83,6 +96,7 @@ export function LandingNavbar({ user, onNavigateLogin, onNavigateConsole }: Land
             className="fc-mobile-toggle"
             aria-label="Toggle navigation menu"
             aria-expanded={isMobileMenuOpen}
+            aria-controls="mobile-navigation"
             type="button"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

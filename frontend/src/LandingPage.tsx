@@ -49,6 +49,8 @@ export default function LandingPage({
 }: LandingPageProps) {
   return (
     <div className="fc-landing apple-landing-page" id="top">
+      <a href="#main-content" className="fc-skip-link">Skip to main content</a>
+
       {/* Fixed ambient aurora — slow color depth behind every section */}
       <div className="fc-aurora" aria-hidden="true" />
 
@@ -83,7 +85,7 @@ export default function LandingPage({
       {/* 01. Sticky Header Navigation with NEXT LAB + Fire Crow Co-Branding */}
       <LandingNavbar user={user} onNavigateLogin={onNavigateLogin} onNavigateConsole={onNavigateConsole} />
 
-      <main id="main-content" style={{ position: 'relative', zIndex: 1 }}>
+      <main id="main-content" tabIndex={-1} style={{ position: 'relative', zIndex: 1 }}>
         {/* 02. High-Impact Value Proposition Hero with Terminal */}
         <HeroSection onNavigateLogin={onNavigateLogin} />
 
