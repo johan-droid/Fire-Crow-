@@ -704,6 +704,24 @@ impl Settings {
             }
         }
 
+        // In cross-origin deployments (e.g. Vercel frontend on vercel.app and Render backend on onrender.com),
+        // default SameSite=Strict blocks cookies in modern browsers for cross-origin fetch/credentials requests.
+        // If AUTH_COOKIE_SAMESITE was not explicitly configured in the environment, auto-promote to "none"
+        // and ensure auth_cookie_secure=true so browser sends credentials across origins.
+        if std::env::var("AUTH_COOKIE_SAMESITE").is_err() {
+            let is_cross_origin = !settings.frontend_url.is_empty()
+                && settings.frontend_url.trim_end_matches('/') != settings.backend_base_url.trim_end_matches('/');
+            if is_cross_origin || std::env::var("RENDER").is_ok() {
+                tracing::info!(
+                    "Cross-origin or cloud environment detected (frontend: '{}', backend: '{}'). Defaulting auth_cookie_samesite to 'none' and auth_cookie_secure to true.",
+                    settings.frontend_url,
+                    settings.backend_base_url
+                );
+                settings.auth_cookie_samesite = "none".into();
+                settings.auth_cookie_secure = true;
+            }
+        }
+
         Ok(())
     }
 

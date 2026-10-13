@@ -73,10 +73,11 @@ pub async fn exchange_token(
 
     let cookie_name = state.settings().auth_cookie_name.clone();
     let samesite = get_cookie_samesite(&state);
+    let is_secure = is_cookie_secure(&state, samesite);
     let access_cookie = Cookie::build((cookie_name.clone(), access_token_str.clone()))
         .path("/")
         .http_only(true)
-        .secure(!state.settings().debug)
+        .secure(is_secure)
         .same_site(samesite)
         .build();
 
@@ -86,7 +87,7 @@ pub async fn exchange_token(
     ))
     .path("/")
     .http_only(true)
-    .secure(!state.settings().debug)
+    .secure(is_secure)
     .same_site(samesite)
     .build();
 
@@ -98,6 +99,8 @@ pub async fn exchange_token(
         jar,
         Json(serde_json::json!({
             "token_type": "bearer",
+            "access_token": access_token_str,
+            "refresh_token": refresh_token_str,
             "username": username,
             "user_id": user_id,
             "email": email
@@ -168,10 +171,11 @@ pub async fn refresh_token(
 
     let cookie_name = state.settings().auth_cookie_name.clone();
     let samesite = get_cookie_samesite(&state);
+    let is_secure = is_cookie_secure(&state, samesite);
     let access_cookie = Cookie::build((cookie_name.clone(), access_token_str.clone()))
         .path("/")
         .http_only(true)
-        .secure(!state.settings().debug)
+        .secure(is_secure)
         .same_site(samesite)
         .build();
 
@@ -181,7 +185,7 @@ pub async fn refresh_token(
     ))
     .path("/")
     .http_only(true)
-    .secure(!state.settings().debug)
+    .secure(is_secure)
     .same_site(samesite)
     .build();
 
@@ -189,9 +193,13 @@ pub async fn refresh_token(
 
     Ok((
         jar,
-        Json(
-            serde_json::json!({"token_type": "bearer", "username": claims.claims.username, "user_id": claims.claims.sub}),
-        ),
+        Json(serde_json::json!({
+            "token_type": "bearer",
+            "access_token": access_token_str,
+            "refresh_token": refresh_token_str,
+            "username": claims.claims.username,
+            "user_id": claims.claims.sub
+        })),
     ))
 }
 
@@ -344,10 +352,11 @@ pub async fn login(
 
     let cookie_name = state.settings().auth_cookie_name.clone();
     let samesite = get_cookie_samesite(&state);
+    let is_secure = is_cookie_secure(&state, samesite);
     let access_cookie = Cookie::build((cookie_name.clone(), access_token_str.clone()))
         .path("/")
         .http_only(true)
-        .secure(!state.settings().debug)
+        .secure(is_secure)
         .same_site(samesite)
         .build();
 
@@ -357,7 +366,7 @@ pub async fn login(
     ))
     .path("/")
     .http_only(true)
-    .secure(!state.settings().debug)
+    .secure(is_secure)
     .same_site(samesite)
     .build();
 
@@ -365,9 +374,14 @@ pub async fn login(
 
     Ok((
         jar,
-        Json(
-            serde_json::json!({"token_type": "bearer", "username": user.username, "user_id": user.id, "email": user.email}),
-        ),
+        Json(serde_json::json!({
+            "token_type": "bearer",
+            "access_token": access_token_str,
+            "refresh_token": refresh_token_str,
+            "username": user.username,
+            "user_id": user.id,
+            "email": user.email
+        })),
     ))
 }
 
@@ -500,11 +514,18 @@ pub async fn github_login(
     jar: CookieJar,
 ) -> Result<(CookieJar, Redirect)> {
     let oauth_state = crate::services::auth::create_oauth_state();
+    let samesite = get_cookie_samesite(&state);
+    let cookie_samesite = if samesite == axum_extra::extract::cookie::SameSite::None {
+        axum_extra::extract::cookie::SameSite::None
+    } else {
+        axum_extra::extract::cookie::SameSite::Lax
+    };
+    let is_secure = is_cookie_secure(&state, cookie_samesite);
     let cookie = Cookie::build(("oauth_state", oauth_state.clone()))
         .path("/")
         .http_only(true)
-        .secure(!state.settings().debug)
-        .same_site(axum_extra::extract::cookie::SameSite::Lax)
+        .secure(is_secure)
+        .same_site(cookie_samesite)
         .build();
 
     let mut jar = jar.add(cookie);
@@ -529,8 +550,8 @@ pub async fn github_login(
                 let redirect_cookie = Cookie::build(("oauth_redirect_origin", origin))
                     .path("/")
                     .http_only(true)
-                    .secure(!state.settings().debug)
-                    .same_site(axum_extra::extract::cookie::SameSite::Lax)
+                    .secure(is_secure)
+                    .same_site(cookie_samesite)
                     .build();
                 jar = jar.add(redirect_cookie);
             }
@@ -556,7 +577,7 @@ pub async fn github_callback(
     let redirect_origin = jar
         .get("oauth_redirect_origin")
         .map(|c| c.value().to_string());
-    let jar = jar.remove(Cookie::from("oauth_redirect_origin"));
+    let jar = jar.remove(Cookie::build(("oauth_redirect_origin", "")).path("/").build());
 
     let frontend_base = redirect_origin.unwrap_or_else(|| {
         state
@@ -578,7 +599,7 @@ pub async fn github_callback(
     if query.state != stored_state {
         return (jar, error_redirect("Invalid OAuth state"));
     }
-    let jar = jar.remove(Cookie::from("oauth_state"));
+    let jar = jar.remove(Cookie::build(("oauth_state", "")).path("/").build());
 
     let base_url = resolve_backend_base_url(&state, &headers);
     let redirect_uri = format!("{}/api/v1/auth/github/callback", base_url);
@@ -841,17 +862,18 @@ pub async fn github_callback(
 
     let cookie_name = state.settings().auth_cookie_name.clone();
     let samesite = get_cookie_samesite(&state);
+    let is_secure = is_cookie_secure(&state, samesite);
     let access_cookie = Cookie::build((cookie_name.clone(), access_token_str.clone()))
         .path("/")
         .http_only(true)
-        .secure(!state.settings().debug)
+        .secure(is_secure)
         .same_site(samesite)
         .build();
 
     let refresh_cookie = Cookie::build((format!("{}_refresh", cookie_name), refresh_token_str))
         .path("/")
         .http_only(true)
-        .secure(!state.settings().debug)
+        .secure(is_secure)
         .same_site(samesite)
         .build();
 
@@ -945,4 +967,8 @@ fn get_cookie_samesite(state: &crate::AppState) -> axum_extra::extract::cookie::
         "none" => axum_extra::extract::cookie::SameSite::None,
         _ => axum_extra::extract::cookie::SameSite::Strict,
     }
+}
+
+fn is_cookie_secure(state: &crate::AppState, samesite: axum_extra::extract::cookie::SameSite) -> bool {
+    state.settings().auth_cookie_secure || !state.settings().debug || samesite == axum_extra::extract::cookie::SameSite::None
 }
