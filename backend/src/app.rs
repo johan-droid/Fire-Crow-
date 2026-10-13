@@ -131,7 +131,16 @@ pub fn build_app(state: Arc<AppState>, serve_frontend: bool) -> Router {
                 "Static files directory {} not found, static file serving is disabled",
                 frontend_dir
             );
-            app
+            app.route(
+                "/",
+                axum::routing::get(|| async {
+                    axum::Json(serde_json::json!({
+                        "status": "ok",
+                        "service": "firecrow-backend",
+                        "version": env!("CARGO_PKG_VERSION")
+                    }))
+                }),
+            )
         }
     } else {
         app

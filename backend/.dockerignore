@@ -1,0 +1,30 @@
+# Ignore git metadata
+.git
+.github
+
+# Target & build artifacts
+target/
+
+# Ignore databases
+*.db
+*.sqlite
+*.sqlite3
+firecrow.db
+test_firecrow.db
+
+# Ignore local configuration and secrets
+.env
+.env.local
+.env.*
+!.env.example
+.vscode/
+.idea/
+
+# Ignore logs
+*.log
+logs/
+
+# Ignore local runtime/development artifacts
+workspace/
+artifacts/
+temp/

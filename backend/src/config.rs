@@ -678,6 +678,22 @@ impl Settings {
             ));
         }
 
+        // Render and containerized deployments fail closed/timeout if bound to loopback (127.0.0.1).
+        // If an operator accidentally sets HOST=127.0.0.1 in the Render dashboard (e.g. copied from .env.local),
+        // override it to 0.0.0.0 so Render's port detection and reverse proxy can connect.
+        if (std::env::var("RENDER").is_ok()
+            || std::env::var("CONTAINER").is_ok()
+            || std::path::Path::new("/.dockerenv").exists())
+            && (settings.host == "127.0.0.1" || settings.host == "localhost")
+        {
+            tracing::warn!(
+                "Container or Render environment detected with loopback HOST='{}'. \
+                 Overriding host to '0.0.0.0' so Render port scanner and load balancer can connect.",
+                settings.host
+            );
+            settings.host = "0.0.0.0".into();
+        }
+
         Ok(())
     }
 

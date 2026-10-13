@@ -55,6 +55,7 @@ ENV HOST=0.0.0.0
 # `docker run`/compose without an explicit -e PORT keeps working on 8000.
 ENV PORT=8000
 ENV WORKSPACE_DIR=/app
+ENV CONTAINER=true
 
 EXPOSE 8000
 
