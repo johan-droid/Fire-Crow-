@@ -140,6 +140,8 @@ body {
   letter-spacing: -0.01em;
   overflow-x: hidden;
   min-height: 100vh;
+  /* dvh tracks the collapsing mobile browser chrome; 100vh does not. */
+  min-height: 100dvh;
 }
 
 /* ─── Scrollbar ───────────────────────────────── */
@@ -1046,6 +1048,7 @@ body {
 .shell {
   display: block;
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--apple-canvas);
 }
 
@@ -1059,12 +1062,18 @@ body {
   flex-direction: column;
   min-width: 0;
   max-height: 100vh;
+  max-height: 100dvh;
   overflow-y: auto;
   /* Clear the top-docked dynamic island; it floats over content */
-  padding-top: 72px;
+  padding-top: calc(72px + env(safe-area-inset-top));
 }
 @media (max-width: 760px) {
-  .main-content { padding-top: 0; padding-bottom: 84px; }
+  /* The island docks bottom-center here: reserve its height plus the
+     display's home-indicator inset so nothing sits under it. */
+  .main-content {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: calc(84px + env(safe-area-inset-bottom));
+  }
 }
 
 /* (Console topbar removed with the left rail: section titles live in each
@@ -2636,9 +2645,21 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .aurora-dashboard .aurora-grid { opacity: 0.5; }
 
 /* Dashboard shell keeps content above the backdrop. The dynamic island
-   keeps its own z-index so it stays clickable above the main column. */
+   keeps its own z-index so it stays clickable above the main column.
+
+   Dialog backdrops are excluded for the same reason as the island: this shim
+   is (0,3,0), so it used to out-specify `.shell .modal-backdrop`'s
+   `position: fixed` (0,2,0) and `z-index: 100`. The scan and inspector
+   dialogs were laid out as inline flow blocks inside the page instead of as
+   overlays — pushed below the viewport, with no reliable way to reach the
+   footer. Excluding the backdrops here lets their own fixed positioning,
+   full-viewport inset and scroll containment apply as written. */
 .shell { position: relative; }
-.shell > *:not(.aurora-backdrop):not(.dyn-island) { position: relative; z-index: 1; }
+.shell
+  > *:not(.aurora-backdrop):not(.dyn-island):not(.modal-backdrop):not(.fc-modal-backdrop) {
+  position: relative;
+  z-index: 1;
+}
 
 /* ─── Scroll reveal choreography (landing sections) ────────── */
 .reveal {
@@ -3330,11 +3351,24 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   .shell .dyn-audit-label { display: none; }
   .shell .dyn-item { padding: 0.5rem 0.55rem; }
 }
+/* Sections strip: never clips a destination. If the island runs out of
+   room the strip scrolls inside itself instead of pushing controls off
+   the screen edge. */
+.shell .dyn-options {
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.shell .dyn-options::-webkit-scrollbar { display: none; }
+.shell .dyn-item { flex: none; }
+
 /* Small screens: the island docks bottom-center, live pill condenses. */
 @media (max-width: 760px) {
   .shell .dyn-island {
     top: auto;
-    bottom: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    max-width: calc(100vw - 16px);
     gap: 4px;
     padding: 6px 8px;
     border-radius: 16px;
@@ -3343,6 +3377,22 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   .shell .dyn-live-track { display: none; }
   .shell .dyn-live { max-width: none; }
   .shell .dyn-sep { margin: 4px 1px; }
+  /* Every destination stays one tap away and reachable at 44px height. */
+  .shell .dyn-item { min-height: 44px; }
+}
+
+/* 320–400px: the bar is down to icon + label-less affordances. The brand
+   button is dropped (Overview is one of the five sections, so no
+   destination is lost) and paddings tighten so the remaining controls
+   fit without scrolling. */
+@media (max-width: 400px) {
+  .shell .dyn-island { gap: 2px; padding: 5px 6px; }
+  .shell .dyn-brand { display: none; }
+  .shell .dyn-item { padding: 0.5rem 0.4rem; }
+  .shell .dyn-item-icon svg { width: 16px; height: 16px; }
+  .shell .dyn-avatar { width: 28px; height: 28px; }
+  .shell .dyn-user { gap: 0.25rem; padding-left: 2px; }
+  .shell .dyn-audit { padding: 0 0.55rem; }
 }
 .backend-status {
   border-color: var(--dash-border);
@@ -3747,7 +3797,9 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   .shell .page-body { padding: 4.75rem 1.15rem 6.25rem; }
 }
 @media (max-width: 760px) {
-  .shell .page-body { padding: 1.5rem 1rem 6.5rem; }
+  .shell .page-body {
+    padding: 1.5rem 1rem calc(6.5rem + env(safe-area-inset-bottom));
+  }
 }
 
 /* ─── Navigation now docks in the top dynamic island (.shell .dyn-island
@@ -4237,6 +4289,51 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   .shell .live-audit-head { flex-direction: column; }
 }
 
+/* ─── Touch targets ───────────────────────────────────────────────
+   Coarse pointers get controls that approach 44×44 CSS px. The single
+   control-height scale is raised here rather than per component, so
+   every console control grows together and nothing overlaps. */
+@media (pointer: coarse), (max-width: 760px) {
+  .shell {
+    --dash-ctl: 44px;
+    --dash-ctl-sm: 40px;
+  }
+  .shell .fc-btn-sm,
+  .shell .fc-btn-action,
+  .shell .fc-btn-icon,
+  .shell .fc-view-btn,
+  .shell .fc-filter-tab,
+  .shell .fc-modal-close-btn,
+  .shell .fc-modal-sync-btn,
+  .shell .fc-repo-audit-btn,
+  .shell .fc-btn-cancel,
+  .shell .fc-btn-submit-job { min-height: 40px; }
+  .shell .fc-view-btn { min-width: 40px; }
+  .shell .dyn-logout { min-width: 40px; min-height: 40px; }
+  /* Icon-only controls get a real hit area, not just the glyph box. */
+  .shell .fc-btn-icon,
+  .shell .fc-modal-close-btn { min-width: 40px; }
+  /* Form controls stay comfortably tappable and above the 16px font size
+     threshold that makes iOS Safari zoom the whole page on focus. */
+  .shell .form-input,
+  .shell select.form-input,
+  .shell .fc-modal-select {
+    height: 44px;
+    font-size: 16px;
+  }
+  .shell .fc-search-input { height: 40px; font-size: 16px; }
+  /* Find-a-finding search lives in a dialog, not the console shell. */
+  .modal .form-input,
+  .modal select.form-input { height: 44px; font-size: 16px; }
+}
+
+/* The auth form is not inside .shell — keep its controls tappable too. */
+@media (pointer: coarse), (max-width: 760px) {
+  .fc-auth-input { min-height: 48px; font-size: 16px; }
+  .fc-auth-pw-toggle { min-width: 44px; min-height: 44px; right: 2px; }
+  .fc-auth-text-link { min-height: 44px; padding: 0 0.25rem; }
+}
+
 /* ─── Reduced motion ──────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .shell .aurora-backdrop { opacity: 0.15; }
@@ -4245,7 +4342,11 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   .shell .status-dot,
   .shell .badge-pulse,
   .shell .health-chip,
-  .shell .breaker-badge { animation: none !important; transition: none !important; }
+  .shell .breaker-badge,
+  .shell .dyn-island,
+  .shell .dyn-live { animation: none !important; transition: none !important; }
+  /* The shell stays put too: the island and docked bar must not slide in. */
+  .shell .dyn-island { animation: none !important; }
   .shell .metric-card:hover,
   .shell .panel:hover,
   .shell .progress-card:hover { transform: none !important; }

@@ -7,12 +7,18 @@
 
 .fc-auth-shell {
   min-height: 100vh;
+  /* dvh so the card stays centered while mobile browser chrome collapses */
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
   background-color: var(--fc-bg-canvas, #000000);
   background-image: radial-gradient(circle at 50% 20%, rgba(229, 72, 77, 0.08) 0%, transparent 60%);
   padding: 1.5rem;
+  padding-top: max(1.5rem, env(safe-area-inset-top));
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  padding-left: max(1.5rem, env(safe-area-inset-left));
+  padding-right: max(1.5rem, env(safe-area-inset-right));
   position: relative;
   overflow-x: hidden;
   font-family: var(--fc-font-sans, "Inter", sans-serif);
@@ -588,6 +594,8 @@
 @media (max-width: 480px) {
   .fc-auth-shell {
     padding: 1rem 0.75rem;
+    padding-top: max(1rem, env(safe-area-inset-top));
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
   }
 
   .fc-auth-form-panel {

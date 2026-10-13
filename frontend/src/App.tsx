@@ -903,6 +903,27 @@ function App() {
   const isLogin = location.pathname === '/login';
   const isConsole = location.pathname.startsWith('/console');
 
+  // Escape closes whichever dialog is open. A window listener is used rather
+  // than a handler on the backdrop because focus may still sit on the control
+  // that opened the dialog, where backdrop key events never fire.
+  useEffect(() => {
+    if (!selectedJobDetail && !isScanModalOpen && !mfaEnrollment) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (selectedJobDetail) {
+        // Same lifecycle as closeInspector: invalidate in-flight loads.
+        inspectReqRef.current++;
+        setSelectedJobDetail(null);
+      } else if (isScanModalOpen) {
+        setIsScanModalOpen(false);
+      } else if (mfaEnrollment) {
+        setMfaEnrollment(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedJobDetail, isScanModalOpen, mfaEnrollment]);
+
   // Guard: unauthenticated console access returns to login (401 contract).
   useEffect(() => {
     if (isConsole && !user && (authState === 'signed_out' || authState === 'error')) {
@@ -1197,10 +1218,17 @@ function App() {
                     </div>
 
                     <div className="live-audit-bar">
-                      <div className="live-audit-track">
+                      <div
+                        className="live-audit-track"
+                        role="progressbar"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={pct}
+                        aria-label={`Audit progress for ${repoLabel(job.repo_url)}`}
+                      >
                         <div className={`live-audit-fill${isRunning ? ' is-running' : ''}`} style={{ width: `${pct}%` }} />
                       </div>
-                      <span className="live-audit-pct">{pct}%</span>
+                      <span className="live-audit-pct" role="status" aria-live="polite">{pct}%</span>
                     </div>
 
                     <ol className="live-audit-phases">
@@ -1829,13 +1857,19 @@ function App() {
           {/* Modal: MFA Enrollment (POST /mfa/enroll response) */}
           {mfaEnrollment && (
             <div className="modal-backdrop" onClick={() => setMfaEnrollment(null)}>
-              <div className="modal" onClick={e => e.stopPropagation()}>
+              <div
+                className="modal"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="fc-mfa-modal-title"
+                onClick={e => e.stopPropagation()}
+              >
                 <div className="modal-head">
                   <div>
-                    <div className="modal-title">MFA Enrollment</div>
+                    <div className="modal-title" id="fc-mfa-modal-title">MFA Enrollment</div>
                     <div className="modal-sub">Add the secret to your authenticator app, then activate with a 6-digit code from /mfa endpoints or CLI.</div>
                   </div>
-                  <button onClick={() => setMfaEnrollment(null)} className="btn btn-ghost btn-icon">✕</button>
+                  <button onClick={() => setMfaEnrollment(null)} className="btn btn-ghost btn-icon" aria-label="Close MFA enrollment">✕</button>
                 </div>
                 <div className="modal-body">
                   <div className="form-group">
@@ -1848,7 +1882,7 @@ function App() {
                   </div>
                   <div className="form-group">
                     <label className="form-label">Emergency Recovery Codes — store securely, shown once</label>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.4rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.4rem' }}>
                       {(mfaEnrollment.recovery_codes || []).map((c) => (
                         <code key={c} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', background: 'var(--fc-surface-elevated, #1A1A1A)', border: '1px solid var(--fc-border, #2A2A2A)', color: 'var(--fc-text-primary, #FFFFFF)', borderRadius: '6px', padding: '0.35rem 0.55rem' }}>{c}</code>
                       ))}
@@ -1867,10 +1901,16 @@ function App() {
       {/* Modal: New Scan */}
       {isScanModalOpen && (
         <div className="modal-backdrop" onClick={() => setIsScanModalOpen(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="fc-scan-modal-title"
+            onClick={e => e.stopPropagation()}
+          >
             <div className="modal-head">
               <div>
-                <div className="modal-title">Start an audit</div>
+                <div className="modal-title" id="fc-scan-modal-title">Start an audit</div>
                 <div className="modal-sub">Submit a repository for a security audit</div>
               </div>
               <button
@@ -1879,6 +1919,7 @@ function App() {
                 className="fc-modal-close-btn"
                 title="Close modal"
                 aria-label="Close modal"
+                autoFocus
               >
                 ✕
               </button>
@@ -2015,10 +2056,10 @@ function App() {
                   </div>
                 </div>
               </div>
-              <button onClick={() => closeInspector()} className="btn btn-ghost btn-icon">✕</button>
+              <button onClick={() => closeInspector()} className="btn btn-ghost btn-icon" aria-label="Close audit inspector">✕</button>
             </div>
 
-            <div className="modal-body" style={{ maxHeight: '440px', overflowY: 'auto' }}>
+            <div className="modal-body modal-body-scroll">
               {detailLoading ? (
                 <div className="state-skeleton">
                   {[0, 1, 2].map(i => <div key={i} className="skeleton-row" style={{ animationDelay: `${i * 0.12}s`, width: `${90 - i * 10}%` }} />)}
@@ -2115,7 +2156,7 @@ function App() {
                     <div style={{ fontSize: '0.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
                       Findings ({explorerFindings.length}{reportState === 'ready' ? '' : ' • latest result'})
                     </div>
-                    <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.4rem' }}>
+                    <div className="finding-filters">
                       <input
                         type="text"
                         className="form-input"
@@ -2125,7 +2166,7 @@ function App() {
                         style={{ flex: 1 }}
                         aria-label="Search findings"
                       />
-                      <select className="form-input" value={findingSev} onChange={e => setFindingSev(e.target.value)} aria-label="Filter by severity" style={{ maxWidth: '130px' }}>
+                      <select className="form-input" value={findingSev} onChange={e => setFindingSev(e.target.value)} aria-label="Filter by severity" style={{ maxWidth: '160px', flex: 'none' }}>
                         {['all', 'critical', 'high', 'medium', 'low', 'info', 'unknown'].map(s => (
                           <option key={s} value={s}>{s === 'all' ? 'All severities' : s}</option>
                         ))}
@@ -2149,12 +2190,12 @@ function App() {
                   ) : (
                     explorerFindings.map(f => (
                       <div key={f.key} className="finding-card">
-                        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.35rem', flexWrap: 'wrap' }}>
+                        <div className="finding-meta-row">
                           <span className={`badge ${severityClass(f.severity)}`}>{(f.severity || 'info').toUpperCase()}</span>
                           {f.cvss != null && <span className="badge badge-neutral">CVSS {f.cvss.toFixed(1)}</span>}
                           {f.cwe && <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{f.cwe}</span>}
                           {f.file && (
-                            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>
+                            <span className="finding-path" title={`${f.file}${f.line != null ? `:${f.line}` : ''}`}>
                               {f.file}{f.line != null ? `:${f.line}` : ''}
                             </span>
                           )}

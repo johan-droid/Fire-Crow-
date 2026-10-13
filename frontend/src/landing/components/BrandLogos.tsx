@@ -762,9 +762,12 @@ export function BrandLockup({
         <FireCrowSymbol size={compact ? 24 : 32} />
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {/* Named so a host surface can drop the wordmark on very narrow
+          viewports while keeping the mark itself. */}
+      <div className="fc-lockup-text" style={{ display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span
+            className="fc-logo-title"
             style={{
               fontFamily: 'var(--fc-font-display, "Space Grotesk", sans-serif)',
               fontSize: compact ? '1rem' : '1.15rem',

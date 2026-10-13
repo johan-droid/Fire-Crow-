@@ -198,9 +198,24 @@
   }
 }
 
+/* Phones keep two readable columns (halves the scroll depth of the
+   overview); the card tightens its padding and numeral size to stay
+   legible rather than stacking four tall cards. */
 @media (max-width: 600px) {
   .fc-metrics-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+  }
+  .fc-metric-card { padding: 14px; }
+  .fc-metric-header { margin-bottom: 8px; }
+  .fc-metric-value { font-size: 1.45rem; }
+  .fc-metric-hint { font-size: 0.7rem; }
+}
+
+/* Below 360px two columns stop being readable — one full-width card. */
+@media (max-width: 359px) {
+  .fc-metrics-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -299,6 +314,8 @@
   color: var(--fc-text-primary);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .fc-metric-footer {
@@ -619,6 +636,7 @@
   align-items: center;
   gap: 0.5rem;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .fc-search-wrap {
@@ -643,6 +661,7 @@
   color: var(--fc-text-primary);
   outline: none;
   width: 190px;
+  max-width: 100%;
   height: 32px;
   transition: border-color 0.14s var(--fc-ease), box-shadow 0.14s var(--fc-ease);
 }
@@ -1663,7 +1682,11 @@
   white-space: nowrap;
 }
 
-/* ─── Modal Dialogs & Inspector ──────────────────── */
+/* ─── Modal Dialogs & Inspector ────────────────────
+   Viewport containment: a dialog is never taller than the visible
+   viewport and its body scrolls internally, so no control can be
+   pushed off-screen on a phone (or on a short landscape window).
+   Short dialogs stay optically centered via margin:auto. */
 .fc-modal-backdrop,
 .shell .modal-backdrop,
 .modal-backdrop {
@@ -1674,9 +1697,13 @@
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 1.25rem;
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   animation: fcFadeIn 0.18s var(--fc-ease);
 }
 
@@ -1689,8 +1716,48 @@
   width: 100%;
   max-width: 540px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  margin: auto;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 2.5rem);
   overflow: hidden;
   animation: fcScaleUp 0.22s var(--fc-ease);
+}
+
+/* Only the body scrolls: the title bar and the action row stay pinned. */
+.fc-modal-head,
+.shell .modal-head,
+.modal-head,
+.fc-modal-footer,
+.shell .modal-footer,
+.modal-footer { flex: none; }
+
+/* The scan dialog nests its body and footer inside a <form>. Without this the
+   form is the modal's only other child, the body stops being a flex item, and
+   nothing can shrink — so a tall dialog overflowed its own max-height and the
+   footer (Cancel / Submit) was clipped on short screens. Making the form a
+   column flex container lets the body absorb the shortfall and scroll. */
+.shell .modal > form,
+.modal > form {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fc-modal-body,
+.shell .modal-body,
+.modal-body {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Long-form inspector body: capped on tall viewports, shrinks on short ones. */
+.shell .modal-body.modal-body-scroll {
+  max-height: min(62dvh, 560px);
 }
 
 .fc-modal-head,
@@ -1852,6 +1919,12 @@
   gap: 12px;
 }
 
+/* Two inputs side by side stop being readable well before 400px:
+   stack them on every narrow viewport. */
+@media (max-width: 560px) {
+  .form-row-2col { grid-template-columns: 1fr; gap: 8px; }
+}
+
 .fc-modal-footer,
 .shell .modal-footer,
 .modal-footer {
@@ -1954,6 +2027,9 @@
   box-shadow: 0 0 0 3px rgba(255, 77, 77, 0.18);
 }
 
+/* ─── Dialog subtitle: repo URLs and identifiers are long by nature ── */
+.modal-sub { overflow-wrap: anywhere; }
+
 /* ─── Finding Cards & Evidence in Inspector ──────── */
 .shell .finding-card {
   background-color: var(--fc-surface);
@@ -1963,6 +2039,44 @@
   padding: 0.85rem 1rem;
   margin-bottom: 0.65rem;
   transition: border-color 0.14s var(--fc-ease), box-shadow 0.14s var(--fc-ease);
+  /* Scanner text, paths and hashes are unbreakable by nature — wrap them
+     inside the card instead of widening the dialog. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Finding meta row: severity pills + a possibly very long file path.
+   It wraps, and the path itself breaks instead of overflowing. */
+.shell .finding-meta-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.35rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.shell .finding-path {
+  font-size: 0.72rem;
+  color: var(--fc-text-muted);
+  font-family: var(--font-mono);
+  margin-left: auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+/* Filters above the findings list: side by side while there is room,
+   stacked once the dialog is phone-width. */
+.shell .finding-filters {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  min-width: 0;
+}
+.shell .finding-filters .form-input { min-width: 0; }
+@media (max-width: 560px) {
+  .shell .finding-filters { flex-direction: column; }
+  .shell .finding-filters .form-input { max-width: none !important; }
 }
 
 .shell .finding-card:hover {
@@ -2032,6 +2146,8 @@
 
   .fc-repo-side {
     justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 0.6rem;
   }
 
   .fc-attention-item {
@@ -2041,4 +2157,41 @@
   .fc-attention-actions {
     width: 100%;
   }
+
+  /* Dialogs: the 32px gutter is a desktop luxury — reclaim it for content. */
+  .fc-modal-head,
+  .shell .modal-head,
+  .modal-head { padding: 16px 16px; }
+  .fc-modal-body,
+  .shell .modal-body,
+  .modal-body { padding: 16px; }
+  .fc-modal-footer,
+  .shell .modal-footer,
+  .modal-footer { padding: 14px 16px; flex-wrap: wrap; }
+  .fc-modal-repo-picker { padding: 12px; }
+  .fc-modal-repo-header { flex-direction: column; align-items: stretch; }
+  .fc-modal-sync-btn { justify-content: center; }
+
+  /* Data tables: trim the 24px cell gutter so a phone shows more of the
+     row before the bounded wrapper has to scroll. The wrapper stays the
+     only horizontal scroller — never the page. */
+  .fc-table th,
+  .fc-table td { padding: 12px 14px; }
+
+  /* Results, actions and repository rows stack their trailing controls
+     instead of squeezing them against the title. */
+  .fc-actions-group { flex-wrap: wrap; justify-content: flex-start; }
+  .fc-list-item-actions { flex-wrap: wrap; }
+  .fc-audit-list-item { flex-direction: column; align-items: stretch; gap: 0.6rem; }
+
+  /* Header controls claim the full width, so the search field is not
+     forced below its 190px min inside a 240px column. */
+  .fc-audits-header-actions { width: 100%; }
+  .fc-search-wrap { flex: 1 1 140px; }
+  .fc-search-input { width: 100%; }
+
+  /* Settings rows: a long email wraps under its label instead of being
+     truncated to nothing. */
+  .fc-settings-row { flex-direction: column; align-items: flex-start; gap: 0.15rem; }
+  .fc-settings-row dd { white-space: normal; overflow-wrap: anywhere; text-align: left; }
 }

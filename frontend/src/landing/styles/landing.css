@@ -171,6 +171,8 @@
   border-bottom: 1px solid var(--fc-glass-border);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
   transition: border-color 0.2s ease;
+  /* Sticky bar sits under the status bar / notch on mobile. */
+  padding-top: env(safe-area-inset-top);
 }
 
 .fc-nav-container {
@@ -335,6 +337,8 @@
   color: var(--fc-text-primary);
   width: 40px;
   height: 40px;
+  /* Never let the flex row squeeze the tap target below its size. */
+  flex: none;
   border-radius: 8px;
   align-items: center;
   justify-content: center;
@@ -1752,6 +1756,21 @@
   }
 }
 
+/* The nav bar carries brand + status pill + CTA + toggle. The status pill is
+   decorative telemetry — the first thing to give up space on a phone. */
+@media (max-width: 560px) {
+  .fc-container {
+    padding: 0 16px;
+  }
+  .fc-nav-status-pill {
+    display: none;
+  }
+  .fc-nav-container {
+    gap: 10px;
+    height: 60px;
+  }
+}
+
 @media (max-width: 480px) {
   .fc-hero {
     padding: 48px 0 40px;
@@ -1761,9 +1780,6 @@
   }
   .fc-logo-badge {
     display: none;
-  }
-  .fc-logo-title {
-    font-size: 1rem;
   }
   .fc-nav-actions {
     gap: 8px;
@@ -1791,6 +1807,17 @@
   .fc-preview-tabs {
     width: 100%;
     overflow-x: auto;
+  }
+}
+
+/* 320–380px: only the crow mark and the primary CTA remain beside the
+   toggle. The wordmark returns in the drawer and on the hero. */
+@media (max-width: 380px) {
+  .fc-nav .fc-lockup-text {
+    display: none;
+  }
+  .fc-nav-actions .fc-btn-primary {
+    padding: 8px 10px;
   }
 }
 

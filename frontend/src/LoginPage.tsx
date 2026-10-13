@@ -236,12 +236,12 @@ export default function LoginPage({
             </p>
           </div>
 
-          {/* Segmented Mode Selector */}
-          <div className="fc-auth-tabs" role="tablist" aria-label="Authentication mode">
+          {/* Segmented mode selector — a pair of toggle buttons, not ARIA tabs:
+              there is no tabpanel and no roving arrow-key focus. */}
+          <div className="fc-auth-tabs" role="group" aria-label="Authentication mode">
             <button
               type="button"
-              role="tab"
-              aria-selected={mode === 'signin'}
+              aria-pressed={mode === 'signin'}
               className={`fc-auth-tab ${mode === 'signin' ? 'active' : ''}`}
               onClick={() => handleTabChange('signin')}
             >
@@ -249,8 +249,7 @@ export default function LoginPage({
             </button>
             <button
               type="button"
-              role="tab"
-              aria-selected={mode === 'register'}
+              aria-pressed={mode === 'register'}
               className={`fc-auth-tab ${mode === 'register' ? 'active' : ''}`}
               onClick={() => handleTabChange('register')}
             >

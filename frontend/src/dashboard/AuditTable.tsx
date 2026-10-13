@@ -129,7 +129,9 @@ export function AuditTable({
 
       {/* Filter tab bar */}
       {jobs.length > 0 && (
-        <div className="fc-filter-tabs-bar" role="tablist" aria-label="Filter by audit status">
+        /* A filter bar, not a tab set: there are no tabpanels and no arrow-key
+           roving focus, so these are toggle buttons with aria-pressed. */
+        <div className="fc-filter-tabs-bar" role="group" aria-label="Filter by audit status">
           {(
             [
               { id: 'all', label: 'All', count: jobs.length },
@@ -141,8 +143,7 @@ export function AuditTable({
             <button
               key={tab.id}
               type="button"
-              role="tab"
-              aria-selected={statusFilter === tab.id}
+              aria-pressed={statusFilter === tab.id}
               className={`fc-filter-tab ${statusFilter === tab.id ? 'is-active' : ''}`}
               onClick={() => setStatusFilter(tab.id)}
             >
