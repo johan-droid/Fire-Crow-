@@ -468,6 +468,32 @@ struct GitHubUser {
     email: Option<String>,
 }
 
+fn resolve_backend_base_url(state: &crate::AppState, headers: &axum::http::HeaderMap) -> String {
+    let configured = state.settings().backend_base_url.trim_end_matches('/');
+    if !configured.is_empty() && configured != "http://localhost:8000" {
+        return configured.to_string();
+    }
+    if let Ok(render_url) = std::env::var("RENDER_EXTERNAL_URL") {
+        let r = render_url.trim().trim_end_matches('/');
+        if !r.is_empty() {
+            return r.to_string();
+        }
+    }
+    let host = headers
+        .get("x-forwarded-host")
+        .or_else(|| headers.get(axum::http::header::HOST))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !host.is_empty() && host != "localhost:8000" && host != "127.0.0.1:8000" {
+        let proto = headers
+            .get("x-forwarded-proto")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("https");
+        return format!("{}://{}", proto, host);
+    }
+    configured.to_string()
+}
+
 pub async fn github_login(
     State(state): State<Arc<crate::AppState>>,
     headers: axum::http::HeaderMap,
@@ -511,7 +537,7 @@ pub async fn github_login(
         }
     }
 
-    let base_url = state.settings().backend_base_url.trim_end_matches('/');
+    let base_url = resolve_backend_base_url(&state, &headers);
     let auth_url = format!(
         "https://github.com/login/oauth/authorize?client_id={}&redirect_uri={}/api/v1/auth/github/callback&state={}&scope=repo,read:org,user:email",
         state.settings().github_client_id,
@@ -523,6 +549,7 @@ pub async fn github_login(
 
 pub async fn github_callback(
     State(state): State<Arc<crate::AppState>>,
+    headers: axum::http::HeaderMap,
     jar: CookieJar,
     Query(query): Query<OAuthCallbackQuery>,
 ) -> (CookieJar, Redirect) {
@@ -553,7 +580,7 @@ pub async fn github_callback(
     }
     let jar = jar.remove(Cookie::from("oauth_state"));
 
-    let base_url = state.settings().backend_base_url.trim_end_matches('/');
+    let base_url = resolve_backend_base_url(&state, &headers);
     let redirect_uri = format!("{}/api/v1/auth/github/callback", base_url);
 
     // security_s_16: `Client::new()` has no timeout, so a stalled peer

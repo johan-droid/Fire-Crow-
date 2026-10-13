@@ -694,6 +694,16 @@ impl Settings {
             settings.host = "0.0.0.0".into();
         }
 
+        // Auto-adopt Render's public service URL for OAuth callbacks if BACKEND_BASE_URL was omitted.
+        if settings.backend_base_url.is_empty() || settings.backend_base_url == "http://localhost:8000" {
+            if let Ok(render_url) = std::env::var("RENDER_EXTERNAL_URL") {
+                if !render_url.trim().is_empty() {
+                    tracing::info!("Using RENDER_EXTERNAL_URL as backend_base_url: {}", render_url);
+                    settings.backend_base_url = render_url.trim().trim_end_matches('/').to_string();
+                }
+            }
+        }
+
         Ok(())
     }
 
