@@ -91,7 +91,13 @@ export const api = {
       body: JSON.stringify({ username, email, password }),
     }),
   logout: () => requestJson<unknown>(authPaths.logout(), { method: 'POST' }),
-  me: () => requestJson<AuthMeResponse>(authPaths.me()),
+  me: () =>
+    withTimeout(
+      (signal) => requestJson<AuthMeResponse>(authPaths.me(), { signal }),
+      4000,
+      'Session verification',
+      'proceeding as signed out.',
+    ),
   exchangeCode: (code: string) =>
     requestJson<ExchangeResponse>(authPaths.exchange(), {
       method: 'POST',

@@ -25,6 +25,7 @@ export type UserProfile = LandingPageUser;
 export interface LandingPageProps {
   user?: LandingPageUser | null;
   onNavigateLogin: () => void;
+  onNavigateConsole?: () => void;
   onInitiateCheckout?: (amount: number, packageName: string) => Promise<void> | void;
 }
 
@@ -43,6 +44,7 @@ export interface LandingPageProps {
 export default function LandingPage({
   user,
   onNavigateLogin,
+  onNavigateConsole,
   onInitiateCheckout,
 }: LandingPageProps) {
   return (
@@ -76,7 +78,7 @@ export default function LandingPage({
       </div>
 
       {/* 01. Sticky Header Navigation with NEXT LAB + Fire Crow Co-Branding */}
-      <LandingNavbar user={user} onNavigateLogin={onNavigateLogin} />
+      <LandingNavbar user={user} onNavigateLogin={onNavigateLogin} onNavigateConsole={onNavigateConsole} />
 
       <main id="main-content" style={{ position: 'relative', zIndex: 1 }}>
         {/* 02. High-Impact Value Proposition Hero with Terminal */}

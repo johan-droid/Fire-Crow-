@@ -4,9 +4,10 @@ import { BrandLockup } from './BrandLogos';
 interface LandingNavbarProps {
   user?: { username: string; email?: string | null; credit_balance?: number } | null;
   onNavigateLogin: () => void;
+  onNavigateConsole?: () => void;
 }
 
-export function LandingNavbar({ user, onNavigateLogin }: LandingNavbarProps) {
+export function LandingNavbar({ user, onNavigateLogin, onNavigateConsole }: LandingNavbarProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -68,7 +69,11 @@ export function LandingNavbar({ user, onNavigateLogin }: LandingNavbarProps) {
               Sign In
             </button>
           )}
-          <button onClick={onNavigateLogin} className="fc-btn-primary" type="button">
+          <button
+            onClick={user && onNavigateConsole ? onNavigateConsole : onNavigateLogin}
+            className="fc-btn-primary"
+            type="button"
+          >
             Launch Console →
           </button>
 

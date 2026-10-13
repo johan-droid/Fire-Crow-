@@ -545,7 +545,9 @@ function App() {
         // Deep links survive session re-validation: an already-open console
         // path (legacy admin routes remap below) is kept instead of being
         // reset to Overview on every mount.
-        navigate(location.pathname.startsWith('/console') ? location.pathname : '/console/overview');
+        if (location.pathname.startsWith('/console')) {
+          navigate(location.pathname);
+        }
         fetchDashboardData(true, { force: true });
       } catch (err) {
         // No session (401) or unreachable backend: stay signed out, never
@@ -916,29 +918,20 @@ function App() {
     }
   }, [isLogin, user, authState, navigate, location.state]);
 
-  if (authState === 'initializing' || isLoading) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.25rem' }}>
-          <div style={{ width: '32px', height: '32px', borderRadius: '50%', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: '#fff', animation: 'spin 0.8s linear infinite' }}></div>
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', letterSpacing: '0.1em', fontWeight: 600 }}>VERIFYING AUTHENTICATION SESSION...</span>
-        </div>
-      </div>
-    );
-  }
-
-  // Render Landing View
+  // Render Landing View immediately — visitors to the public marketing page
+  // must never be blocked by backend session verification.
   if (isLanding) {
     return (
       <LandingPage
         user={user}
         onNavigateLogin={() => navigate('/login')}
+        onNavigateConsole={() => navigate('/console/overview')}
         onInitiateCheckout={handleInitiateDodoCheckout}
       />
     );
   }
 
-  // Render Login View
+  // Render Login View immediately
   if (isLogin) {
     return (
       <LoginPage
@@ -950,6 +943,18 @@ function App() {
         authFormError={authFormError}
         clearErrors={() => { setError(''); setAuthFormError(''); }}
       />
+    );
+  }
+
+  // Only block with the splash screen for console/dashboard routes that require authentication
+  if (isConsole && (authState === 'initializing' || isLoading)) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.25rem' }}>
+          <div style={{ width: '32px', height: '32px', borderRadius: '50%', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: '#fff', animation: 'spin 0.8s linear infinite' }}></div>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', letterSpacing: '0.1em', fontWeight: 600 }}>VERIFYING AUTHENTICATION SESSION...</span>
+        </div>
+      </div>
     );
   }
 
