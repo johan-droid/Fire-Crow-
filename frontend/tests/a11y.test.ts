@@ -17,6 +17,14 @@ describe('inspector modal keyboard support', () => {
       'autofocused Close missing',
     );
   });
+  it('traps Tab within the open dialog and hands focus back on close', () => {
+    assert.ok(app.includes("e.key !== 'Tab'"), 'Tab handler missing');
+    assert.ok(
+      app.includes('[role="dialog"][aria-modal="true"]'),
+      'open-dialog resolution missing',
+    );
+    assert.ok(app.includes('lastOutsideFocusRef'), 'focus restore on close missing');
+  });
   it('announces async errors as alerts', () => {
     const alerts = (app.match(/className="error-box" role="alert"/g) ?? []).length;
     assert.ok(alerts >= 3, `expected modal/report/narrative alerts, found ${alerts}`);

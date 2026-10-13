@@ -550,11 +550,18 @@ function App() {
         }
         fetchDashboardData(true, { force: true });
       } catch (err) {
-        // No session (401) or unreachable backend: stay signed out, never
-        // fabricate a user from a failed response.
-        console.warn('No active session found:', err);
-        setUser(null);
-        setAuthState('signed_out');
+        // 401 means no session: stay signed out. Anything else (429/5xx/
+        // network/timeout) is indeterminate — a throttled or failed read is
+        // not proof of sign-out, so keep any in-memory user and surface error
+        // instead of fabricating a signed-out state a retry could reverse.
+        if (err instanceof ApiError && err.status === 401) {
+          console.warn('No active session found:', err);
+          setUser(null);
+          setAuthState('signed_out');
+        } else {
+          console.warn('Session verification indeterminate:', err);
+          setAuthState('error');
+        }
       } finally {
         setIsLoading(false);
       }
@@ -922,6 +929,75 @@ function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedJobDetail, isScanModalOpen, mfaEnrollment]);
+
+  // Remember what had focus outside any dialog, so closing a dialog can hand
+  // focus back to the control that opened it. Focus that lands on <body> (as
+  // it does when the backdrop is clicked) must not overwrite the opener.
+  const lastOutsideFocusRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      const t = e.target;
+      if (!(t instanceof HTMLElement)) return;
+      if (t === document.body || t === document.documentElement) return;
+      if (t.closest('[role="dialog"][aria-modal="true"]')) return;
+      lastOutsideFocusRef.current = t;
+    };
+    window.addEventListener('focusin', onFocusIn);
+    return () => window.removeEventListener('focusin', onFocusIn);
+  }, []);
+
+  // Focus containment for dialogs: move focus in on open when the dialog has
+  // no autofocus of its own, keep Tab / Shift+Tab cycling within it, and return
+  // focus to the opener on close. One window listener keyed on the same three
+  // dialogs as the Escape handler above, resolved from the DOM rather than
+  // per-dialog refs, so any future role="dialog" is covered by construction.
+  useEffect(() => {
+    if (!selectedJobDetail && !isScanModalOpen && !mfaEnrollment) return;
+
+    const FOCUSABLE =
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const openDialog = () =>
+      document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]');
+
+    // Focus may still sit on the opener behind the backdrop (the MFA dialog
+    // has no autofocus of its own), so pull the first Tab inside.
+    const root = openDialog();
+    const active = document.activeElement;
+    if (root && !(active instanceof HTMLElement && root.contains(active))) {
+      root.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+    }
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const dialog = openDialog();
+      if (!dialog) return;
+      const items = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => el.getClientRects().length > 0,
+      );
+      // Nothing to cycle through (e.g. a bare loading state): never hard-trap.
+      if (items.length === 0) return;
+      const idx = items.findIndex((el) => el === document.activeElement);
+      if (idx === -1) {
+        // Focus is on or behind the dialog: the next Tab must land inside.
+        e.preventDefault();
+        (e.shiftKey ? items[items.length - 1] : items[0]).focus();
+      } else if (e.shiftKey && idx === 0) {
+        e.preventDefault();
+        items[items.length - 1].focus();
+      } else if (!e.shiftKey && idx === items.length - 1) {
+        e.preventDefault();
+        items[0].focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      // Hand focus back to whatever opened the dialog, if still mounted.
+      const opener = lastOutsideFocusRef.current;
+      if (opener?.isConnected) opener.focus();
+    };
   }, [selectedJobDetail, isScanModalOpen, mfaEnrollment]);
 
   // Guard: unauthenticated console access returns to login (401 contract).

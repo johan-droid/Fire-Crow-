@@ -57,11 +57,13 @@ pub async fn body_size_limit_middleware(
 /// The versioned API surface, before any middleware is applied.
 pub fn api_router() -> Router<Arc<AppState>> {
     Router::new()
-        .nest(
-            "/auth",
-            crate::api::routes_auth::router()
-                .layer(crate::middleware::rate_limit::rate_limiter("5/minute")),
-        )
+        // /auth rate limits are applied per route group inside
+        // routes_auth::router(): credential endpoints keep the strict
+        // 5/minute brute-force ceiling, while the read-only session checks
+        // (me/session/activities) get their own bucket. Sharing one bucket
+        // made a successful login surface as a failure when its immediate
+        // follow-up GET /auth/me was throttled with 429.
+        .nest("/auth", crate::api::routes_auth::router())
         .nest(
             "/audit",
             crate::api::routes_audit::router()

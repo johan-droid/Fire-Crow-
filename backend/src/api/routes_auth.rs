@@ -13,7 +13,16 @@ use std::sync::Arc;
 use tracing::{error, info};
 
 pub fn router() -> Router<Arc<crate::AppState>> {
-    Router::new()
+    // Two buckets, split by what a request costs the server:
+    //
+    // - Credential and state-changing routes keep the strict 5/minute
+    //   per-IP ceiling (brute-force protection for login/register).
+    // - The read-only session checks get their own 30/minute bucket. The SPA
+    //   follows a successful login with an immediate GET /auth/me; when both
+    //   shared one bucket, that follow-up could be rejected with 429 while the
+    //   session cookie was already valid, so the UI reported a login failure
+    //   for a login that had succeeded.
+    let credential_routes = Router::new()
         .route("/exchange", post(exchange_token))
         .route("/refresh", post(refresh_token))
         .route("/policy-context", get(policy_context))
@@ -21,11 +30,17 @@ pub fn router() -> Router<Arc<crate::AppState>> {
         .route("/register", post(register))
         .route("/login", post(login))
         .route("/logout", post(logout))
+        .route("/github", get(github_login))
+        .route("/github/callback", get(github_callback))
+        .layer(crate::middleware::rate_limit::rate_limiter("5/minute"));
+
+    let session_read_routes = Router::new()
         .route("/me", get(get_me))
         .route("/session", get(get_session))
         .route("/activities", get(get_activities))
-        .route("/github", get(github_login))
-        .route("/github/callback", get(github_callback))
+        .layer(crate::middleware::rate_limit::rate_limiter("30/minute"));
+
+    credential_routes.merge(session_read_routes)
 }
 
 pub async fn exchange_token(

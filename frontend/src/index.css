@@ -669,7 +669,7 @@ body {
 
 .apple-input {
   flex: 1;
-  min-width: 280px;
+  min-width: min(280px, 100%);
   background: rgba(0, 0, 0, 0.5);
   border: 1px solid var(--apple-border);
   border-radius: var(--radius-pill);
@@ -1541,58 +1541,13 @@ body {
 }
 .remediation-details[open] summary { margin-bottom: 0.4rem; }
 
-/* ── Health widget (per API docs §14 visualization guide) ───── */
-.health-widget {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-}
-.health-loading { font-size: 0.8rem; color: var(--text-muted); }
-.health-services {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-  gap: 0.6rem;
-}
-.health-service {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.65rem 0.8rem;
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.025);
-  border: 1px solid var(--border);
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-secondary);
-  min-width: 0;
-}
-.health-service > span:first-child { flex: none; }
-.health-service > :nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.health-val {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  text-transform: lowercase;
-}
+/* `status-dot-down` is shared with the API health indicator (api/health.ts);
+   the health-widget styles that used to sit here were removed with it. */
 .status-dot-down {
   background: var(--apple-red);
   box-shadow: 0 0 8px rgba(255, 69, 58, 0.7);
   animation: pulseDot 0.9s infinite alternate;
 }
-.health-breakers { display: flex; flex-wrap: wrap; gap: 0.45rem; }
-.breaker-badge {
-  font-family: var(--font-mono);
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 0.22rem 0.55rem;
-  border-radius: var(--radius-pill);
-  cursor: default;
-}
-.breaker-closed { background: var(--apple-green-dim); color: var(--apple-green); border: 1px solid rgba(48, 209, 88, 0.3); }
-.breaker-half { background: var(--apple-yellow-dim); color: var(--apple-yellow); border: 1px solid rgba(255, 214, 10, 0.3); animation: pulseDot 1.2s infinite alternate; }
-.breaker-open { background: var(--apple-red-dim); color: var(--apple-red); border: 1px solid rgba(255, 69, 58, 0.35); animation: pulseDot 0.8s infinite alternate; }
 
 /* Buttons in Console */
 .btn {
@@ -3063,10 +3018,9 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .page-body { min-width: 0; width: 100%; box-sizing: border-box; }
 .page-body > * { min-width: 0; }
 .panel, .metric-card, .progress-card { min-width: 0; }
-.panel-body, .term-progress, .health-widget { min-width: 0; overflow-wrap: anywhere; }
+.panel-body, .term-progress { min-width: 0; overflow-wrap: anywhere; }
 .term-header { flex-wrap: wrap; row-gap: 0.4rem; }
 .term-header-meta { flex-wrap: wrap; }
-.health-services { align-items: stretch; }
 .table-wrap { max-width: 100%; }
 
 /* Soften 3D tilt inside dashboard so hover can't bleed into sibling column */
@@ -3499,25 +3453,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .health-chip.degraded { color: var(--dash-warn); border-color: color-mix(in srgb, var(--dash-warn) 35%, transparent); background: color-mix(in srgb, var(--dash-warn) 10%, transparent); }
 .health-chip.probe { color: var(--dash-text-3); }
 
-/* Health services */
-.health-service {
-  background: rgba(255, 255, 255, 0.025);
-  border-color: var(--dash-border);
-  color: var(--dash-text-2);
-}
-.health-val {
-  color: var(--dash-text-3);
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--dash-hairline);
-  padding: 0.05rem 0.45rem;
-  border-radius: 6px;
-  font-variant-numeric: tabular-nums;
-}.breakers-badge {
-  font-variant-numeric: tabular-nums;
-}
-.breaker-closed { background: color-mix(in srgb, var(--dash-health) 10%, transparent); color: var(--dash-health); border-color: color-mix(in srgb, var(--dash-health) 32%, transparent); }
-.breaker-half { background: color-mix(in srgb, var(--dash-warn) 10%, transparent); color: var(--dash-warn); border-color: color-mix(in srgb, var(--dash-warn) 32%, transparent); }
-.breaker-open { background: color-mix(in srgb, var(--dash-crit) 10%, transparent); color: var(--dash-crit); border-color: color-mix(in srgb, var(--dash-crit) 35%, transparent); }
+/* Health services: removed with the HealthWidget component. */
 
 /* ─── Badges (status semantics, muted console palette) ───────── */
 /* Single status vocabulary: always one line, never wrapped mid-word,
@@ -3734,7 +3670,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 
 /* ─── Numerals & focus ────────────────────────── */
 .shell .metric-value, .shell .sev-count, .shell .progress-percent,
-.shell .health-val, .shell .term-bar-pct, .shell .count-pill,
+.shell .term-bar-pct, .shell .count-pill,
 .shell .status-pill, .shell .badge { font-feature-settings: 'tnum'; }
 .shell .dyn-item:focus-visible,
 .shell button:focus-visible,
@@ -3760,8 +3696,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   .shell .status-dot,
   .shell .dyn-live-dot,
   .shell .badge-pulse,
-  .shell .health-chip,
-  .shell .breaker-badge { animation: none !important; }
+  .shell .health-chip { animation: none !important; }
   .shell .metric-card:hover,
   .shell .panel:hover,
   .shell .progress-card:hover { transform: none !important; }
@@ -4342,7 +4277,6 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
   .shell .status-dot,
   .shell .badge-pulse,
   .shell .health-chip,
-  .shell .breaker-badge,
   .shell .dyn-island,
   .shell .dyn-live { animation: none !important; transition: none !important; }
   /* The shell stays put too: the island and docked bar must not slide in. */

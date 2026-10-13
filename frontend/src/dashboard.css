@@ -626,7 +626,13 @@
 
 @media (max-width: 1024px) {
   .fc-main-grid {
-    grid-template-columns: 1fr;
+    /* minmax(0, …): a bare 1fr track takes its minimum from content
+       (min-content), so the audits table's scroll wrapper stretched the
+       whole grid — including the side stack — past the viewport, where
+       .main-content's overflow-x clipped it. Zero minimum keeps one
+       column inside the container; the table wrapper stays the only
+       horizontal scroller, by design. */
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1316,8 +1322,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+  min-width: 0;
 }
 
+/* Flex item with ellipsis: without min-width: 0 the repo name's min-content
+   (often 400px+ of owner/repo) forces the whole row past the container. */
 .fc-attention-repo {
   font-size: 0.83rem;
   font-weight: 600;
@@ -1325,7 +1334,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
+
+.fc-attention-top .badge { flex: none; }
 
 .fc-attention-reason {
   font-size: 0.75rem;
@@ -1334,6 +1346,10 @@
   margin: 0.25rem 0 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  /* Standard property: Chromium dropped legacy -webkit-box layout, so the
+     prefixed clamp alone cuts text with no ellipsis. The standard property
+     clamps block containers with an ellipsis. */
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -1553,6 +1569,7 @@
   margin: 2px 0 0;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1629,7 +1646,10 @@
 @media (max-width: 768px) {
   .fc-repo-item {
     flex-direction: column;
-    align-items: flex-start;
+    /* stretch, not flex-start: in a column the cross size must fill the
+       row, or long repo names size the card to content and clip. The ≤720
+       rule below already uses stretch; this keeps 721–768px consistent. */
+    align-items: stretch;
     gap: 1rem;
     padding: 16px;
   }
@@ -2152,6 +2172,10 @@
 
   .fc-attention-item {
     flex-direction: column;
+    /* Column cross-size must stretch: the base row rule uses
+       align-items:flex-start, which in a column sizes every child to its
+       content — long repo names then overflow the card and clip. */
+    align-items: stretch;
   }
 
   .fc-attention-actions {
@@ -2177,6 +2201,15 @@
      only horizontal scroller — never the page. */
   .fc-table th,
   .fc-table td { padding: 12px 14px; }
+  /* …but never crush columns into unreadable slivers: below this floor the
+     wrapper scrolls with legible columns (job id, status, score, actions). */
+  .fc-table { min-width: 620px; }
+  .fc-table td:first-child,
+  .fc-table th:first-child { white-space: nowrap; }
+  /* Cells inherit overflow-wrap:anywhere from the legacy .panel-body rule,
+     which snaps long repo names mid-word. Inside a scrolling table, break
+     only when a token truly cannot fit — normal words keep their shape. */
+  .fc-table td { overflow-wrap: break-word; }
 
   /* Results, actions and repository rows stack their trailing controls
      instead of squeezing them against the title. */

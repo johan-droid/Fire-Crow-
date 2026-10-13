@@ -267,45 +267,6 @@ export function SeverityBars({ findings }: { findings: { severity: string }[] })
   );
 }
 
-/**
- * Operational health of the audit service (API docs §14).
- * Secondary surface: the raw states belong here, not on the overview.
- */
-export function HealthWidget({ deep }: { deep: DeepHealth | null }) {
-  if (!deep) {
-    return <div className="health-widget"><span className="health-loading">Probing service telemetry…</span></div>;
-  }
-  const dot = (ok: boolean | null, disabled = false) =>
-    `status-dot ${disabled ? '' : ok ? 'status-dot-live' : 'status-dot-down'}`;
-  const dbOk = deep.database === 'ok' || deep.database === 'connected';
-  const lsOk = deep.local_storage === 'ok';
-  const osRaw = deep.object_storage;
-  const osOk = osRaw === 'ok';
-  const osDisabled = osRaw === 'disabled' || osRaw == null;
-  const breakers = Object.entries(deep.circuit_breakers || {});
-  const breakerCls = (s: string) => s === 'closed' ? 'breaker-closed' : s === 'half-open' ? 'breaker-half' : 'breaker-open';
-  const breakerLabel = (s: string) => s === 'closed' ? 'Healthy' : s === 'half-open' ? 'Recovering' : 'Tripped';
-
-  return (
-    <div className="health-widget">
-      <div className="health-services">
-        <div className="health-service"><span className={dot(dbOk)} /><span>Audit database</span><span className="health-val" title={`Reported state: ${deep.database}`}>{deep.database === 'ok' || deep.database === 'connected' ? 'Connected' : deep.database}</span></div>
-        <div className="health-service"><span className={dot(lsOk)} /><span>Session store</span><span className="health-val" title={`Reported state: ${deep.local_storage}`}>{lsOk ? 'Connected' : deep.local_storage}</span></div>
-        <div className="health-service"><span className={`status-dot ${osDisabled ? '' : osOk ? 'status-dot-live' : 'status-dot-down'}`} /><span>Object storage</span><span className="health-val">{osDisabled ? 'Not in use' : osOk ? 'Connected' : osRaw}</span></div>
-      </div>
-      {breakers.length > 0 && (
-        <div className="health-breakers">
-          {breakers.map(([name, cb]) => (
-            <span key={name} className={`breaker-badge ${breakerCls(cb.state)}`} title={`failures: ${cb.failures}${cb.last_failure ? ` • last: ${cb.last_failure}` : ''}`}>
-              {name.toUpperCase()} · {breakerLabel(cb.state)}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── API response shapes (API_DOCUMENTATION.md §8, §14) ──────────
 
 export interface DeepHealth {
