@@ -2812,3 +2812,21 @@
     display: none;
   }
 }
+
+
+/* Skip link — visible on keyboard focus only */
+.fc-skip-link {
+  position: absolute;
+  left: 16px;
+  top: -64px;
+  z-index: 1000;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #fff;
+  color: #0b0b0d;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+.fc-skip-link:focus-visible { top: 12px; outline: 2px solid var(--fc-ember); outline-offset: 2px; }
+#main-content:focus { outline: none; }
