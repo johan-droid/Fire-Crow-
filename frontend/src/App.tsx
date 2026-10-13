@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { BrandMark } from './BrandMark';
 import LandingPage from './LandingPage';
 import LoginPage from './LoginPage';
-import { FireCrowSymbol } from './landing/components/BrandLogos';
 import { useNavigate, useLocation } from 'react-router-dom';
 // Single API-origin contract (FC-DEP-01): base URL resolution, credentials,
 // and error handling live in ./api/client — never re-implemented here.
@@ -1092,7 +1092,8 @@ function App() {
           title="Fire Crow — Overview"
           aria-label="Fire Crow — go to Overview"
         >
-          <FireCrowSymbol size={26} className="dyn-logo" />
+          <BrandMark size={28} />
+          <span className="dyn-brand-name">Fire Crow</span>
         </button>
 
         <div className="dyn-sep" aria-hidden="true" />
