@@ -49,6 +49,9 @@ export default function LandingPage({
 }: LandingPageProps) {
   return (
     <div className="fc-landing apple-landing-page" id="top">
+      {/* Fixed ambient aurora — slow color depth behind every section */}
+      <div className="fc-aurora" aria-hidden="true" />
+
       {/* React Bits: Subtle WebGL2 Cyber Particle Atmosphere */}
       <div
         style={{

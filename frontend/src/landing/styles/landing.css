@@ -2617,3 +2617,198 @@
     transform: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PROFESSIONAL GLASS REFINE — texture, unified motion, ambient depth.
+   Ideas adapted from React Bits (Glass Surface, Specular Button, Border Glow).
+   Scoped to .fc-landing; overrides the per-section hard-coded surfaces above.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.fc-landing {
+  /* One easing curve for every surface — the "smooth" in smooth transitions. */
+  --fc-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --fc-t-fast: 0.25s;
+  --fc-t-med: 0.45s;
+}
+
+/* ─── Film-grain texture over the whole page (glass needs grain to read as
+       glass instead of plastic). One fixed layer, no repaint on scroll. ─── */
+.fc-landing::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ─── Ambient aurora: two slow glows behind all content (z-index 0) ─── */
+.fc-landing .fc-aurora {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(640px 420px at 78% 12%, rgba(229, 72, 77, 0.10), transparent 70%),
+    radial-gradient(720px 480px at 12% 78%, rgba(56, 189, 248, 0.07), transparent 70%);
+}
+
+/* ─── Glass surfaces: translucent gradient + blur + top-edge specular line ─── */
+.fc-cap-card,
+.fc-trust-card,
+.fc-workflow-card,
+.fc-faq-item,
+.fc-pricing-card,
+.fc-enterprise-card,
+.fc-preview-window {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.055) 0%, rgba(255, 255, 255, 0.015) 45%, rgba(255, 255, 255, 0.028) 100%),
+    rgba(18, 21, 27, 0.72);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  border-color: rgba(255, 255, 255, 0.10);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 24px 48px -24px rgba(0, 0, 0, 0.65);
+  transition:
+    transform var(--fc-t-med) var(--fc-ease),
+    border-color var(--fc-t-fast) var(--fc-ease),
+    box-shadow var(--fc-t-med) var(--fc-ease),
+    background var(--fc-t-med) var(--fc-ease);
+}
+
+.fc-cap-card:hover,
+.fc-trust-card:hover,
+.fc-workflow-card:hover,
+.fc-pricing-card:hover {
+  border-color: rgba(255, 255, 255, 0.20);
+  transform: translateY(-4px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 32px 64px -24px rgba(0, 0, 0, 0.75),
+    0 0 0 1px rgba(229, 72, 77, 0.10);
+}
+
+/* ─── Specular button: edge highlight + sheen sweep toward the cursor ─── */
+.fc-btn-primary,
+.fc-btn-hero-primary {
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform var(--fc-t-fast) var(--fc-ease),
+    box-shadow var(--fc-t-med) var(--fc-ease),
+    background var(--fc-t-fast) var(--fc-ease);
+}
+.fc-btn-primary::after,
+.fc-btn-hero-primary::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -80%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.6s var(--fc-ease);
+  pointer-events: none;
+}
+.fc-btn-primary:hover::after,
+.fc-btn-hero-primary:hover::after {
+  left: 130%;
+}
+.fc-btn-primary:hover,
+.fc-btn-hero-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 28px -6px rgba(229, 72, 77, 0.45);
+}
+.fc-btn-primary:active,
+.fc-btn-hero-primary:active {
+  transform: translateY(0);
+}
+
+/* ─── Ghost buttons: glass edge catch on hover ─── */
+.fc-btn-ghost,
+.fc-btn-hero-secondary {
+  transition:
+    transform var(--fc-t-fast) var(--fc-ease),
+    border-color var(--fc-t-fast) var(--fc-ease),
+    background var(--fc-t-fast) var(--fc-ease),
+    box-shadow var(--fc-t-med) var(--fc-ease);
+}
+.fc-btn-ghost:hover,
+.fc-btn-hero-secondary:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10), 0 12px 28px -16px rgba(0, 0, 0, 0.7);
+}
+
+/* ─── Nav: deepen glass + smooth link motion ─── */
+.fc-nav {
+  transition: background var(--fc-t-med) var(--fc-ease), border-color var(--fc-t-med) var(--fc-ease);
+}
+.fc-nav-link,
+.fc-nav-signin-link {
+  transition: color var(--fc-t-fast) var(--fc-ease), opacity var(--fc-t-fast) var(--fc-ease);
+}
+
+/* ─── FAQ: smooth glass accordion ─── */
+.fc-faq-item {
+  transition:
+    border-color var(--fc-t-fast) var(--fc-ease),
+    box-shadow var(--fc-t-med) var(--fc-ease),
+    background var(--fc-t-med) var(--fc-ease);
+}
+.fc-faq-item:hover {
+  border-color: rgba(255, 255, 255, 0.20);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 24px 48px -24px rgba(0, 0, 0, 0.7);
+}
+
+/* ─── Final CTA: glass over the crimson glow ─── */
+.fc-final-cta-card {
+  background:
+    linear-gradient(160deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.02) 50%, rgba(229, 72, 77, 0.05) 100%),
+    rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border-color: rgba(255, 255, 255, 0.12);
+  transition: transform var(--fc-t-med) var(--fc-ease), box-shadow var(--fc-t-med) var(--fc-ease);
+}
+.fc-final-cta-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.35), 0 0 96px rgba(201, 47, 56, 0.18);
+}
+
+/* ─── Reveal: settle with the unified curve ─── */
+.fc-reveal {
+  transition:
+    opacity 0.8s var(--fc-ease),
+    transform 0.8s var(--fc-ease);
+}
+
+/* ─── No motion: kill every added transition, keep state changes instant ─── */
+@media (prefers-reduced-motion: reduce) {
+  .fc-landing .fc-cap-card,
+  .fc-landing .fc-trust-card,
+  .fc-landing .fc-workflow-card,
+  .fc-landing .fc-faq-item,
+  .fc-landing .fc-pricing-card,
+  .fc-landing .fc-enterprise-card,
+  .fc-landing .fc-preview-window,
+  .fc-landing .fc-final-cta-card,
+  .fc-landing .fc-btn-primary,
+  .fc-landing .fc-btn-hero-primary,
+  .fc-landing .fc-btn-ghost,
+  .fc-landing .fc-btn-hero-secondary,
+  .fc-landing .fc-reveal {
+    transition: none;
+  }
+  .fc-landing .fc-btn-primary::after,
+  .fc-landing .fc-btn-hero-primary::after {
+    display: none;
+  }
+}

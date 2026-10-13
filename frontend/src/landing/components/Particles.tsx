@@ -437,6 +437,21 @@ export const Particles = ({
     } catch {
       return undefined;
     }
+    // A canvas owns exactly one context for its lifetime: if a previous mount's
+    // cleanup called loseContext(), getContext() hands back the same dead
+    // context. Restore it instead of rendering into a lost context (which
+    // paints an opaque wash over the hero).
+    if (gl?.isContextLost()) {
+      gl.getExtension('WEBGL_lose_context')?.restoreContext();
+      if (gl.isContextLost()) {
+        canvas.style.visibility = 'hidden';
+        const onRestored = () => {
+          canvas.style.visibility = '';
+        };
+        canvas.addEventListener('webglcontextrestored', onRestored, { once: true });
+        return () => canvas.removeEventListener('webglcontextrestored', onRestored);
+      }
+    }
     if (!gl) return undefined;
 
     const dots = link(gl, PARTICLE_VERTEX, PARTICLE_FRAGMENT);
@@ -944,7 +959,11 @@ export const Particles = ({
         [corners, positionBuffer, randomBuffer, colorBuffer, lineBuffer].forEach(buffer => gl?.deleteBuffer(buffer));
         gl.deleteVertexArray(dotVao);
         gl.deleteVertexArray(lineVao);
-        gl.getExtension('WEBGL_lose_context')?.loseContext();
+        // Do NOT call WEBGL_lose_context.loseContext() here: a canvas keeps one
+        // context for its whole lifetime, so a StrictMode remount (or any
+        // re-mount of the same canvas) would getContext() the same dead
+        // context and render an opaque wash instead of particles.
+        // GC reclaims the context when the canvas leaves the DOM.
       }
     };
   }, []);
