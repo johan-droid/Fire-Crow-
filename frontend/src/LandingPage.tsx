@@ -106,6 +106,7 @@ export default function LandingPage({ user, onNavigateLogin, onNavigateConsole }
         <section className="lp-hero">
           <div className="lp-wrap lp-hero-grid">
             <div className="lp-hero-copy">
+              <p className="lp-eyebrow"><span className="lp-eyebrow-dot" aria-hidden="true" />Zero-trust deterministic security auditing</p>
               <h1>Audit results you can prove, not just read.</h1>
               <p className="lp-lede">
                 Fire Crow scans your GitHub repository with Gitleaks, Semgrep and OSV-Scanner inside throwaway
@@ -124,6 +125,7 @@ export default function LandingPage({ user, onNavigateLogin, onNavigateConsole }
         <section id="how" className="lp-section">
           <div className="lp-wrap lp-split">
             <div className="lp-split-head">
+              <p className="lp-eyebrow lp-eyebrow-sec" aria-hidden="true">01 // How a scan runs</p>
               <h2>From repository URL to frozen report</h2>
               <p>Five steps, always in this order. Each one either finishes or says why it didn&rsquo;t.</p>
             </div>
@@ -145,6 +147,7 @@ export default function LandingPage({ user, onNavigateLogin, onNavigateConsole }
         <section id="guarantees" className="lp-section lp-section-tint">
           <div className="lp-wrap lp-split">
             <div className="lp-split-head">
+              <p className="lp-eyebrow lp-eyebrow-sec" aria-hidden="true">02 // Guarantees</p>
               <h2>What the audit guarantees</h2>
               <p>These come from how the system is built, not from settings you have to remember to turn on.</p>
             </div>
@@ -164,6 +167,7 @@ export default function LandingPage({ user, onNavigateLogin, onNavigateConsole }
         <section id="failures" className="lp-section">
           <div className="lp-wrap lp-split">
             <div className="lp-split-head">
+              <p className="lp-eyebrow lp-eyebrow-sec" aria-hidden="true">03 // When scans fail</p>
               <h2>A failed scan never looks like a clean one</h2>
               <p>If a scanner can&rsquo;t do its job, the report tells you. A missing result is not a pass.</p>
             </div>
@@ -222,6 +226,7 @@ export default function LandingPage({ user, onNavigateLogin, onNavigateConsole }
         <section id="faq" className="lp-section">
           <div className="lp-wrap lp-split">
             <div className="lp-split-head">
+              <p className="lp-eyebrow lp-eyebrow-sec" aria-hidden="true">04 // FAQ</p>
               <h2>Questions teams ask first</h2>
             </div>
             <div className="lp-faq">

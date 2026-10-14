@@ -64,8 +64,14 @@ html:has(.lp) { scroll-behavior: smooth; background: #eef0f3; }
 .lp-menu { display: flex; flex-direction: column; padding: 8px 24px 20px; border-top: 1px solid var(--lp-line); }
 .lp-menu a { padding: 14px 0; border-bottom: 1px solid var(--lp-line); text-decoration: none; font-weight: 600; }
 
+/* Eyebrows — mono labels, ember dot (Stitch editorial pattern) */
+.lp-eyebrow { display: inline-flex; align-items: center; gap: 9px; font: 600 .75rem/1 var(--lp-code); letter-spacing: .1em; text-transform: uppercase; color: var(--lp-muted); }
+.lp-eyebrow-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lp-ember); flex: none; }
+.lp-eyebrow-sec { display: block; margin-bottom: 14px; color: var(--lp-ink); }
+
 /* Hero */
 .lp-hero { padding: clamp(40px, 7vw, 96px) 0 clamp(56px, 8vw, 112px); }
+.lp-hero-copy .lp-eyebrow { margin-bottom: 22px; }
 .lp-hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: clamp(32px, 5vw, 72px); align-items: center; }
 .lp-hero-copy h1 { font: 800 clamp(2.5rem, 5.4vw, 4.5rem)/1.02 var(--lp-display); letter-spacing: -.03em; font-stretch: 90%; max-width: 12ch; }
 .lp-lede { margin-top: 24px; max-width: 34em; font-size: 1.1875rem; color: var(--lp-muted); }
