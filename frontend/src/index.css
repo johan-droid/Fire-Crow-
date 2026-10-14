@@ -3474,7 +3474,7 @@ tr:hover td { background: rgba(255, 255, 255, 0.02); }
 .shell .badge-success { background: color-mix(in srgb, var(--dash-health) 12%, transparent); color: var(--dash-health); border-color: color-mix(in srgb, var(--dash-health) 32%, transparent); }
 .shell .badge-critical { background: color-mix(in srgb, var(--dash-crit) 12%, transparent); color: var(--dash-crit); border-color: color-mix(in srgb, var(--dash-crit) 35%, transparent); }
 .shell .badge-high { background: color-mix(in srgb, var(--dash-accent) 12%, transparent); color: var(--dash-accent-hover); border-color: var(--dash-accent-border); }
-.shell .badge-medium { background: #4A3A1A; color: #FFC107; border-color: rgba(255, 193, 7, 0.45); }
+.shell .badge-medium { background: color-mix(in srgb, var(--dash-warn) 12%, transparent); color: var(--dash-warn); border-color: color-mix(in srgb, var(--dash-warn) 32%, transparent); }
 .shell .badge-low { background: color-mix(in srgb, var(--dash-info) 12%, transparent); color: var(--dash-info); border-color: color-mix(in srgb, var(--dash-info) 32%, transparent); }
 .shell .badge-info { background: color-mix(in srgb, var(--dash-info) 12%, transparent); color: var(--dash-info); border-color: color-mix(in srgb, var(--dash-info) 32%, transparent); }
 .shell .badge-neutral { background: var(--dash-elev); color: var(--dash-text-2); border-color: var(--dash-border); }

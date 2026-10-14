@@ -148,42 +148,29 @@ pub fn build_app(state: Arc<AppState>, serve_frontend: bool) -> Router {
         app
     };
 
-    // Innermost first. See the module docs on ordering.
-    let app = app
-        .layer(cors_layer(&settings))
-        .layer(axum::extract::DefaultBodyLimit::max(
-            settings.max_json_body_bytes as usize,
-        ))
-        .layer(tower_http::limit::RequestBodyLimitLayer::new(
-            settings.max_request_body_bytes as usize,
-        ))
-        // `TimeoutLayer::new` is deprecated; `with_status_code` is the
-        // supported spelling and preserves the previous 408 behaviour.
-        .layer(tower_http::timeout::TimeoutLayer::with_status_code(
-            axum::http::StatusCode::REQUEST_TIMEOUT,
-            std::time::Duration::from_secs(30),
-        ))
-        .layer(from_fn(
-            crate::middleware::security_headers::security_headers_middleware,
-        ));
+    // Invariant Middleware Order (Section II.1):
+    // In Axum, the last `.layer()` is the OUTERMOST layer on ingress and innermost on response egress.
+    // Layers are composed bottom-up so that execution on request arrival follows:
+    //   1. request_id_middleware (generates x-request-id)
+    //   2. security_headers_middleware (injects CSP, HSTS, frame options)
+    //   3. cors_layer (outermost to ensure preflights and rejections 429/403/500 carry CORS headers)
+    //   4. cloudflare_middleware (extracts verified CF-Connecting-IP)
+    //   5. http_audit_logger (logs request/response metadata using verified IP)
+    //   6. error_sanitizer (intercepts internal errors before logger writes)
+    //   7. CatchPanicLayer (recovers from unwinds and maps cleanly to 500)
+    //   8. body_size_limit_middleware (rejects oversized payloads early)
+    //   9. rate_limiter & csrf_middleware (enforces rate limits and Double-Submit Cookie CSRF)
 
-    // security_s1 + p0_3 + phase_9: the global rate limiter must sit INSIDE
-    // `http_audit_logger`.
-    //
-    // security_s1 + p0_3: it is governed by its own flag and is on by default. It
-    // used to be gated on `debug`, so enabling debug logging silently disabled
-    // rate limiting.
-    //
-    // It used to be applied last, which made it the outermost layer, so it
-    // rejected a request with 429 *before* the audit logger ran and the
-    // rejection produced no audit record at all: a burst of blocked traffic was
-    // invisible. Moving it inwards makes the existing logger observe the 429, so
-    // no second logging path is introduced.
-    //
-    // The key is the verified TCP peer, not an extension, so keying does not
-    // depend on this ordering. The consequence is that `body_size_limit` now runs
-    // first, so an oversized request from an over-limit client is answered 413
-    // rather than 429 — both are rejections, and neither is silently admitted.
+    // 9. rate_limiter & csrf_middleware (innermost: runs closest to route handlers)
+    let app = if settings.csrf_enabled {
+        app.layer(from_fn_with_state(
+            state.clone(),
+            crate::middleware::csrf::csrf_middleware,
+        ))
+    } else {
+        app
+    };
+
     let app = if settings.rate_limit_enabled {
         let rate_limiter_conf = tower_governor::governor::GovernorConfigBuilder::default()
             .per_second(20)
@@ -199,34 +186,53 @@ pub fn build_app(state: Arc<AppState>, serve_frontend: bool) -> Router {
         app
     };
 
+    // 8. body_size_limit_middleware & payload bounds
     let app = app
-        .layer(from_fn(crate::middleware::http_logger::http_audit_logger))
-        .layer(tower_http::catch_panic::CatchPanicLayer::new())
-        .layer(from_fn(
-            crate::middleware::request_id::request_id_middleware,
-        ))
         .layer(from_fn(body_size_limit_middleware))
-        .layer(from_fn_with_state(
-            state.clone(),
-            crate::middleware::error_sanitizer::error_sanitizer,
+        .layer(axum::extract::DefaultBodyLimit::max(
+            settings.max_json_body_bytes as usize,
         ))
-        .with_state(state.clone());
+        .layer(tower_http::limit::RequestBodyLimitLayer::new(
+            settings.max_request_body_bytes as usize,
+        ))
+        .layer(tower_http::timeout::TimeoutLayer::with_status_code(
+            axum::http::StatusCode::REQUEST_TIMEOUT,
+            std::time::Duration::from_secs(30),
+        ));
 
-    // Proxy/cloudflare info is extracted unconditionally. It is cheap, it gives
-    // the audit log a verified client address, and routes_verify.rs requires the
-    // CloudflareInfo extension to exist (without it those handlers 500).
+    // 7. CatchPanicLayer: Recover from internal thread unwinds and map to 500
+    let app = app.layer(tower_http::catch_panic::CatchPanicLayer::new());
+
+    // 6. error_sanitizer: Map database and internal unwinds to opaque HTTP 500
+    let app = app.layer(from_fn_with_state(
+        state.clone(),
+        crate::middleware::error_sanitizer::error_sanitizer,
+    ));
+
+    // 5. http_audit_logger: Log request/response metadata using the verified IP
+    let app = app.layer(from_fn(crate::middleware::http_logger::http_audit_logger));
+
+    // 4. cloudflare_middleware: Extract CF-Connecting-IP only if peer matches verified Cloudflare CIDRs
     let app = app.layer(from_fn(
         crate::middleware::cloudflare::cloudflare_middleware,
     ));
 
-    if settings.csrf_enabled {
-        app.layer(from_fn_with_state(
-            state.clone(),
-            crate::middleware::csrf::csrf_middleware,
+    // 3. cors_layer: Guarantee preflights and rejection responses (429, 403, 500) carry valid CORS headers
+    let app = app.layer(cors_layer(&settings));
+
+    // 2. security_headers_middleware: Inject CSP, HSTS, X-Content-Type-Options, Frame options
+    let app = app.layer(from_fn(
+        crate::middleware::security_headers::security_headers_middleware,
+    ));
+
+    // 1. request_id_middleware: Generate and trace x-request-id (outermost on ingress)
+    let app = app
+        .layer(from_fn(
+            crate::middleware::request_id::request_id_middleware,
         ))
-    } else {
-        app
-    }
+        .with_state(state.clone());
+
+    app
 }
 
 /// Assemble `AppState` for a running server or a test.

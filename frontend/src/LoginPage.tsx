@@ -3,6 +3,21 @@ import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { BrandMark } from './BrandMark';
 import './login-site.css';
 
+/**
+ * FC-SEC: Open redirect protection helper re-exported for convenience.
+ */
+export function sanitizeReturnTarget(target: unknown, fallback = '/console/overview'): string {
+  if (typeof target !== 'string') return fallback;
+  const trimmed = target.trim();
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/\\')) {
+    return fallback;
+  }
+  if (/[\r\n\t\\]/.test(trimmed)) {
+    return fallback;
+  }
+  return trimmed;
+}
+
 const GitHubIcon = ({ size = 20 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     <path

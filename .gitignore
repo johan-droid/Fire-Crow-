@@ -134,6 +134,9 @@ desktop.ini
 *.orig
 *.rej
 
+# Local MCP / agent config (contains API keys)
+opencode.json
+
 # Local investigation screenshots (never commit)
 aud-390*.png
 fix-ov390*.png

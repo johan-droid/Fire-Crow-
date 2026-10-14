@@ -372,7 +372,7 @@ impl WorkerPool {
                 // closed executions a live worker had just heartbeated, and the
                 // orphaned-job scan below it is retired: elapsed `started_at`
                 // time is not evidence of death once heartbeats exist.
-                let stale_execution_cutoff = chrono::Utc::now() - chrono::Duration::minutes(10);
+                let stale_execution_cutoff = chrono::Utc::now() - chrono::Duration::minutes(5);
                 let abandoned: Vec<(String, String)> = sqlx::query_as(
                     "SELECT id, job_id FROM audit_executions
                       WHERE status='running'

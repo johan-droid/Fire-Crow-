@@ -31,6 +31,12 @@ pub async fn download_artifact(
         .storage()
         .download_artifact(&artifact.storage_key)
         .await?;
+    let safe_filename = std::path::Path::new(&artifact.file_name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("artifact.bin")
+        .replace(['"', '\r', '\n', ';'], "");
+
     Ok(axum::response::Response::builder()
         .status(200)
         .header(
@@ -39,6 +45,15 @@ pub async fn download_artifact(
                 .mime_type
                 .unwrap_or_else(|| "application/octet-stream".into()),
         )
+        .header(
+            "Content-Disposition",
+            format!("attachment; filename=\"{}\"", safe_filename),
+        )
+        .header(
+            "Content-Security-Policy",
+            "sandbox; default-src 'none'",
+        )
+        .header("X-Content-Type-Options", "nosniff")
         .body(axum::body::Body::from(data))
         .unwrap())
 }

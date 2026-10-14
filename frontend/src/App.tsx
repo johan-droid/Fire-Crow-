@@ -39,6 +39,23 @@ import {
 
 const API_BASE = getApiBase();
 
+/**
+ * FC-SEC: Sanitizes a redirect / return destination.
+ * Must start with exactly one '/', must NOT start with '//' or '/\',
+ * and must not contain any backslashes or protocol specifiers to prevent open redirects.
+ */
+export function sanitizeReturnTarget(target: unknown, fallback = '/console/overview'): string {
+  if (typeof target !== 'string') return fallback;
+  const trimmed = target.trim();
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/\\')) {
+    return fallback;
+  }
+  if (/[\r\n\t\\]/.test(trimmed)) {
+    return fallback;
+  }
+  return trimmed;
+}
+
 interface UserProfile {
   user_id: string;
   username: string;
@@ -650,7 +667,10 @@ function App() {
         credit_balance: me.credit_balance,
       });
       setAuthState('authenticated');
-      const returnTarget = (location.state as { returnTo?: string } | null)?.returnTo || '/console/overview';
+      const rawTarget =
+        (location.state as { returnTo?: string } | null)?.returnTo ||
+        new URLSearchParams(location.search).get('returnTo');
+      const returnTarget = sanitizeReturnTarget(rawTarget);
       navigate(returnTarget);
       fetchDashboardData(true, { force: true });
     } catch (err) {
@@ -1010,7 +1030,10 @@ function App() {
   // Guard: already-authenticated user on /login returns to destination or overview
   useEffect(() => {
     if (isLogin && user && authState === 'authenticated') {
-      const returnTarget = (location.state as { returnTo?: string } | null)?.returnTo || '/console/overview';
+      const rawTarget =
+        (location.state as { returnTo?: string } | null)?.returnTo ||
+        new URLSearchParams(location.search).get('returnTo');
+      const returnTarget = sanitizeReturnTarget(rawTarget);
       navigate(returnTarget, { replace: true });
     }
   }, [isLogin, user, authState, navigate, location.state]);

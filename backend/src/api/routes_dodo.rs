@@ -40,13 +40,17 @@ pub async fn handle_webhook(
 ) -> Result<Json<serde_json::Value>> {
     let signature = headers
         .get("dodo-signature")
+        .or_else(|| headers.get("webhook-signature"))
         .and_then(|v| v.to_str().ok())
+        .map(str::trim)
         .ok_or_else(|| AppError::Unauthorized("Missing signature".into()))?;
 
     type HmacSha256 = Hmac<Sha256>;
     let secret = state.settings.dodo_payments_webhook_secret.as_bytes();
     if secret.is_empty() {
-        return Err(AppError::Internal("Webhook secret not configured".into()));
+        return Err(AppError::NotImplemented(
+            "Dodo Payments webhooks are not configured".into(),
+        ));
     }
 
     let mut mac = HmacSha256::new_from_slice(secret)
@@ -54,11 +58,13 @@ pub async fn handle_webhook(
     mac.update(&body);
     let expected_sig = hex::encode(mac.finalize().into_bytes());
 
-    if expected_sig
-        .as_bytes()
-        .ct_eq(signature.as_bytes())
-        .unwrap_u8()
-        == 0
+    let sig_clean = signature.to_ascii_lowercase();
+    if expected_sig.len() != sig_clean.len()
+        || expected_sig
+            .as_bytes()
+            .ct_eq(sig_clean.as_bytes())
+            .unwrap_u8()
+            == 0
     {
         return Err(AppError::Unauthorized("Invalid signature".into()));
     }

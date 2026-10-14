@@ -1,30 +1,30 @@
-/* Console theme — loaded after index.css. Ink workbench that matches the
-   light landing page: one family (Bricolage + Hanken), ember used for action
-   and severity only, left rail navigation, no all-caps labels. */
+/* Console theme — loaded after index.css. "Obsidian Sentinel" (Stitch design
+   system): obsidian surfaces, amber used for action and severity only, Inter
+   for narrative + JetBrains Mono for numbers, left rail, no all-caps labels. */
 
 .shell {
-  --dash-bg: #0e1017;
-  --dash-surface: #141722;
-  --dash-card: #141722;
-  --dash-elev: #1b1f2e;
-  --dash-border: #2b3042;
-  --dash-border-soft: #222637;
-  --dash-hairline: #222637;
-  --dash-text: #eceef4;
-  --dash-text-2: #a9afc0;
-  --dash-text-3: #8a91a4;
-  --dash-accent: #ff7a45;
-  --dash-accent-hover: #ff9468;
-  --dash-accent-dim: rgba(255, 122, 69, 0.14);
-  --dash-accent-border: rgba(255, 122, 69, 0.38);
-  --dash-health: #5fd3a0;
-  --dash-warn: #f2b544;
-  --dash-crit: #ff6b5e;
-  --dash-info: #8fb4ff;
-  --dash-radius: 10px;
+  --dash-bg: #0a0e14;
+  --dash-surface: #111620;
+  --dash-card: #111620;
+  --dash-elev: #18202c;
+  --dash-border: #1e2632;
+  --dash-border-soft: #191f29;
+  --dash-hairline: #191f29;
+  --dash-text: #f1f5f9;
+  --dash-text-2: #94a3b8;
+  --dash-text-3: #64748b;
+  --dash-accent: #ea580c;
+  --dash-accent-hover: #f59e0b;
+  --dash-accent-dim: rgba(234, 88, 12, 0.14);
+  --dash-accent-border: rgba(234, 88, 12, 0.38);
+  --dash-health: #10b981;
+  --dash-warn: #eab308;
+  --dash-crit: #ef4444;
+  --dash-info: #38bdf8;
+  --dash-radius: 8px;
   --console-rail: 232px;
-  --font-sans: 'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --console-display: 'Bricolage Grotesque', 'Hanken Grotesk', system-ui, sans-serif;
+  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --console-display: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-family: var(--font-sans);
   letter-spacing: 0;
 }

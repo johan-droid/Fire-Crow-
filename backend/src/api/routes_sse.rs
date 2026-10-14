@@ -23,15 +23,17 @@ async fn sse_job(
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let pool = state.pool().clone();
     let user_id = user.user_id.clone();
+    let tenant_id = user.tenant_id.clone();
     let mut rx = state.subscribe_job_updates();
 
     let stream = async_stream::stream! {
-        // Query PostgreSQL ONCE on connection to verify ownership and emit initial snapshot
+        // Query PostgreSQL ONCE on connection to verify user/tenant ownership and emit initial snapshot
         let job: Option<crate::models::AuditJob> = sqlx::query_as::<_, crate::models::AuditJob>(
-            "SELECT * FROM audit_jobs WHERE id=$1 AND user_id=$2",
+            "SELECT * FROM audit_jobs WHERE id=$1 AND (user_id=$2 OR (tenant_id IS NOT NULL AND tenant_id=$3))",
         )
         .bind(&job_id)
         .bind(&user_id)
+        .bind(&tenant_id)
         .fetch_optional(&pool)
         .await
         .unwrap_or(None);
@@ -93,10 +95,11 @@ async fn sse_job(
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                     // Receiver fell behind; fetch latest state once to catch up
                     let job: Option<crate::models::AuditJob> = sqlx::query_as::<_, crate::models::AuditJob>(
-                        "SELECT * FROM audit_jobs WHERE id=$1 AND user_id=$2",
+                        "SELECT * FROM audit_jobs WHERE id=$1 AND (user_id=$2 OR (tenant_id IS NOT NULL AND tenant_id=$3))",
                     )
                     .bind(&job_id)
                     .bind(&user_id)
+                    .bind(&tenant_id)
                     .fetch_optional(&pool)
                     .await
                     .unwrap_or(None);
@@ -151,14 +154,16 @@ async fn sse_dashboard(
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let pool = state.pool().clone();
     let user_id = user.user_id.clone();
+    let tenant_id = user.tenant_id.clone();
     let mut rx = state.subscribe_job_updates();
 
     let stream = async_stream::stream! {
         // Query PostgreSQL ONCE on connection to emit initial dashboard payload
         let jobs: Vec<crate::models::AuditJob> = sqlx::query_as::<_, crate::models::AuditJob>(
-            "SELECT * FROM audit_jobs WHERE user_id=$1 ORDER BY created_at DESC",
+            "SELECT * FROM audit_jobs WHERE user_id=$1 OR (tenant_id IS NOT NULL AND tenant_id=$2) ORDER BY created_at DESC",
         )
         .bind(&user_id)
+        .bind(&tenant_id)
         .fetch_all(&pool)
         .await
         .unwrap_or_default();
@@ -176,9 +181,10 @@ async fn sse_dashboard(
                 Ok(event) => {
                     if event.user_id == user_id {
                         let jobs: Vec<crate::models::AuditJob> = sqlx::query_as::<_, crate::models::AuditJob>(
-                            "SELECT * FROM audit_jobs WHERE user_id=$1 ORDER BY created_at DESC",
+                            "SELECT * FROM audit_jobs WHERE user_id=$1 OR (tenant_id IS NOT NULL AND tenant_id=$2) ORDER BY created_at DESC",
                         )
                         .bind(&user_id)
+                        .bind(&tenant_id)
                         .fetch_all(&pool)
                         .await
                         .unwrap_or_default();
@@ -194,9 +200,10 @@ async fn sse_dashboard(
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
                     // Receiver fell behind; fetch latest dashboard state
                     let jobs: Vec<crate::models::AuditJob> = sqlx::query_as::<_, crate::models::AuditJob>(
-                        "SELECT * FROM audit_jobs WHERE user_id=$1 ORDER BY created_at DESC",
+                        "SELECT * FROM audit_jobs WHERE user_id=$1 OR (tenant_id IS NOT NULL AND tenant_id=$2) ORDER BY created_at DESC",
                     )
                     .bind(&user_id)
+                    .bind(&tenant_id)
                     .fetch_all(&pool)
                     .await
                     .unwrap_or_default();

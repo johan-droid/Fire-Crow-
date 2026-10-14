@@ -11,6 +11,30 @@ impl PaymentService {
         user_id: &str,
         req: CreatePaymentRequest,
     ) -> Result<PaymentRecord> {
+        if !req.amount.is_finite() || req.amount <= 0.0 {
+            return Err(AppError::BadRequest(
+                "Payment amount must be a positive number".into(),
+            ));
+        }
+
+        let mut tx = pool.begin().await.map_err(AppError::Database)?;
+
+        // Idempotency: prevent double-crediting if transaction_reference was already recorded
+        if !req.transaction_reference.trim().is_empty() {
+            let existing: Option<PaymentRecord> = sqlx::query_as(
+                "SELECT * FROM payment_records WHERE transaction_reference = $1",
+            )
+            .bind(&req.transaction_reference)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+
+            if let Some(record) = existing {
+                tx.commit().await.map_err(AppError::Database)?;
+                return Ok(record);
+            }
+        }
+
         let id = Uuid::new_v4().to_string();
         let currency = req.currency.unwrap_or_else(|| "USD".to_string());
         let provider = req.payment_provider.unwrap_or_else(|| "stripe".to_string());
@@ -31,27 +55,28 @@ impl PaymentService {
         .bind(&req.description)
         .bind(&receipt_url)
         .bind(Utc::now().naive_utc())
-        .fetch_one(pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(AppError::Database)?;
 
-        // Top-up user or tenant credit balance
+        // Top-up user or tenant credit balance atomically
         if let Some(ref tenant_id) = req.tenant_id {
             sqlx::query("UPDATE tenants SET credit_balance = COALESCE(credit_balance, 0.0) + $1 WHERE id = $2")
                 .bind(req.amount)
                 .bind(tenant_id)
-                .execute(pool)
+                .execute(&mut *tx)
                 .await
                 .map_err(AppError::Database)?;
         } else {
             sqlx::query("UPDATE users SET credit_balance = COALESCE(credit_balance, 0.0) + $1 WHERE id = $2")
                 .bind(req.amount)
                 .bind(user_id)
-                .execute(pool)
+                .execute(&mut *tx)
                 .await
                 .map_err(AppError::Database)?;
         }
 
+        tx.commit().await.map_err(AppError::Database)?;
         Ok(record)
     }
 

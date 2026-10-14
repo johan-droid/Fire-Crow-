@@ -211,3 +211,38 @@ fn summary(report: &CanonicalAuditReport, narrative: Option<&ReportNarrative>) -
     ));
     text
 }
+
+/// Escape text for Telegram MarkdownV2 formatting according to the official Telegram Bot API spec.
+/// Characters in '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!', '\\'
+/// must be escaped with a preceding backslash.
+pub fn escape_markdown_v2(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len() + 16);
+    for c in text.chars() {
+        if matches!(
+            c,
+            '_' | '*'
+                | '['
+                | ']'
+                | '('
+                | ')'
+                | '~'
+                | '`'
+                | '>'
+                | '#'
+                | '+'
+                | '-'
+                | '='
+                | '|'
+                | '{'
+                | '}'
+                | '.'
+                | '!'
+                | '\\'
+        ) {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    escaped
+}
+

@@ -53,3 +53,72 @@ pub fn remediation_planner_body(findings: &[Finding]) -> Vec<serde_json::Value> 
         })
         .collect()
 }
+
+use crate::error::AppError;
+use std::collections::{HashMap, HashSet, VecDeque};
+
+pub const MAX_PLAN_DEPTH: usize = 50;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RemediationDependency {
+    pub task_id: String,
+    pub depends_on: String,
+}
+
+/// Validates that remediation task dependencies form an acyclic graph within MAX_PLAN_DEPTH,
+/// returning tasks in topologically sorted execution order.
+pub fn validate_remediation_dependencies(
+    tasks: &[String],
+    dependencies: &[RemediationDependency],
+) -> Result<Vec<String>, AppError> {
+    let mut adj: HashMap<&str, Vec<&str>> = HashMap::new();
+    let mut in_degree: HashMap<&str, usize> = HashMap::new();
+
+    for task in tasks {
+        adj.entry(task.as_str()).or_default();
+        in_degree.entry(task.as_str()).or_insert(0);
+    }
+
+    for dep in dependencies {
+        adj.entry(dep.depends_on.as_str())
+            .or_default()
+            .push(dep.task_id.as_str());
+        *in_degree.entry(dep.task_id.as_str()).or_insert(0) += 1;
+    }
+
+    let mut queue: VecDeque<(&str, usize)> = in_degree
+        .iter()
+        .filter(|(_, &deg)| deg == 0)
+        .map(|(&node, _)| (node, 1))
+        .collect();
+
+    let mut order = Vec::new();
+    let mut visited = HashSet::new();
+
+    while let Some((node, depth)) = queue.pop_front() {
+        if depth > MAX_PLAN_DEPTH {
+            return Err(AppError::Internal("Remediation plan depth limit exceeded".into()));
+        }
+        if !visited.insert(node) {
+            continue;
+        }
+        order.push(node.to_string());
+
+        if let Some(neighbors) = adj.get(node) {
+            for &next in neighbors {
+                if let Some(deg) = in_degree.get_mut(next) {
+                    *deg = deg.saturating_sub(1);
+                    if *deg == 0 {
+                        queue.push_back((next, depth + 1));
+                    }
+                }
+            }
+        }
+    }
+
+    if order.len() < tasks.len() {
+        return Err(AppError::Internal("Cyclic dependency detected in remediation plan".into()));
+    }
+
+    Ok(order)
+}

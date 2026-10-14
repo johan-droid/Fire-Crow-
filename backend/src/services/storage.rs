@@ -62,6 +62,9 @@ impl S3StorageBackend {
 #[async_trait]
 impl StorageBackend for S3StorageBackend {
     async fn upload(&self, data: Vec<u8>, key: &str, content_type: &str) -> Result<String> {
+        if key.contains("..") || key.starts_with('/') {
+            return Err(AppError::Forbidden("Invalid key".into()));
+        }
         tracing::info!(
             "Cloudflare R2 / S3 uploading object: bucket={}, key={}, size={}",
             self.bucket,
@@ -83,6 +86,9 @@ impl StorageBackend for S3StorageBackend {
     }
 
     async fn download(&self, key: &str) -> Result<Vec<u8>> {
+        if key.contains("..") || key.starts_with('/') {
+            return Err(AppError::Forbidden("Invalid key".into()));
+        }
         tracing::info!(
             "Cloudflare R2 / S3 downloading object: bucket={}, key={}",
             self.bucket,
@@ -111,6 +117,9 @@ impl StorageBackend for S3StorageBackend {
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
+        if key.contains("..") || key.starts_with('/') {
+            return Err(AppError::Forbidden("Invalid key".into()));
+        }
         tracing::info!(
             "Cloudflare R2 / S3 deleting object: bucket={}, key={}",
             self.bucket,
@@ -127,6 +136,9 @@ impl StorageBackend for S3StorageBackend {
     }
 
     async fn presigned_url(&self, key: &str, expires_secs: i64) -> Result<String> {
+        if key.contains("..") || key.starts_with('/') {
+            return Err(AppError::Forbidden("Invalid key".into()));
+        }
         let expires = aws_sdk_s3::presigning::PresigningConfig::expires_in(
             std::time::Duration::from_secs(expires_secs as u64),
         )
@@ -239,7 +251,22 @@ impl StorageService {
         job_id: &str,
     ) -> Result<(String, String)> {
         use sha2::{Digest, Sha256};
-        let key = format!("artifacts/{}/{}/{}", job_id, artifact_type, file_name);
+        if job_id.trim().is_empty()
+            || job_id.contains('/')
+            || job_id.contains('\\')
+            || job_id.contains("..")
+            || artifact_type.trim().is_empty()
+            || artifact_type.contains('/')
+            || artifact_type.contains('\\')
+            || artifact_type.contains("..")
+            || file_name.trim().is_empty()
+            || file_name.contains('/')
+            || file_name.contains('\\')
+            || file_name.contains("..")
+        {
+            return Err(AppError::BadRequest("Invalid artifact path segment".into()));
+        }
+        let key = format!("artifacts/{}/{}/{}", job_id.trim(), artifact_type.trim(), file_name.trim());
         let sha256 = format!("{:x}", Sha256::digest(&data));
         let content_type = MimeGuess::from_path(file_name)
             .first_or_octet_stream()
