@@ -5,8 +5,9 @@ import { useEffect, useRef, useState, type ReactNode, type MouseEvent } from 're
  * Uses HTML5 3D Canvas rendering + CSS 3D `perspective` and `preserve-3d`.
  */
 
-/** Interactive 3D Canvas node field + laser connections + particle physics */
-function HeroCanvas3D() {
+/** Interactive 3D Canvas node field + laser connections + particle physics.
+    Exported for the landing hero backdrop. Ember/amber palette. */
+export function HeroCanvas3D() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
@@ -27,7 +28,7 @@ function HeroCanvas3D() {
     };
     window.addEventListener('resize', handleResize);
 
-    // 3D Particles array (responsive density)
+    // 3D Particles array (responsive density) — ember/amber palette
     const count = width < 768 ? 25 : 35;
     const particles = Array.from({ length: count }).map(() => ({
       x: (Math.random() - 0.5) * width * 1.2,
@@ -37,7 +38,7 @@ function HeroCanvas3D() {
       vy: (Math.random() - 0.5) * 0.6,
       vz: (Math.random() - 0.5) * 0.8,
       size: Math.random() * 2 + 1,
-      hue: Math.random() > 0.5 ? 210 : 270, // Blue/Purple cyber hues
+      hue: Math.random() > 0.5 ? 24 : 36, // FireCrow ember / amber
     }));
 
     let mouseX = 0;
@@ -95,7 +96,7 @@ function HeroCanvas3D() {
             ctx.beginPath();
             ctx.moveTo(projected[i].px, projected[i].py);
             ctx.lineTo(projected[j].px, projected[j].py);
-            ctx.strokeStyle = `rgba(41, 151, 255, ${lineAlpha})`;
+            ctx.strokeStyle = `rgba(234, 88, 12, ${lineAlpha})`;
             ctx.lineWidth = 0.75;
             ctx.stroke();
           }
@@ -106,9 +107,9 @@ function HeroCanvas3D() {
       projected.forEach((p) => {
         ctx.beginPath();
         ctx.arc(p.px, p.py, p.size * 1.5, 0, Math.PI * 2);
-        ctx.fillStyle = `hsla(${p.hue}, 90%, 65%, ${p.alpha})`;
+        ctx.fillStyle = `hsla(${p.hue}, 90%, 60%, ${p.alpha})`;
         ctx.shadowBlur = 12 * p.scale;
-        ctx.shadowColor = p.hue === 210 ? '#2997ff' : '#bf5af2';
+        ctx.shadowColor = p.hue === 24 ? '#ea580c' : '#f59e0b';
         ctx.fill();
         ctx.shadowBlur = 0;
       });
