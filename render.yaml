@@ -28,6 +28,14 @@ services:
         sync: false
       - key: CORS_ORIGINS
         sync: false
+      # F1: Render's ingress proxy addresses are not confirmed here (that
+      # would require probing the live deployment, which is out of scope).
+      # Leave unset/empty: requests are then keyed by TCP peer — coarse (one
+      # shared bucket) but never spoofable. Once Render's proxy CIDRs are
+      # confirmed from authoritative docs, set them here to restore
+      # per-client rate limiting. Malformed values refuse to start.
+      - key: TRUSTED_PROXY_CIDRS
+        sync: false
       # Cross-origin authentication (FC-DEP-01): when frontend is on Vercel (*.vercel.app)
       # and backend is on Render (*.onrender.com), browsers require SameSite=none with Secure=true
       # for credentials: 'include' session cookies to be transmitted across origins.

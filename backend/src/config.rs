@@ -42,6 +42,17 @@ pub struct Settings {
     pub backend_base_url: String,
     #[serde(default)]
     pub cors_origins: String,
+    /// Comma-separated CIDRs or bare IPs of reverse proxies whose forwarding
+    /// headers (`X-Forwarded-For`, `X-Real-IP`) may be trusted when
+    /// attributing a client address for rate limiting and audit logging (F1).
+    ///
+    /// Empty — the default — trusts no proxy: every peer is treated as a
+    /// direct client, so a spoofed header can never mint a fresh rate-limit
+    /// bucket. Deployments behind a platform proxy (e.g. Render) must list
+    /// the proxy's addresses here explicitly; private and loopback ranges are
+    /// never trusted implicitly. Malformed values fail startup.
+    #[serde(default)]
+    pub trusted_proxy_cidrs: String,
     pub database_url: String,
     #[serde(default = "default_pool_size")]
     pub database_pool_size: u32,
@@ -278,6 +289,7 @@ impl std::fmt::Debug for Settings {
             .field("frontend_url", &self.frontend_url)
             .field("backend_base_url", &self.backend_base_url)
             .field("cors_origins", &self.cors_origins)
+            .field("trusted_proxy_cidrs", &self.trusted_proxy_cidrs)
             .field("database_url", &HIDDEN)
             .field("database_pool_size", &self.database_pool_size)
             .field("database_pool_timeout", &self.database_pool_timeout)
@@ -695,10 +707,15 @@ impl Settings {
         }
 
         // Auto-adopt Render's public service URL for OAuth callbacks if BACKEND_BASE_URL was omitted.
-        if settings.backend_base_url.is_empty() || settings.backend_base_url == "http://localhost:8000" {
+        if settings.backend_base_url.is_empty()
+            || settings.backend_base_url == "http://localhost:8000"
+        {
             if let Ok(render_url) = std::env::var("RENDER_EXTERNAL_URL") {
                 if !render_url.trim().is_empty() {
-                    tracing::info!("Using RENDER_EXTERNAL_URL as backend_base_url: {}", render_url);
+                    tracing::info!(
+                        "Using RENDER_EXTERNAL_URL as backend_base_url: {}",
+                        render_url
+                    );
                     settings.backend_base_url = render_url.trim().trim_end_matches('/').to_string();
                 }
             }
@@ -710,7 +727,8 @@ impl Settings {
         // and ensure auth_cookie_secure=true so browser sends credentials across origins.
         if std::env::var("AUTH_COOKIE_SAMESITE").is_err() {
             let is_cross_origin = !settings.frontend_url.is_empty()
-                && settings.frontend_url.trim_end_matches('/') != settings.backend_base_url.trim_end_matches('/');
+                && settings.frontend_url.trim_end_matches('/')
+                    != settings.backend_base_url.trim_end_matches('/');
             if is_cross_origin || std::env::var("RENDER").is_ok() {
                 tracing::info!(
                     "Cross-origin or cloud environment detected (frontend: '{}', backend: '{}'). Defaulting auth_cookie_samesite to 'none' and auth_cookie_secure to true.",
@@ -720,6 +738,18 @@ impl Settings {
                 settings.auth_cookie_samesite = "none".into();
                 settings.auth_cookie_secure = true;
             }
+        }
+
+        // F1: client-IP attribution is only as trustworthy as the proxy list
+        // behind it. A malformed TRUSTED_PROXY_CIDRS must fail loudly at
+        // startup instead of silently degrading to "trust nobody" — which
+        // would put every user behind the proxy into one shared rate-limit
+        // bucket, or worse, tempt an operator to "fix" it by trusting
+        // arbitrary private ranges.
+        if let Err(e) =
+            crate::middleware::cloudflare::parse_trusted_proxy_cidrs(&settings.trusted_proxy_cidrs)
+        {
+            return Err(ConfigError::Message(e));
         }
 
         Ok(())

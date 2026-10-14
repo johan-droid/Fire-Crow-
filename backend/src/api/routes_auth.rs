@@ -592,7 +592,11 @@ pub async fn github_callback(
     let redirect_origin = jar
         .get("oauth_redirect_origin")
         .map(|c| c.value().to_string());
-    let jar = jar.remove(Cookie::build(("oauth_redirect_origin", "")).path("/").build());
+    let jar = jar.remove(
+        Cookie::build(("oauth_redirect_origin", ""))
+            .path("/")
+            .build(),
+    );
 
     let frontend_base = redirect_origin.unwrap_or_else(|| {
         state
@@ -984,6 +988,11 @@ fn get_cookie_samesite(state: &crate::AppState) -> axum_extra::extract::cookie::
     }
 }
 
-fn is_cookie_secure(state: &crate::AppState, samesite: axum_extra::extract::cookie::SameSite) -> bool {
-    state.settings().auth_cookie_secure || !state.settings().debug || samesite == axum_extra::extract::cookie::SameSite::None
+fn is_cookie_secure(
+    state: &crate::AppState,
+    samesite: axum_extra::extract::cookie::SameSite,
+) -> bool {
+    state.settings().auth_cookie_secure
+        || !state.settings().debug
+        || samesite == axum_extra::extract::cookie::SameSite::None
 }

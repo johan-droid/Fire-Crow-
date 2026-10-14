@@ -33,6 +33,12 @@ pub fn redact_json_value(val: &mut serde_json::Value) {
                     || k_lower.contains("email")
                     || k_lower.contains("evidence")
                     || k_lower.contains("snippet")
+                    // F2: one-time OAuth/exchange credentials arrive as
+                    // `{"code": "..."}` (routes_auth::exchange_token). The
+                    // match is the exact field name, at any nesting depth, so
+                    // `status_code` / `error_code` / `codec` stay useful while
+                    // the credential itself is never logged.
+                    || k_lower == "code"
                 {
                     *v = serde_json::Value::String("[REDACTED]".into());
                 } else {
@@ -130,19 +136,23 @@ static TEXT_REDACT_PATTERNS: std::sync::OnceLock<Vec<regex::Regex>> = std::sync:
 fn text_redact_patterns() -> &'static [regex::Regex] {
     TEXT_REDACT_PATTERNS.get_or_init(|| {
         [
-            "password",
-            "secret",
-            "token",
-            "authorization",
-            "bearer",
-            "cookie",
-            "api_key",
-            "gemini_api_key",
-            "encryption_key",
-            "secret_key",
+            // F2: `\bcode\b` rather than bare `code` so identifiers such as
+            // `status_code=404` keep their values while an exchange/OAuth
+            // `code=...` in a non-JSON body is redacted.
+            r"(?i)(password\s*[:=]\s*)[^\s&,}]+",
+            r"(?i)(secret\s*[:=]\s*)[^\s&,}]+",
+            r"(?i)(token\s*[:=]\s*)[^\s&,}]+",
+            r"(?i)(authorization\s*[:=]\s*)[^\s&,}]+",
+            r"(?i)(bearer\s*[:=]\s*)[^\s&,}]+",
+            r"(?i)(cookie\s*[:=]\s*)[^\s&,}]+",
+            r"(?i)(api_key\s*[:=]\s*)[^\s&,}]+",
+            r"(?i)(gemini_api_key\s*[:=]\s*)[^\s&,}]+",
+            r"(?i)(encryption_key\s*[:=]\s*)[^\s&,}]+",
+            r"(?i)(secret_key\s*[:=]\s*)[^\s&,}]+",
+            r"(?i)(\bcode\s*[:=]\s*)[^\s&,}]+",
         ]
         .iter()
-        .filter_map(|key| regex::Regex::new(&format!(r"(?i)({}\s*[:=]\s*)[^\s&,}}]+", key)).ok())
+        .filter_map(|pat| regex::Regex::new(pat).ok())
         .collect()
     })
 }

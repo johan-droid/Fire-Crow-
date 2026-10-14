@@ -428,23 +428,39 @@ pub async fn verify_and_consume_exchange_code(
     code: &str,
     crypto: &Arc<CryptoManager>,
 ) -> Result<Option<(String, String, String)>> {
-    let record = sqlx::query_as::<_, AuthExchangeCode>("SELECT id, code, user_id, username, access_token, created_at, expires_at FROM auth_exchange_codes WHERE code = $1 AND expires_at > NOW()")
-        .bind(code)
-        .fetch_optional(pool).await.map_err(AppError::Database)?;
-    if let Some(record) = record {
-        sqlx::query("DELETE FROM auth_exchange_codes WHERE code = $1")
-            .bind(code)
-            .execute(pool)
-            .await
-            .ok();
-        // The stored access token is encrypted; decrypt before handing it back.
-        let decrypted = crypto
-            .decrypt_secret(&record.access_token)
-            .map_err(|e| AppError::Internal(format!("Token decryption failed: {e}")))?;
-        Ok(Some((record.user_id, record.username, decrypted)))
-    } else {
-        Ok(None)
-    }
+    // F3: atomic single-use consumption. The previous SELECT-then-DELETE had
+    // two defects: (1) two concurrent redemptions could both read the row
+    // before either deleted it, minting two sessions from one code; (2) the
+    // DELETE's outcome was swallowed with `.ok()`, so a failed delete still
+    // yielded a session and the code stayed redeemable. `DELETE ... WHERE
+    // ... RETURNING` is a single statement under PostgreSQL's snapshot
+    // semantics: exactly one concurrent caller gets the row, unexpired codes
+    // only, and a database error propagates instead of being ignored.
+    //
+    // `id` is included because the active `models::AuthExchangeCode`
+    // (models/user.rs — the one `models::mod` re-exports) carries
+    // `id: Option<String>`; FromRow requires every field to be present.
+    let record = sqlx::query_as::<_, AuthExchangeCode>(
+        "DELETE FROM auth_exchange_codes
+         WHERE code = $1 AND expires_at > NOW()
+         RETURNING id, code, user_id, username, access_token, created_at, expires_at",
+    )
+    .bind(code)
+    .fetch_optional(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    let Some(record) = record else {
+        return Ok(None);
+    };
+
+    // The stored access token is encrypted; decrypt before handing it back.
+    // A decryption failure happens after the code is consumed — the code is
+    // not reusable, and the error carries no token material.
+    let decrypted = crypto
+        .decrypt_secret(&record.access_token)
+        .map_err(|e| AppError::Internal(format!("Token decryption failed: {e}")))?;
+    Ok(Some((record.user_id, record.username, decrypted)))
 }
 
 pub async fn create_exchange_code(

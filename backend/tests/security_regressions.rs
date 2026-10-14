@@ -731,3 +731,102 @@ fn security_p20_signup_collision_error_hides_email() {
         "the collision error must not interpolate the sqlx error:\n{collision}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// F2: one-time exchange codes must never be logged
+//
+// The exchange code is a single-use bearer credential
+// (`POST /auth/exchange {"code": ...}` → session). The audit logger redacts
+// token-ish key names by substring, but `code` matched none of them, so the
+// raw credential was written to the `http_audit` log on every exchange attempt.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn security_f2_top_level_exchange_code_is_redacted() {
+    let body = r#"{"code":"fc-exchange-3f9c1a2b","client":"web"}"#;
+    let out = safe_payload_snippet(body.as_bytes(), 800);
+    assert!(
+        !out.contains("fc-exchange-3f9c1a2b"),
+        "raw exchange code leaked into the log snippet: {out}"
+    );
+    assert!(
+        out.contains("[REDACTED]"),
+        "expected redaction marker: {out}"
+    );
+    assert!(
+        out.contains("web"),
+        "safe diagnostic fields must remain visible: {out}"
+    );
+}
+
+#[test]
+fn security_f2_nested_exchange_code_is_redacted() {
+    // Neutral parent key: recursion must redact the inner `code` itself.
+    let body = r#"{"payload":{"Code":"fc-nested-99","state":"xyz"}}"#;
+    let out = safe_payload_snippet(body.as_bytes(), 800);
+    assert!(!out.contains("fc-nested-99"), "nested code leaked: {out}");
+    assert!(out.contains("xyz"), "state must remain visible: {out}");
+
+    // A parent key that itself matches a sensitive substring ("oauth" ⊃
+    // "auth") is redacted wholesale — strictly stronger, never weaker.
+    let body = r#"{"oauth":{"Code":"fc-nested-77","state":"abc"}}"#;
+    let out = safe_payload_snippet(body.as_bytes(), 800);
+    assert!(
+        !out.contains("fc-nested-77"),
+        "oauth-nested code leaked: {out}"
+    );
+    assert!(
+        !out.contains("abc"),
+        "oauth object must be redacted whole: {out}"
+    );
+}
+
+#[test]
+fn security_f2_case_variants_of_code_are_redacted() {
+    for key in ["code", "Code", "CODE", "CoDe"] {
+        let body = format!("{{\"{key}\":\"synthetic-credential-42\"}}");
+        let out = safe_payload_snippet(body.as_bytes(), 800);
+        assert!(
+            !out.contains("synthetic-credential-42"),
+            "{key} leaked: {out}"
+        );
+    }
+}
+
+#[test]
+fn security_f2_unrelated_fields_named_like_code_survive_redaction() {
+    // The JSON match is the exact field name, so lookalikes stay useful.
+    let body = r#"{"status_code":404,"error_code":"E42","codec":"h264"}"#;
+    let out = safe_payload_snippet(body.as_bytes(), 800);
+    assert!(out.contains("404"), "status_code must stay: {out}");
+    assert!(out.contains("E42"), "error_code must stay: {out}");
+    assert!(out.contains("h264"), "codec must stay: {out}");
+
+    // The text-body pattern uses a word boundary for the same reason.
+    let text = "submitting code=fc-text-code-77 status_code=200";
+    let out = safe_payload_snippet(text.as_bytes(), 800);
+    assert!(!out.contains("fc-text-code-77"), "text code leaked: {out}");
+    assert!(
+        out.contains("status_code=200"),
+        "status_code over-redacted: {out}"
+    );
+}
+
+#[test]
+fn security_f2_existing_secret_redaction_is_preserved() {
+    let body = r#"{"password":"hunter2-value","api_token":"tok-abc-1","secret_key":"sk-xyz-9","note":"visible"}"#;
+    let out = safe_payload_snippet(body.as_bytes(), 800);
+    for leaked in ["hunter2-value", "tok-abc-1", "sk-xyz-9"] {
+        assert!(!out.contains(leaked), "{leaked} leaked: {out}");
+    }
+    assert!(out.contains("visible"), "safe fields must remain: {out}");
+}
+
+#[test]
+fn security_f2_exchange_request_shape_never_logs_the_raw_code() {
+    // The exact body routes_auth::exchange_token receives.
+    let code = "10f3c2e4-6a41-4c6e-9b7d-2f8a5d1e0c3b";
+    let body = format!("{{\"code\":\"{code}\"}}");
+    let out = safe_payload_snippet(body.as_bytes(), 800);
+    assert!(!out.contains(code), "exchange body leaked the code: {out}");
+}

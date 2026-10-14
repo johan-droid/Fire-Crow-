@@ -9,7 +9,9 @@
 //! suite is order-dependent.
 
 use firecrow_backend::config::Settings;
-use firecrow_backend::middleware::cloudflare::{is_cloudflare_peer, resolve_client_ip};
+use firecrow_backend::middleware::cloudflare::{
+    is_cloudflare_peer, parse_trusted_proxy_cidrs, resolve_client_ip, resolve_client_ip_with,
+};
 use std::net::IpAddr;
 use std::str::FromStr;
 
@@ -31,6 +33,7 @@ const ENV_KEYS: &[&str] = &[
     "CSRF_ENABLED",
     "GITHUB_APP_ID",
     "GITHUB_APP_PRIVATE_KEY",
+    "TRUSTED_PROXY_CIDRS",
 ];
 
 struct Env {
@@ -306,6 +309,194 @@ fn security_s1_non_cloudflare_peer_never_gets_header_trust() {
 fn security_s1_real_peer_with_no_forwarding_headers_is_used_directly() {
     let out = resolve_client_ip(&headers(&[]), Some(ip(ATTACKER)));
     assert_eq!(out, ATTACKER);
+}
+
+// ---------------------------------------------------------------------------
+// F1: operator-declared trusted proxies (TRUSTED_PROXY_CIDRS)
+//
+// These use `resolve_client_ip_with` so each case controls the trust list
+// explicitly. The process-wide list is installed once per process by
+// `app::build_state`; unit tests must not race it. HTTP-level bucket isolation
+// with the real middleware is covered in tests/rate_limit_buckets.rs.
+// ---------------------------------------------------------------------------
+
+/// A declared trusted proxy resolves the forwarded client address.
+#[test]
+fn security_f1_trusted_proxy_with_valid_forwarded_client_ip() {
+    let trusted = parse_trusted_proxy_cidrs("127.0.0.1/32").unwrap();
+    let h = headers(&[("x-forwarded-for", "198.51.100.9")]);
+    assert_eq!(
+        resolve_client_ip_with(&h, Some(ip("127.0.0.1")), &trusted),
+        "198.51.100.9"
+    );
+}
+
+/// An untrusted direct peer cannot spoof its way to a distinct bucket even
+/// when a proxy list is configured: the peer itself must be in the list.
+#[test]
+fn security_f1_untrusted_peer_with_spoofed_forwarded_ip_is_ignored() {
+    let trusted = parse_trusted_proxy_cidrs("10.0.0.0/8").unwrap();
+    let h = headers(&[("x-forwarded-for", "198.51.100.9")]);
+    assert_eq!(
+        resolve_client_ip_with(&h, Some(ip(ATTACKER)), &trusted),
+        ATTACKER
+    );
+}
+
+/// Multiple hops: trusted proxies are skipped, the first untrusted hop is the
+/// client, and a client-supplied prefix left of the real client is ignored.
+#[test]
+fn security_f1_multiple_hops_skip_trusted_proxies_and_ignore_spoofed_prefix() {
+    let trusted = parse_trusted_proxy_cidrs("127.0.0.1/32, 10.0.0.0/8").unwrap();
+    let h = headers(&[("x-forwarded-for", "6.6.6.6, 198.51.100.9, 10.0.0.2")]);
+    assert_eq!(
+        resolve_client_ip_with(&h, Some(ip("127.0.0.1")), &trusted),
+        "198.51.100.9",
+        "the spoofed client-supplied prefix must not become the rate-limit key"
+    );
+}
+
+/// Malformed hops abort verification entirely: the resolver falls back to the
+/// peer instead of trusting any part of an unverifiable chain.
+#[test]
+fn security_f1_malformed_forwarded_headers_fall_back_to_the_peer() {
+    let trusted = parse_trusted_proxy_cidrs("127.0.0.1/32").unwrap();
+    // The *nearest* hop (rightmost) is the one the trusted proxy vouches for;
+    // if it cannot be parsed, nothing further left can be trusted either.
+    for xff in ["198.51.100.9, garbage", "198.51.100.9:not-a-port", "1.2.3"] {
+        let h = headers(&[("x-forwarded-for", xff)]);
+        assert_eq!(
+            resolve_client_ip_with(&h, Some(ip("127.0.0.1")), &trusted),
+            "127.0.0.1",
+            "malformed XFF {xff:?} must not be trusted"
+        );
+    }
+    // Garbage left of a verified client is simply the attacker-supplied
+    // prefix: the verified client still wins.
+    let h = headers(&[("x-forwarded-for", "garbage, 198.51.100.9")]);
+    assert_eq!(
+        resolve_client_ip_with(&h, Some(ip("127.0.0.1")), &trusted),
+        "198.51.100.9"
+    );
+    // A malformed CF-Connecting-IP on a genuine edge falls through to the
+    // chain instead of becoming a key.
+    let h = headers(&[("cf-connecting-ip", "not-an-ip")]);
+    assert_eq!(resolve_client_ip_with(&h, Some(ip(CF_EDGE)), &[]), CF_EDGE);
+}
+
+/// A trusted proxy that forwarded nothing attributes to itself — one shared
+/// bucket, never a per-attacker key.
+#[test]
+fn security_f1_trusted_proxy_without_forwarding_headers_shares_one_bucket() {
+    let trusted = parse_trusted_proxy_cidrs("127.0.0.1/32").unwrap();
+    let out = resolve_client_ip_with(&headers(&[]), Some(ip("127.0.0.1")), &trusted);
+    assert_eq!(out, "127.0.0.1");
+}
+
+/// IPv6 clients and proxies resolve exactly like IPv4.
+#[test]
+fn security_f1_ipv6_forwarding_and_trusted_proxies() {
+    let trusted = parse_trusted_proxy_cidrs("::1/128, 2001:db8:aaaa::/48").unwrap();
+    let h = headers(&[("x-forwarded-for", "2001:db8:ffff::5")]);
+    assert_eq!(
+        resolve_client_ip_with(&h, Some(ip("::1")), &trusted),
+        "2001:db8:ffff::5"
+    );
+    // An all-trusted chain yields the furthest provable hop — an internal
+    // address, still a stable per-client key.
+    let h = headers(&[("x-forwarded-for", "2001:db8:aaaa::9")]);
+    assert_eq!(
+        resolve_client_ip_with(&h, Some(ip("::1")), &trusted),
+        "2001:db8:aaaa::9"
+    );
+}
+
+/// Behind a Cloudflare edge, an XFF chain resolves right-to-left, so a
+/// client-supplied prefix is ignored; CF-Connecting-IP stays authoritative.
+#[test]
+fn security_f1_cloudflare_edge_xff_chain_ignores_client_supplied_prefix() {
+    let h = headers(&[("x-forwarded-for", "6.6.6.6, 198.51.100.9")]);
+    assert_eq!(
+        resolve_client_ip_with(&h, Some(ip(CF_EDGE)), &[]),
+        "198.51.100.9"
+    );
+    let h = headers(&[
+        ("cf-connecting-ip", "198.51.100.42"),
+        ("x-forwarded-for", "6.6.6.6, 198.51.100.9"),
+    ]);
+    assert_eq!(
+        resolve_client_ip_with(&h, Some(ip(CF_EDGE)), &[]),
+        "198.51.100.42",
+        "CF-Connecting-IP from a real edge must remain authoritative"
+    );
+}
+
+/// Two distinct verified clients get independent keys; one verified client
+/// keeps exactly one key.
+#[test]
+fn security_f1_verified_clients_get_independent_rate_limit_keys() {
+    let trusted = parse_trusted_proxy_cidrs("127.0.0.1/32").unwrap();
+    let key_for = |xff: &str| {
+        let h = headers(&[("x-forwarded-for", xff)]);
+        resolve_client_ip_with(&h, Some(ip("127.0.0.1")), &trusted)
+    };
+    assert_ne!(key_for("198.51.100.1"), key_for("198.51.100.2"));
+    assert_eq!(key_for("198.51.100.1"), key_for("198.51.100.1"));
+    // A spoofed prefix collapses into the same identity, not a fresh bucket.
+    assert_eq!(key_for("6.6.6.6, 198.51.100.1"), key_for("198.51.100.1"));
+}
+
+/// Parsing is strict: invalid configuration is an error, never a silently
+/// skipped entry that would silently drop trust.
+#[test]
+fn security_f1_invalid_trusted_proxy_configuration_fails_safely() {
+    for bad in [
+        "garbage",
+        "10.0.0.0/33",
+        "2001:db8::/129",
+        "10.0.0.0/not-a-number",
+        "10.0.0.0/8/16",
+    ] {
+        assert!(
+            parse_trusted_proxy_cidrs(bad).is_err(),
+            "{bad:?} must be rejected"
+        );
+    }
+    assert!(parse_trusted_proxy_cidrs("").unwrap().is_empty());
+    assert!(parse_trusted_proxy_cidrs("  ").unwrap().is_empty());
+    // Empty entries are skipped, not errors.
+    assert!(parse_trusted_proxy_cidrs(",,,").unwrap().is_empty());
+    // Bare IPs are single-host networks; lists may mix families and spacing.
+    assert_eq!(parse_trusted_proxy_cidrs("10.0.0.5").unwrap().len(), 1);
+    assert_eq!(
+        parse_trusted_proxy_cidrs("10.0.0.0/8, ::1/128")
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+/// A malformed TRUSTED_PROXY_CIDRS must refuse to start the process, not
+/// silently degrade client-IP attribution.
+#[test]
+fn security_f1_invalid_trusted_proxy_cidrs_fails_startup() {
+    let env = Env::clean();
+    env.with_valid_keys();
+    env.set("TRUSTED_PROXY_CIDRS", "not-a-cidr");
+    let err = Settings::new().expect_err("invalid TRUSTED_PROXY_CIDRS must fail startup");
+    assert!(
+        err.to_string().contains("TRUSTED_PROXY_CIDRS"),
+        "the error must name the offending variable: {err}"
+    );
+
+    env.set("TRUSTED_PROXY_CIDRS", "10.0.0.0/8/16");
+    assert!(
+        Settings::new().is_err(),
+        "an ambiguous CIDR must fail startup"
+    );
+
+    env.set("TRUSTED_PROXY_CIDRS", "127.0.0.1/32, 10.0.0.0/8");
+    Settings::new().expect("a valid proxy list must be accepted");
 }
 
 // ---------------------------------------------------------------------------

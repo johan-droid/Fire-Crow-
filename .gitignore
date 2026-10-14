@@ -133,3 +133,11 @@ desktop.ini
 *.bak
 *.orig
 *.rej
+
+# Local investigation screenshots (never commit)
+aud-390*.png
+fix-ov390*.png
+fix[0-9]-ov390*.png
+insp-390*.png
+ov-390*.png
+pop-ov390*.png

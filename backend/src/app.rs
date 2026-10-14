@@ -238,6 +238,13 @@ pub async fn build_state(
     pool: sqlx::PgPool,
     redis: Option<Arc<redis::aio::MultiplexedConnection>>,
 ) -> anyhow::Result<Arc<AppState>> {
+    // F1: install the operator-declared proxy trust list used by
+    // `resolve_client_ip` (rate limiting, audit logging). `Settings::validate`
+    // already rejects malformed values for real startups; parsing again here
+    // makes a broken fixture fail loudly instead of silently degrading to
+    // "trust nobody".
+    crate::middleware::cloudflare::init_trusted_proxies(&settings.trusted_proxy_cidrs)
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
     let crypto =
         crate::services::crypto::crypto_manager(&settings.secret_key, &settings.encryption_key)?;
     let storage = Arc::new(
