@@ -184,8 +184,8 @@ export default function LandingPage({ user, onNavigateLogin, onNavigateConsole }
               <p className="lp-eyebrow"><span className="lp-eyebrow-dot" aria-hidden="true" />Zero-trust deterministic security auditing</p>
               <h1>Audit results you can prove, not just read.</h1>
               <p className="lp-lede">
-                Fire Crow scans your GitHub repository with Gitleaks, Semgrep and OSV-Scanner inside throwaway
-                containers, then records every finding in a ledger that can&rsquo;t be edited afterwards.
+                Fire Crow scans your GitHub repository with Gitleaks, Semgrep, and OSV-Scanner inside
+                throwaway containers, then freezes every finding into a ledger no one can edit after the run.
               </p>
               <div className="lp-cta-row">
                 <button type="button" className="lp-btn lp-btn-ember" onClick={primary}>{primaryLabel}</button>

@@ -1214,7 +1214,7 @@ function App() {
                   <p className="page-eyebrow">Next Lab · Fire Crow</p>
                   <h1 className="page-head-title">Overview</h1>
                   <p className="page-head-sub">
-                    Developer security intelligence for your GitHub repositories — verified findings, evidence, and fixes.
+                    Verified findings, evidence, and fixes across your audited GitHub repositories — at a glance.
                   </p>
                 </div>
                 <div className="page-head-side">
@@ -1237,7 +1237,7 @@ function App() {
                   icon={<ShieldCheck size={18} />}
                   label="Audits completed"
                   value={completedCount}
-                  hint="finished audit runs"
+                  hint="finished end to end"
                   tone={completedCount > 0 ? 'health' : 'neutral'}
                 />
                 <MetricCard
@@ -1251,14 +1251,14 @@ function App() {
                   icon={<FileText size={18} />}
                   label="Reports ready"
                   value={reportsReady}
-                  hint="available to download"
+                  hint="ready to download"
                   tone="neutral"
                 />
                 <MetricCard
                   icon={<AlertTriangle size={18} />}
                   label="Needs attention"
                   value={jobs.filter(j => ['failed', 'cancelled', 'partial', 'engine_unavailable'].includes(j.status)).length}
-                  hint="failed, partial, or incomplete audits"
+                  hint="failed, partial, or incomplete"
                   tone={jobs.some(j => ['failed', 'cancelled', 'partial', 'engine_unavailable'].includes(j.status)) ? 'crit' : 'neutral'}
                 />
               </div>

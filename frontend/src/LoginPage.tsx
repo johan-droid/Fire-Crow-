@@ -1,6 +1,7 @@
 import { useState, type FormEvent, useEffect, useRef, type ReactNode } from 'react';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { BrandMark } from './BrandMark';
+import { NextLabSymbol } from './landing/components/BrandLogos';
 import './login-site.css';
 
 /**
@@ -194,13 +195,14 @@ export default function LoginPage({
           >
             <BrandMark />
             <span>Fire Crow</span>
+            <small className="lg-brand-parent"><NextLabSymbol size={13} />by Next Lab</small>
           </button>
 
           <div className="lg-card">
             <h1 id="lg-heading">{mode === 'signin' ? 'Sign in' : 'Create your account'}</h1>
             <p className="lg-sub">
               {mode === 'signin'
-                ? 'Open your workspace to run audits and read reports.'
+                ? 'Run deterministic audits and read reports you can verify.'
                 : 'Pick a username and a password of at least 10 characters.'}
             </p>
 

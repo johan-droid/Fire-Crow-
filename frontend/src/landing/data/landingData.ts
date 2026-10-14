@@ -111,7 +111,7 @@ export const PIPELINE_STAGES: PipelineStage[] = [
     scanner: 'fetch.rs',
     duration: '0.38s',
     status: 'completed',
-    summary: 'Stream-bounded archive clone with 50MB ceiling and commit SHA verification.',
+    summary: 'Clones your branch with a 50MB cap and verifies the exact commit SHA.',
   },
   {
     step: '02',
@@ -143,7 +143,7 @@ export const PIPELINE_STAGES: PipelineStage[] = [
     scanner: 'Audit Aggregator',
     duration: '0.18s',
     status: 'verified',
-    summary: 'Deterministic finding deduplication, CVSS calculation, and risk score indexing.',
+    summary: 'Deduplicates findings, computes CVSS, and locks in the risk score.',
   },
 ];
 
