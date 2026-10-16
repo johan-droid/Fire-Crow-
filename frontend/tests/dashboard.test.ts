@@ -7,7 +7,7 @@ import type { JobResponse } from '../src/api/types.js';
 const cwd = process.cwd();
 const app = readFileSync(join(cwd, 'src', 'App.tsx'), 'utf8');
 const dashboardCss = readFileSync(join(cwd, 'src', 'dashboard.css'), 'utf8');
-const landingCss = readFileSync(join(cwd, 'src', 'landing', 'styles', 'landing.css'), 'utf8');
+const landingCss = readFileSync(join(cwd, 'src', 'landing', 'site', 'landing-site.css'), 'utf8');
 const metricCardSrc = readFileSync(join(cwd, 'src', 'dashboard', 'MetricCard.tsx'), 'utf8');
 const auditTableSrc = readFileSync(join(cwd, 'src', 'dashboard', 'AuditTable.tsx'), 'utf8');
 
@@ -95,9 +95,10 @@ describe('Ember graphite Next Lab / Fire Crow identity', () => {
     assert.ok(dashboardCss.includes('--fc-accent: #E5484D'), 'ember accent missing');
   });
 
-  it('scopes landing tokens to .fc-landing so they never re-theme the console or login', () => {
-    assert.ok(!/^:root\s*\{/m.test(landingCss), 'landing.css must not define a global :root token block');
-    assert.ok(landingCss.includes('--fc-bg-canvas: #0A0B0E'), 'landing graphite canvas token missing');
+  it('scopes landing tokens to .lp so they never re-theme the console or login', () => {
+    assert.ok(!/^:root\s*\{/m.test(landingCss), 'the landing stylesheet must not define a global :root token block');
+    assert.ok(/^\.lp\s*\{/m.test(landingCss), 'landing tokens must be scoped to the .lp root class');
+    assert.ok(landingCss.includes('--lp-bg:'), 'landing surface token missing');
   });
 
   it('styles the workspace surfaces: attention, repos, settings, guidance', () => {

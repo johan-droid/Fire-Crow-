@@ -44,7 +44,7 @@ The Canonical Audit Schema v1 is an authoritative contract. Follow this versioni
 ### Backward-Compatible Changes (v1.x.y)
 - **Adding an Optional Field**: Add field to `CanonicalFinding` or `CanonicalAuditV1` with `#[serde(default)]` and `Option<T>`.
 - **Adding New Engine Type**: The `engine` field is a string, which naturally supports new engine identifiers.
-- Update frontend TypeScript interfaces in `frontend/src/services/api.ts`.
+- Update frontend TypeScript interfaces in `frontend/src/api/types.ts`.
 
 ### Breaking Changes (v2.0.0)
 - Create a new module: `backend/src/schemas/canonical_audit_v2.rs`.
@@ -115,8 +115,11 @@ In production on Render/Vercel:
 
 ## 6. Updating Landing Page & Marketing Copy
 
-When updating marketing copy or UI layouts in `frontend/src/landing/components/`:
-- **Visual Hierarchy**: Keep primary headlines, sub-headlines, and CTA buttons flush-left aligned with body copy.
-- **Contrast**: Maintain AA contrast compliance (`#F5F5F7` text on `#0A0A0A` background).
-- **Pricing Section**: To hide pricing or adjust capacity tiers, edit `frontend/src/landing/components/PricingSection.tsx`.
-- **Interactive Walkthrough**: When updating mock vulnerability snippets in `InteractiveAudit.tsx`, ensure metadata tags (`File:`, `Engine:`, `Mapping:`) use distinct pill styling with adequate vertical spacing.
+The landing page is `frontend/src/LandingPage.tsx` (mounted at `/`), plus its data and its own stylesheet:
+
+- **Copy, capabilities, FAQ, pipeline stages, sample findings**: `frontend/src/landing/data/landingData.ts`.
+- **Layout and styling**: `frontend/src/landing/site/landing-site.css` — its tokens are scoped to the `.lp` class so they never leak into the console or login page.
+- **The ledger object**: `frontend/src/landing/site/Ledger.tsx`.
+- **Hero canvas**: `frontend/src/scene.tsx` (`HeroCanvas3D`), which must respect `prefers-reduced-motion`.
+
+Honesty rules the page must keep (pinned by `frontend/tests/landing-page.test.ts`): no claim the product cannot back, no form that fakes a submission, no dead nav link, and a visible disclosure while free-tier access is the only open path. Run `npm test` in `frontend/` after any copy change.

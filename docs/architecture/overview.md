@@ -214,7 +214,7 @@ flowchart TD
     subgraph VercelEdge["Vercel Global Edge (Frontend)"]
         FrontendDomain["firecrow.dev / preview.vercel.app"]
         StaticAssets["Vite Pre-built Static SPA"]
-        VercelRouting["vercel.json:\nFail-Closed Static Rewrite (/index.html)\nNO EXTERNAL /api PROXIES"]
+        VercelRouting["vercel.json:\nFail-Closed Static Rewrite (/ → index.html)\nNO EXTERNAL /api PROXIES"]
     end
 
     subgraph RenderPlatform["Render Cloud (Backend Host)"]
@@ -241,11 +241,16 @@ flowchart TD
 In `vercel.json`, FireCrow deliberately configures:
 ```json
 {
+  "cleanUrls": true,
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/(.*)", "destination": "/" }
   ]
 }
 ```
+With `cleanUrls: true` the destination must omit the `.html` extension — Vercel strips
+it, so `/index.html` silently became `/index` (a path that does not exist) and every
+deep link 404'd in production. See `docs/deployment/frontend.md` §3.
+
 There is **no server-side rewrite proxying `/api/*` to Render**. Instead, the React SPA makes direct client-side fetch calls to `VITE_API_URL` (e.g. `https://api.firecrow.dev`). This architecture ensures that:
 - Vercel Preview deployments cannot accidentally proxy internal traffic or credentials to staging backend instances.
 - Previews fail-closed if `VITE_API_URL` is omitted or unconfigured.

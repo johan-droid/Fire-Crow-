@@ -89,26 +89,30 @@ frontend/
 ├── public/                          # Static assets, favicon, logo images
 ├── src/
 │   ├── main.tsx                     # React application root entrypoint
-│   ├── App.tsx                      # Root router, global auth state provider, layout shell
-│   ├── dash.tsx                     # Main security engineering dashboard (KPIs, tables, details)
-│   ├── dashboard.css                # Dashboard-specific layout, grid, and specular tokens
-│   ├── index.css                    # Global design tokens, color palette, typography, reset
-│   ├── LandingPage.tsx              # Public marketing and conversion landing page
-│   ├── landing/                     # Modular landing page sections
-│   │   └── components/
-│   │       ├── LandingNavbar.tsx    # Header navigation, brand pill, user status
-│   │       ├── HeroSection.tsx      # Terminal-style headline & primary CTAs
-│   │       ├── InteractiveAudit.tsx # Live walkthrough visualizer
-│   │       ├── ArchitectureSection.tsx # 4-stage pipeline visual cards
-│   │       ├── PricingSection.tsx   # Capacity tiers & billing toggle
-│   │       └── LandingFooter.tsx    # System status, legal, copyright
-│   ├── components/                  # Reusable UI components
-│   │   ├── AuditStatusBadge.tsx     # Color-coded job status pill
-│   │   ├── ScoreRing.tsx            # SVG circular gauge for 0-100 deterministic risk score
-│   │   ├── FindingDrawer.tsx        # Slide-out drawer with code snippet & CWE remediation
-│   │   └── Modal.tsx                # Accessible backdrop dialog
-│   └── services/
-│       └── api.ts                   # Fetch API client, credentials inclusion, typed response DTOs
+│   ├── App.tsx                      # Root shell: auth state + URL routing (/, /login, /console/:window)
+│   ├── dash.tsx                     # Console primitives: ScoreRing, StatusPill, SeverityBars, fmt/time helpers
+│   ├── scene.tsx                    # Landing hero canvas (HeroCanvas3D)
+│   ├── BrandMark.tsx                # Brand mark shared by console + landing
+│   ├── dashboard.css                # Console layout, grid, and --fc-* tokens
+│   ├── console-theme.css            # Console reset / overrides
+│   ├── index.css                    # Base tokens (--bg-*, --text-*, --apple-*), typography, reset
+│   ├── dashboard/                   # Console widgets and pure view state
+│   │   ├── MetricCard.tsx           # KPI card
+│   │   ├── AuditTable.tsx           # Audit list/table (sort + filter)
+│   │   ├── ActionSidebar.tsx        # Sidebar actions
+│   │   ├── Dropdown.tsx             # Accessible menu-button primitive (portal, APG keyboard)
+│   │   ├── console.ts               # Pure, unit-tested filter/sort/attention state
+│   │   └── dropdown.css
+│   ├── api/                         # Typed fetch client, DTOs, SSE, health, toasts
+│   │   ├── client.ts                # Requests: credentials, retry, timeouts, typed responses
+│   │   ├── api-base.ts              # API origin resolution + validation
+│   │   └── errors.ts                # ApiError, backoff, SPA-fallback detection
+│   ├── LandingPage.tsx              # Public marketing landing page (mounted at /)
+│   ├── landing/                     # Landing page source
+│   │   ├── components/BrandLogos.tsx # NextLab symbol (landing + login)
+│   │   ├── data/landingData.ts      # Capabilities, FAQ, pipeline stages, sample findings
+│   │   └── site/                    # Ledger.tsx + landing-site.css (--lp-* tokens on .lp)
+│   └── LoginPage.tsx                # Sign-in page (credentials + TOTP)
 ```
 
 ---
@@ -119,7 +123,7 @@ Use this matrix to identify exactly which files must be created or modified for 
 
 | Goal / Task Description | Primary Files to Touch | Supporting / Test Files |
 | :--- | :--- | :--- |
-| **Add a new API endpoint** | [backend/src/routes/](../../../../../../backend/src/routes)<br/>[backend/src/app.rs](../../../../../../backend/src/app.rs) | [frontend/src/services/api.ts](../../../../../../frontend/src/services/api.ts)<br/>[docs/api/README.md](../../../../../../docs/api/README.md) |
+| **Add a new API endpoint** | [backend/src/routes/](../../../../../../backend/src/routes)<br/>[backend/src/app.rs](../../../../../../backend/src/app.rs) | [frontend/src/api/client.ts](../../../../../../frontend/src/api/client.ts)<br/>[docs/api/README.md](../../../../../../docs/api/README.md) |
 | **Add a new scanner engine** | [backend/src/agents/scanner.rs](../../../../../../backend/src/agents/scanner.rs)<br/>[backend/src/schemas/canonical_audit.rs](../../../../../../backend/src/schemas/canonical_audit.rs) | [docs/deployment/containers.md](../../../../../../docs/deployment/containers.md)<br/>[docs/development/maintenance.md](../../../../../../docs/development/maintenance.md) |
 | **Update SAST scanning rules** | [backend/scanners/semgrep/firecrow-sast.yml](../../../../../../backend/scanners/semgrep/firecrow-sast.yml) | Semgrep unit test fixtures |
 | **Add a database table / column** | `backend/migrations/` (new SQL file)<br/>[backend/src/db/](../../../../../../backend/src/db) | [backend/src/schemas/](../../../../../../backend/src/schemas) |
@@ -128,7 +132,7 @@ Use this matrix to identify exactly which files must be created or modified for 
 | **Change token/session expiry** | [backend/src/config.rs](../../../../../../backend/src/config.rs)<br/>[backend/src/middleware/auth.rs](../../../../../../backend/src/middleware/auth.rs) | [docs/configuration/environment.md](../../../../../../docs/configuration/environment.md) |
 | **Adjust rate limiting rules** | [backend/src/app.rs](../../../../../../backend/src/app.rs) | [backend/src/config.rs](../../../../../../backend/src/config.rs)<br/>[docs/api/README.md](../../../../../../docs/api/README.md) |
 | **Modify Docker sandboxing flags** | [backend/src/agents/scanner.rs](../../../../../../backend/src/agents/scanner.rs) | [docs/deployment/containers.md](../../../../../../docs/deployment/containers.md)<br/>[docs/security/threat-model.md](../../../../../../docs/security/threat-model.md) |
-| **Add a new dashboard view/widget** | [frontend/src/dash.tsx](../../../../../../frontend/src/dash.tsx)<br/>[frontend/src/dashboard.css](../../../../../../frontend/src/dashboard.css) | [frontend/src/services/api.ts](../../../../../../frontend/src/services/api.ts) |
-| **Update landing page copy/pricing** | [frontend/src/landing/components/](../../../../../../frontend/src/landing/components) | [frontend/src/LandingPage.tsx](../../../../../../frontend/src/LandingPage.tsx) |
+| **Add a new dashboard view/widget** | [frontend/src/dash.tsx](../../../../../../frontend/src/dash.tsx)<br/>[frontend/src/dashboard.css](../../../../../../frontend/src/dashboard.css) | [frontend/src/api/client.ts](../../../../../../frontend/src/api/client.ts) |
+| **Update landing page copy/pricing** | [frontend/src/landing/data/landingData.ts](../../../../../../frontend/src/landing/data/landingData.ts)<br/>[frontend/src/landing/site/](../../../../../../frontend/src/landing/site) | [frontend/src/LandingPage.tsx](../../../../../../frontend/src/LandingPage.tsx)<br/>[frontend/tests/landing-page.test.ts](../../../../../../frontend/tests/landing-page.test.ts) |
 | **Change global design tokens / theme**| [frontend/src/index.css](../../../../../../frontend/src/index.css)<br/>[frontend/src/dashboard.css](../../../../../../frontend/src/dashboard.css) | All UI components |
 | **Add a new test suite** | `frontend/tests/` or `backend/tests/` | [docs/development/testing.md](../../../../../../docs/development/testing.md) |

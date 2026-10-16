@@ -91,8 +91,8 @@
 - [ ] Configure the production branch only after preview checks are passing. **OWNER ACTION**
 - [x] Configure the correct install, build, and output settings based on the real Vite project.
       **EVIDENCE (2026-10-16):** `vercel.json` framework=vite, install=`npm --prefix frontend install --include=dev`, build=`npm --prefix frontend run build`, output=`frontend/dist`. **PASS**
-- [x] Preserve the SPA fallback/deep-link rewrite in `vercel.json`; test a refresh on nested frontend routes.
-      **EVIDENCE (2026-10-16):** rewrite `/(.*) -> /index.html` present. Runtime refresh test is Phase 7. **PASS (config)**
+- [ ] Preserve the SPA fallback/deep-link rewrite in `vercel.json`; test a refresh on nested frontend routes.
+      **EVIDENCE (2026-10-17):** the earlier `PASS (config)` was wrong — the rewrite was present but did not work. With `cleanUrls: true`, Vercel strips `.html` from rewrite destinations, so `destination: /index.html` resolved to `/index` (does not exist) and every deep link 404'd. Live check: `GET /` → 200, `GET /login` → 404, `GET /console/overview` → 404. Fixed to `destination: "/"` in both `vercel.json` files (Vercel docs: with `cleanUrls`, omit the extension); regression guard added in `frontend/tests/routing.test.ts`. **PASS (config) — runtime refresh test remains PENDING until a redeploy is verified.**
 - [x] Review existing response security headers and CSP. Ensure required API connections work without adding broad wildcard policies.
       **EVIDENCE (2026-10-16):** CSP `script-src 'self'`, `connect-src 'self' https:`; `frame-ancestors 'none'`; `X-Frame-Options: DENY`; `Referrer-Policy: strict-origin-when-cross-origin`. `connect-src https:` permits the Render API origin without a wildcard script policy. **PASS**
 - [ ] Configure a preview environment separately from production. Vercel environment-variable changes apply to later deployments, so redeploy after changing a variable. **OWNER ACTION**
@@ -171,8 +171,8 @@
       **EVIDENCE (2026-10-16):** `getApiBase()` has no hardcoded host; falls back to `/api/v1` (fail-closed). **PASS**
 - [x] Provide safe local, preview and production defaults without exposing secrets.
       **EVIDENCE (2026-10-16):** default `/api/v1`; docs describe per-environment values. **PASS**
-- [ ] Add a clear startup/configuration error for a missing or malformed API URL rather than silently targeting the wrong backend.
-      **GAP:** current behavior falls back to `/api/v1` (which 404s in a decoupled deployment). A malformed `VITE_API_URL` is not currently rejected. **FRONTEND WORK ITEM**
+- [x] Add a clear startup/configuration error for a missing or malformed API URL rather than silently targeting the wrong backend.
+      **EVIDENCE (2026-10-17):** a *malformed* `VITE_API_URL` is rejected loudly before any request (`resolveApiBase` → `validateApiBaseUrl`, FC-DEP-05; `frontend/tests/api-base.test.ts`). A *missing* value still falls back to `/api/v1` by design (first-party cookies in local dev), but the resulting dead end is no longer opaque: a 2xx body that is an HTML document is reported as "requests are falling through to the frontend SPA… set VITE_API_URL", not as "malformed JSON" (`looksLikeHtmlDocument` / `SPA_FALLBACK_MESSAGE`, `frontend/src/api/errors.ts`, wired into `requestJson` and `requestText`; `frontend/tests/errors.test.ts`). **PASS (diagnosis) — setting `VITE_API_URL` on Vercel remains an OWNER ACTION.**
 - [ ] Test all API calls against the Render service URL in preview and against the approved production API origin after authorization. **OWNER ACTION (Phase 7)**
 
 ### Authentication and cookie behavior

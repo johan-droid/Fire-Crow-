@@ -16,11 +16,17 @@ FireCrow enforces **Fail-Closed Frontend Routing** and explicit cross-origin sep
 1. **No Backend Proxy in `vercel.json`**: The `vercel.json` configuration contains strictly a client-side Single Page Application fallback rewrite:
    ```json
    {
+     "cleanUrls": true,
      "rewrites": [
-       { "source": "/(.*)", "destination": "/index.html" }
+       { "source": "/(.*)", "destination": "/" }
      ]
    }
    ```
+   > **Amendment (2026-10-17).** The original example used `"destination": "/index.html"`.
+   > With `cleanUrls: true` Vercel strips the extension, so that destination resolved to
+   > `/index` and the SPA fallback silently broke — every deep link returned a 404. The
+   > decision is unchanged; only the destination form is corrected. See
+   > `docs/deployment/frontend.md` §3 and the guard in `frontend/tests/routing.test.ts`.
 2. **Explicit Client-Side Origin Target**: The frontend client (`api.ts`) sends requests directly to the backend origin configured via the `VITE_API_URL` environment variable (e.g., `https://api.firecrow.dev`). If `VITE_API_URL` is omitted, requests default safely to `/api`, which fails closed with 404 in decoupled deployments, preventing accidental data transfer.
 3. **Strict Backend CORS Whitelisting**: The Axum backend explicitly validates the `Origin` header against an allowlist configured via `CORS_ALLOWED_ORIGINS` (e.g., `https://firecrow.dev,https://staging.firecrow.dev`).
 

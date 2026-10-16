@@ -1,7 +1,7 @@
 // Thin typed client for the existing Axum API. No business logic, no score or
 // coverage recomputation: the backend's deterministic report is the source of
 // truth. Every historical action takes an explicit execution_id.
-import { ApiError, DELIVERY_TIMEOUT_MS, deliveryTimeoutNote, fetchWithRetry, toApiError, withTimeout } from './errors.js';
+import { ApiError, DELIVERY_TIMEOUT_MS, deliveryTimeoutNote, fetchWithRetry, looksLikeHtmlDocument, SPA_FALLBACK_MESSAGE, toApiError, withTimeout } from './errors.js';
 import { resolveApiBase } from './api-base.js';
 import {
   auditPaths,
@@ -57,6 +57,11 @@ async function requestJson<T>(path: string, init: RequestInit = {}, opts: { time
     // Backend always returns JSON on success; empty is a contract violation.
     throw new ApiError(res.status, 'malformed', 'Empty response from server.', false);
   }
+  if (looksLikeHtmlDocument(text)) {
+    // 2xx HTML is never API output — it is the SPA fallback answering for an
+    // unconfigured API base. Say so instead of "malformed JSON".
+    throw new ApiError(res.status, 'misconfigured', SPA_FALLBACK_MESSAGE, false);
+  }
   try {
     return JSON.parse(text) as T;
   } catch {
@@ -76,7 +81,13 @@ async function requestText(path: string, accept: string): Promise<string> {
     { retry: true },
   );
   if (!res.ok) throw await toApiError(res);
-  return res.text();
+  const text = await res.text();
+  // An HTML report is expected here; any *other* requested format receiving
+  // HTML means the SPA fallback answered, not the report endpoint.
+  if (!accept.includes('html') && looksLikeHtmlDocument(text)) {
+    throw new ApiError(res.status, 'misconfigured', SPA_FALLBACK_MESSAGE, false);
+  }
+  return text;
 }
 
 export const api = {

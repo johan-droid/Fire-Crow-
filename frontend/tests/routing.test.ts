@@ -1,5 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { verifyRouting, isRoutingSafe, extractApiUpstream } from '../src/api/deploy.js';
 
 const STAGING_OK = {
@@ -133,4 +135,30 @@ describe('extractApiUpstream', () => {
     assert.equal(typeof d === 'object', true);
     assert.equal(isRoutingSafe({ rewrites: [{ source: '/api/:p*', destination: { service: 'x' } }] }, 'staging'), false);
   });
+});
+
+// Guards the config that actually ships, not a fixture: Vercel drops the file
+// extension from rewrite destinations when `cleanUrls` is on, so a destination
+// of `/index.html` silently becomes `/index` (which does not exist) and every
+// deep link 404s. That reached production once; this is the check that fails if
+// it comes back.
+describe('shipped vercel.json honours cleanUrls', () => {
+  for (const file of ['vercel.json', join('..', 'vercel.json')]) {
+    it(`${file}: keeps the SPA fallback and no .html destination under cleanUrls`, () => {
+      const cfg = JSON.parse(readFileSync(join(process.cwd(), file), 'utf8'));
+      const rewrites: Array<{ source?: string; destination?: unknown }> = cfg.rewrites ?? [];
+      assert.ok(
+        rewrites.some((r) => r.source === '/(.*)'),
+        `${file}: the SPA fallback rewrite is missing, deep links will 404`,
+      );
+      if (cfg.cleanUrls === true) {
+        for (const r of rewrites) {
+          assert.ok(
+            typeof r.destination !== 'string' || !r.destination.includes('.html'),
+            `${file}: destination "${r.destination}" contains .html while cleanUrls is true — Vercel rewrites it to a path that does not exist`,
+          );
+        }
+      }
+    });
+  }
 });

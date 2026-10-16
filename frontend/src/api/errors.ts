@@ -202,3 +202,25 @@ export async function withTimeout<T>(
     clearTimeout(timer);
   }
 }
+
+/**
+ * True when a body is an HTML document rather than the JSON the API contract
+ * promises. A 2xx HTML body is never legitimate API output: it is the frontend
+ * SPA being served in place of the API, i.e. the deployment's API base URL is
+ * not configured and requests fall through to the SPA fallback rewrite.
+ */
+export function looksLikeHtmlDocument(text: string): boolean {
+  const head = text.slice(0, 512).trimStart().toLowerCase();
+  return head.startsWith('<!doctype html') || head.startsWith('<html') || head.startsWith('<!--');
+}
+
+/**
+ * The one genuinely confusing deployment failure this codebase can hit: with
+ * `VITE_API_URL` unset, a Vercel-hosted SPA asks its own origin for /api/v1/*,
+ * the catch-all rewrite answers with index.html, and every call used to fail as
+ * "Server returned malformed JSON." Name the real cause instead.
+ */
+export const SPA_FALLBACK_MESSAGE =
+  'The API returned an HTML page instead of JSON: requests are falling through to the frontend SPA. ' +
+  'This deployment was most likely built without VITE_API_URL. Set it to the backend origin ' +
+  '(for example https://<service>.onrender.com) and redeploy.';

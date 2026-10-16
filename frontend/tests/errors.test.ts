@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractDetail, fetchWithRetry, isApiError, toApiError, withTimeout } from '../src/api/errors.js';
+import { extractDetail, fetchWithRetry, isApiError, looksLikeHtmlDocument, SPA_FALLBACK_MESSAGE, toApiError, withTimeout } from '../src/api/errors.js';
 
 describe('extractDetail (backend envelope is always {detail})', () => {
   it('reads detail from JSON', () => {
@@ -153,5 +153,30 @@ describe('fetchWithRetry (bounded retries, cold-start tolerant)', () => {
     ).catch((e) => e);
     assert.equal(calls, 1);
     assert.ok(!(err instanceof Error) || err.name === 'AbortError' || isApiError(err));
+  });
+});
+
+// A 2xx HTML body is never API output: it is the SPA answering for an
+// unconfigured API base (VITE_API_URL unset on Vercel). Detecting it turns a
+// dead-end "Server returned malformed JSON." into an actionable message.
+describe('looksLikeHtmlDocument (SPA fallback detection)', () => {
+  it('recognises the documents a static host serves', () => {
+    assert.equal(looksLikeHtmlDocument('<!doctype html><html lang="en">'), true);
+    assert.equal(looksLikeHtmlDocument('<!DOCTYPE HTML>\n<html>'), true);
+    assert.equal(looksLikeHtmlDocument('  \n<html><body>x</body></html>'), true);
+    assert.equal(looksLikeHtmlDocument('<!-- comment --><html></html>'), true);
+  });
+
+  it('never mistakes real API payloads for HTML', () => {
+    assert.equal(looksLikeHtmlDocument('{"detail":"ok"}'), false);
+    assert.equal(looksLikeHtmlDocument('[]'), false);
+    assert.equal(looksLikeHtmlDocument(''), false);
+    assert.equal(looksLikeHtmlDocument('   '), false);
+    assert.equal(looksLikeHtmlDocument('null'), false);
+  });
+
+  it('names the misconfiguration and the fix', () => {
+    assert.match(SPA_FALLBACK_MESSAGE, /VITE_API_URL/);
+    assert.match(SPA_FALLBACK_MESSAGE, /HTML/);
   });
 });

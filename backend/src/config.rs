@@ -965,6 +965,52 @@ mod port_contract_tests {
         );
     }
 
+    /// Every env key `render.yaml` sets must actually be read by the backend.
+    ///
+    /// The `config` crate's prefix-less Environment source maps `CORS_ORIGINS`
+    /// onto the `cors_origins` field and **silently ignores** any key that maps
+    /// to nothing. A typo or a field rename therefore leaves the variable set
+    /// but inert — CORS off, cookie flags wrong, rate limiting unconfigured —
+    /// with no error anywhere. Assert the contract rather than trusting the two
+    /// files to stay in step by hand.
+    #[test]
+    fn every_render_yaml_env_key_is_read_by_the_backend() {
+        // Read directly via std::env, not through Settings.
+        const DIRECT_ENV: &[&str] = &["DOCKER_HOST"];
+
+        let manifest = env!("CARGO_MANIFEST_DIR");
+        let render = std::fs::read_to_string(format!("{manifest}/../render.yaml"))
+            .expect("render.yaml must be readable");
+        let source = std::fs::read_to_string(format!("{manifest}/src/config.rs"))
+            .expect("config.rs must be readable");
+
+        // Field names are the env names, lowercased: `cors_origins` <- CORS_ORIGINS.
+        let known: std::collections::HashSet<String> = source
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("pub "))
+            .filter_map(|rest| rest.split(':').next())
+            .map(|field| field.trim().to_uppercase())
+            .collect();
+
+        let mut checked = 0;
+        for line in render.lines() {
+            let Some(rest) = line.trim().strip_prefix("- key: ") else {
+                continue;
+            };
+            let key = rest.trim();
+            checked += 1;
+            assert!(
+                known.contains(key) || DIRECT_ENV.contains(&key),
+                "render.yaml sets {key}, but nothing in Settings or std::env reads it — \
+                 the variable would be set and silently ignored"
+            );
+        }
+        assert!(
+            checked >= 10,
+            "expected render.yaml to declare its env keys, found {checked}"
+        );
+    }
+
     #[test]
     fn docker_healthcheck_must_follow_the_runtime_port() {
         let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Dockerfile"))

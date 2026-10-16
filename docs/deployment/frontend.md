@@ -33,8 +33,9 @@ The frontend routing is governed by `frontend/vercel.json`:
 
 ```json
 {
+  "cleanUrls": true,
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/(.*)", "destination": "/" }
   ],
   "headers": [
     {
@@ -50,6 +51,31 @@ The frontend routing is governed by `frontend/vercel.json`:
   ]
 }
 ```
+
+> **`cleanUrls` and the catch-all rewrite.** With `cleanUrls: true`, Vercel strips
+> the extension from rewrite destinations. A destination of `/index.html`
+> therefore resolves to `/index`, which does not exist — the SPA fallback
+> silently stops working and every deep link (`/login`, `/console/overview`)
+> returns Vercel's branded 404 (whose inline script is then blocked by the CSP
+> above, producing misleading console errors). Use `"/"` as the destination, or
+> drop `cleanUrls`. `frontend/tests/routing.test.ts` fails if a `.html`
+> destination is ever reintroduced under `cleanUrls`.
+
+### Dry run: the config invariants CI enforces
+
+Configuration that is *present* but silently ineffective is this project's
+recurring failure shape, so the invariants are asserted against the real files
+rather than left to review:
+
+| Invariant | Enforced by |
+| --- | --- |
+| SPA fallback exists; no `.html` rewrite destination under `cleanUrls` | `frontend/tests/routing.test.ts` |
+| The two `vercel.json` files (root and `frontend/`) never drift in rewrites or security headers | `frontend/tests/deploy-config.test.ts` |
+| The shipped CSP permits every resource `index.html` references and forbids inline script/handlers | `frontend/tests/deploy-config.test.ts` |
+| Every env key `render.yaml` sets is actually read by the backend (a typo would otherwise be set and ignored) | `backend/src/config.rs` (`every_render_yaml_env_key_is_read_by_the_backend`) |
+| `render.yaml` never pins `PORT`; the Docker healthcheck follows `$PORT` | `backend/src/config.rs` |
+
+Run them locally with `npm test` (frontend) and `cargo test` (backend).
 
 ### Architectural Rationale: Absence of `/api` Proxy Rewrite
 In traditional setups, developers often configure a rewrite like:
