@@ -75,6 +75,14 @@ services:
         value: "true"
       - key: DOCKER_HOST
         sync: false
+      # T1 (mTLS): the backend authenticates to the Docker daemon with a
+      # client certificate. DOCKER_TLS_VERIFY and DOCKER_CERT_PATH are fixed
+      # constants in sandbox.rs; the certificate material must be mounted at
+      # /etc/firecrow/docker-tls. The daemon must run the authorization plugin.
+      - key: DOCKER_TLS_VERIFY
+        value: "1"
+      - key: DOCKER_CERT_PATH
+        value: "/etc/firecrow/docker-tls"
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL

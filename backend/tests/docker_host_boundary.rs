@@ -81,14 +81,6 @@ fn service_block(text: &str, service: &str) -> String {
     out.join("\n")
 }
 
-/// A real YAML key line, ignoring comments (which may legitimately name keys).
-fn has_yaml_key(block: &str, key: &str) -> bool {
-    block.lines().any(|l| {
-        let t = l.trim_start();
-        !t.starts_with('#') && t.starts_with(key)
-    })
-}
-
 // --- Deployment: no unrestricted socket ------------------------------------
 
 #[test]
@@ -102,50 +94,55 @@ fn backend_service_holds_no_docker_socket() {
         !block.contains("privileged"),
         "backend must not be privileged:\n{block}"
     );
+    // T1 (mTLS): the backend reaches the daemon via TLS, not the socket proxy.
     assert!(
-        block.contains("DOCKER_HOST") && block.contains("docker-socket-proxy:2375"),
-        "backend must reach Docker only via the proxy:\n{block}"
+        block.contains("DOCKER_HOST") && block.contains("tcp://host.docker.internal:2376"),
+        "backend must reach Docker only via the TLS endpoint:\n{block}"
+    );
+    assert!(
+        block.contains("/etc/firecrow/docker-tls"),
+        "backend must mount the client certificate for mTLS:\n{block}"
     );
 }
 
 #[test]
-fn socket_proxy_is_the_sole_pinned_filtered_holder() {
+fn authz_plugin_is_the_daemon_boundary_enforcement_point() {
     let text = compose_text();
-    assert_eq!(
-        text.lines().filter(|l| l.contains("docker.sock")).count(),
-        1,
-        "exactly one socket mount line may exist (the proxy's)"
-    );
-    let block = service_block(&text, "docker-socket-proxy");
+    // The authz plugin service must exist and be wired to the daemon socket dir.
+    let block = service_block(&text, "authz-plugin");
     assert!(
-        block.contains("/var/run/docker.sock"),
-        "proxy must hold the socket:\n{block}"
+        block.contains("firecrow-authz-plugin"),
+        "authz plugin must build from the authz Dockerfile:\n{block}"
     );
     assert!(
-        block.contains("tecnativa/docker-socket-proxy:v") && !block.contains(":latest"),
-        "proxy image must be pinned, never :latest:\n{block}"
-    );
-    for denied in [
-        "EXEC: 0",
-        "NETWORKS: 0",
-        "VOLUMES: 0",
-        "BUILD: 0",
-        "SYSTEM: 0",
-        "SWARM: 0",
-    ] {
-        assert!(block.contains(denied), "proxy must deny {denied}:\n{block}");
-    }
-    assert!(
-        block.contains("CONTAINERS: 1") && block.contains("IMAGES: 1"),
-        "proxy must allow only run/pull categories:\n{block}"
+        block.contains("/run/docker/plugins"),
+        "authz plugin must mount the daemon plugin socket directory:\n{block}"
     );
     assert!(
-        block.contains("POST: 1"),
-        "proxy must allow non-GET methods or even container creation is refused:\n{block}"
+        block.contains("FIRECROW_AUTHZ_NAME"),
+        "authz plugin must set the plugin name:\n{block}"
     );
     assert!(
-        !has_yaml_key(&block, "ports:"),
-        "proxy port must never be host-published:\n{block}"
+        block.contains("FIRECROW_AUTHZ_ALLOWED_CNS"),
+        "authz plugin must set the CN allowlist:\n{block}"
+    );
+}
+
+#[test]
+fn socket_proxy_is_retired_in_t1_topology() {
+    let text = compose_text();
+    // The docker-socket-proxy is retired in the T1 topology. It may exist
+    // for backward compatibility but must be profile-gated (not active by
+    // default) and must not be the backend's DOCKER_HOST.
+    let proxy_block = service_block(&text, "docker-socket-proxy");
+    assert!(
+        proxy_block.contains("profiles:"),
+        "docker-socket-proxy must be profile-gated in the T1 topology:\n{proxy_block}"
+    );
+    let backend_block = service_block(&text, "backend");
+    assert!(
+        !backend_block.contains("docker-socket-proxy"),
+        "backend must not reference the retired socket proxy:\n{backend_block}"
     );
 }
 
@@ -305,6 +302,12 @@ fn sensitive_host_binds_are_rejected() {
 #[test]
 fn docker_host_accepts_only_tcp_host_port_form() {
     use std::ffi::OsStr;
+    // T1 (mTLS): the backend connects to the daemon's TLS listener.
+    assert_eq!(
+        validated_docker_host(OsStr::new("tcp://host.docker.internal:2376")).as_deref(),
+        Some("tcp://host.docker.internal:2376")
+    );
+    // Legacy socket-proxy form (still accepted for backward compatibility).
     assert_eq!(
         validated_docker_host(OsStr::new("tcp://docker-socket-proxy:2375")).as_deref(),
         Some("tcp://docker-socket-proxy:2375")

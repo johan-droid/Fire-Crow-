@@ -14,5 +14,5 @@
     "rootDir": ".",
     "types": ["node"]
   },
-  "include": ["tests", "src/api/types.ts", "src/api/errors.ts", "src/api/validation.ts", "src/api/sse.ts", "src/api/routes.ts"]
+  "include": ["tests", "src/api/types.ts", "src/api/errors.ts", "src/api/validation.ts", "src/api/sse.ts", "src/api/routes.ts", "src/api/api-base.ts"]
 }

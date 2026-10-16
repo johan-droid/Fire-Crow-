@@ -1,12 +1,13 @@
 name: CI
 
-# FC-DEP-02: the repository previously had an empty workflows directory, so no
-# push or pull request was ever checked. This workflow runs only offline/static
-# checks that need no secrets, no Docker, and no external services:
-#   * backend: compile + database-free unit/security suites
+# CI workflow for Fire Crow. Runs the mandatory release checks:
+#   * backend: format, compile, unit tests, security suites
+#   * docker-authz-plugin: format, compile, unit tests
 #   * frontend: type check, unit tests, production build
-# Database-backed integration suites run via backend/scripts/test.sh against
-# the isolated tmpfs fixture and are intentionally not part of CI yet.
+#
+# Database-backed integration suites require a running PostgreSQL and Redis;
+# they are run separately via backend/scripts/test.sh against an isolated
+# fixture and are intentionally not part of CI.
 
 on:
   push:
@@ -29,14 +30,46 @@ jobs:
           workspaces: backend
       - name: Format check
         run: cargo fmt --check
-      - name: Compile
+      - name: Compile (locked)
         run: cargo check --locked
+      - name: Compile tests (locked)
+        run: cargo check --locked --tests
       - name: Unit tests (no database)
         run: cargo test --lib --bins --locked
+      - name: Docker host boundary suite (no database)
+        run: cargo test --test docker_host_boundary --locked
+      - name: Sandbox hardening suite (no database)
+        run: cargo test --test sandbox_hardening --locked
+      - name: OSV egress enforcement suite (no database)
+        run: cargo test --test osv_egress_enforcement --locked
       - name: Config security suite (no database)
         run: cargo test --test config_security --locked
       - name: Security regression suite (no database)
         run: cargo test --test security_regressions --locked
+      - name: Egress proxy binary suite (no database)
+        run: cargo test --bin egress_proxy --locked
+
+  docker-authz-plugin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docker-authz-plugin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: docker-authz-plugin
+      - name: Format check
+        run: cargo fmt --check
+      - name: Compile (locked)
+        run: cargo check --locked
+      - name: Compile tests (locked)
+        run: cargo check --locked --tests
+      - name: Unit + integration tests
+        run: cargo test --locked
 
   frontend:
     runs-on: ubuntu-latest
@@ -56,3 +89,14 @@ jobs:
         run: npm test
       - name: Production build
         run: npm run build
+
+  # Compose configuration validation (no secrets required for -q check)
+  compose-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate compose configuration
+        run: |
+          printf 'POSTGRES_PASSWORD=fake\nREDIS_PASSWORD=fake\nSECRET_KEY=%s\nENCRYPTION_KEY=%s\n' "$(openssl rand -base64 48)" "$(openssl rand -base64 48)" > .env
+          docker compose config -q
+          rm -f .env

@@ -2,6 +2,7 @@
 // coverage recomputation: the backend's deterministic report is the source of
 // truth. Every historical action takes an explicit execution_id.
 import { ApiError, DELIVERY_TIMEOUT_MS, deliveryTimeoutNote, toApiError, withTimeout } from './errors.js';
+import { resolveApiBase } from './api-base.js';
 import {
   auditPaths,
   authPaths,
@@ -30,12 +31,7 @@ import type {
 export type ReportFormat = 'markdown' | 'json' | 'html';
 
 export function getApiBase(): string {
-  const viteUrl = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
-  if (viteUrl) {
-    const cleaned = viteUrl.replace(/\/$/, '');
-    return cleaned.endsWith('/api/v1') ? cleaned : `${cleaned}/api/v1`;
-  }
-  return '/api/v1';
+  return resolveApiBase(import.meta.env.VITE_API_URL as string | undefined);
 }
 
 async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {

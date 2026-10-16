@@ -90,41 +90,54 @@ Review and complete the environment variables in the Render Dashboard under **fi
 
 Fire Crow requires access to a Docker daemon to launch isolated micro-containers for **Gitleaks**, **Semgrep**, and **OSV-Scanner**. Because Render Free Tier web services do not run host Docker engines or allow `/var/run/docker.sock` mounts, you provide Docker access through `DOCKER_HOST`.
 
+> **Important — scanner isolation is unavailable on Render.** The G1
+> egress-isolation control depends on Docker network primitives
+> (`internal: true` networks + a proxy sidecar). Render provides no equivalent,
+> so **Render is not a supported platform for the scanner workload**. The
+> guidance below describes how to point the *backend* at a Docker daemon, but
+> doing so does not reproduce the enforced egress boundary that the supported
+> Docker Compose architecture provides. See the egress acceptance report in
+> `evidence/FC-FINAL-20261016/FC-EGRESS-ACCEPTANCE.md`.
+
 ### Hard requirement: no public Docker endpoint
 
 The Docker API has no meaningful authentication of its own. A plain `tcp://` port `2375` endpoint reachable from the public internet is a full host-compromise vector — **even behind TLS**, because TLS only encrypts the channel: it grants no authorization, so anyone who can complete the handshake has unrestricted Docker API access. Never publish the daemon or the socket proxy on a public IP, and never front it with a public tunnel URL. Instead:
 
-- Keep `docker-socket-proxy` bound to `localhost` / the internal Docker network only. The committed `docker-compose.yml` exposes it as `docker-socket-proxy:2375` on an internal network and never publishes the port — preserve that posture.
-- Reach the proxy only through an **authenticated private channel** (the two options below).
+- Reach the daemon only through an **authenticated, mutually-authenticated (mTLS) private channel**, with the daemon's authorization plugin enabled.
+- The **Docker authorization plugin** (`docker-authz-plugin/`) is the actual content boundary: it inspects request bodies at the daemon and denies privileged creates, host binds, capability additions, and dangerous endpoints. A path/method socket proxy alone is a category filter, not a containment boundary — it cannot see request bodies.
+- Reach the daemon only through an **authenticated private channel** (the two options below).
 
-The least-privilege socket proxy itself remains the right architecture in both options: the backend never touches `/var/run/docker.sock` directly, and the proxy's filter (`CONTAINERS: 1`, `IMAGES: 1`, `ALLOW_START: 1`) caps what a compromised backend could ask Docker to do — but only if the proxy port is unreachable from the public internet.
+The authorization plugin plus mTLS is the boundary in both options: the backend never touches `/var/run/docker.sock` directly, and the plugin's deny-by-default policy (`Privileged: false`, `CapDrop: [ALL]`, approved images only, `firecrow-scan-*` names only) caps what a compromised backend could ask Docker to do — but only if the endpoint is unreachable except through the mTLS channel.
 
 ### Option A: Free Cloud Virtual Machine (Oracle Cloud / AWS EC2 / Fly.io)
-Deploy `docker-socket-proxy` on an unmetered free tier Linux instance (e.g., Oracle Cloud Always Free 1-4 OCPU ARM instance or AWS EC2 t4g.small):
+Deploy the daemon with the authorization plugin on an unmetered free tier Linux instance (e.g., Oracle Cloud Always Free 1-4 OCPU ARM instance or AWS EC2 t4g.small):
 
-1. Clone `Fire-Crow-` on the instance and launch the filtered proxy:
+1. Clone `Fire-Crow-` on the instance, generate certificates, and start the daemon with the plugin:
    ```bash
-   docker compose up -d docker-socket-proxy
+   scripts/generate-docker-tls-certs.sh certs/docker-tls
+   # daemon flags: --authorization-plugin=firecrow --tlsverify --tlscacert/--tlscert/--tlskey
    ```
-2. The proxy stays bound to the instance's loopback/private interface only — do **not** publish port `2375` to the public internet.
+2. The TLS listener stays bound to the instance's private interface only — do **not** publish port `2376` to the public internet.
 3. Join the Render backend and the instance to the same private mesh network (e.g., Tailscale or WireGuard), then set in Render:
    ```env
-   DOCKER_HOST=tcp://<proxy-mesh-hostname>:2375
+   DOCKER_HOST=tcp://<daemon-mesh-hostname>:2376
+   DOCKER_TLS_VERIFY=1
+   DOCKER_CERT_PATH=/etc/firecrow/docker-tls
    ```
    The hostname must only resolve and connect inside the authenticated mesh.
 
 ### Option B: Cloudflare Tunnel / Tailscale to Local Docker (For Live Demos)
 If showcasing Fire Crow live during an interview, portfolio review, or hackathon:
 
-1. Start the proxy locally (bound to localhost only):
+1. Start the daemon with the authorization plugin and mTLS locally (bound to a private interface only):
    ```bash
-   docker compose up -d docker-socket-proxy
+   scripts/generate-docker-tls-certs.sh certs/docker-tls
    ```
 2. Reach it over an authenticated private channel only:
-   - **Tailscale**: add the machine to your tailnet and point `DOCKER_HOST` at the proxy's tailnet address (peers must be logged into your tailnet to connect).
-   - **cloudflared**: use a Cloudflare Tunnel with an Access-protected **private network** route (a cloudflared private-network connector), so only members with valid Access credentials can connect.
-   - Do **not** run `cloudflared tunnel --url tcp://localhost:2375` or any other public quick-tunnel URL: that republishes an unauthenticated Docker endpoint for anyone on the internet.
-3. Set the private endpoint in Render as `DOCKER_HOST=tcp://<proxy-mesh-hostname>:2375`.
+   - **Tailscale**: add the machine to your tailnet and point `DOCKER_HOST` at the daemon's tailnet address (peers must be logged into your tailnet to connect).
+   - **cloudflared**: use a Cloudflare Tunnel with an Access-protected **private network** route, so only members with valid Access credentials can connect.
+   - Do **not** run `cloudflared tunnel --url tcp://localhost:2376` or any other public quick-tunnel URL: that republishes a Docker endpoint for anyone on the internet.
+3. Set the private endpoint in Render as `DOCKER_HOST=tcp://<daemon-mesh-hostname>:2376` with the TLS variables above.
 
 ---
 

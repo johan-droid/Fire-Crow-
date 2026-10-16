@@ -1,0 +1,55 @@
+# syntax=docker/dockerfile:1
+# Fire Crow Docker authorization plugin — T1 strict channel (mTLS).
+#
+# Builds the minimal static binary that enforces the frozen T1 policy at the
+# Docker daemon authorization boundary. The plugin speaks the legacy Docker
+# authorization plugin protocol over a unix socket and fails closed on any
+# unrecognized shape or unauthorized identity.
+
+FROM rust:1-bookworm AS builder
+
+WORKDIR /app
+
+# Build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy plugin manifests and source
+COPY docker-authz-plugin/Cargo.toml docker-authz-plugin/Cargo.lock ./
+COPY docker-authz-plugin/src ./src
+
+# Build release binary
+RUN cargo build --release --locked --bin docker-authz-plugin
+
+# Runtime stage — minimal, non-root
+FROM debian:bookworm-slim AS runner
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for the plugin
+RUN groupadd --system --gid 10002 firecrow-authz \
+    && useradd --system --uid 10002 --gid firecrow-authz --no-create-home \
+        --shell /bin/false firecrow-authz \
+    && mkdir -p /run/docker/plugins /var/log \
+    && chown 10002:firecrow-authz /var/log
+
+# Copy compiled binary
+COPY --from=builder /app/target/release/docker-authz-plugin /usr/local/bin/docker-authz-plugin
+
+# The plugin needs to create its socket in /run/docker/plugins/ which is
+# root-owned. We use a setuid helper or run as root with reduced capabilities.
+# For production, the plugin runs as root (it needs to create the socket in
+# the root-owned /run/docker/plugins/ directory). The TCB is minimal: no
+# network, no secrets, local socket only.
+USER root
+
+# No HEALTHCHECK — the plugin has no HTTP endpoint. The daemon healthcheck
+# is the docker socket itself.
+
+ENTRYPOINT ["/usr/local/bin/docker-authz-plugin"]

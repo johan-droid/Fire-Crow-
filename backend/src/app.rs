@@ -226,11 +226,10 @@ pub fn build_app(state: Arc<AppState>, serve_frontend: bool) -> Router {
     ));
 
     // 1. request_id_middleware: Generate and trace x-request-id (outermost on ingress)
-    app
-        .layer(from_fn(
-            crate::middleware::request_id::request_id_middleware,
-        ))
-        .with_state(state.clone())
+    app.layer(from_fn(
+        crate::middleware::request_id::request_id_middleware,
+    ))
+    .with_state(state.clone())
 }
 
 /// Assemble `AppState` for a running server or a test.

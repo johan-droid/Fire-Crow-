@@ -215,9 +215,7 @@ fn security_g1_dns_rebinding_private_ip_blocked_on_second_resolution() {
     let loopback_ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
     assert_eq!(
         evaluate_ip(loopback_ip),
-        firecrow_backend::services::egress_policy::EgressDecision::Block(
-            "loopback blocked"
-        ),
+        firecrow_backend::services::egress_policy::EgressDecision::Block("loopback blocked"),
         "rebound-to-loopback IP must be blocked"
     );
 

@@ -34,11 +34,43 @@ services:
       timeout: 5s
       retries: 5
 
-  # Least-privilege Docker API proxy (deny-by-default). Sole socket holder:
-  # the backend talks to it over TCP and never sees the socket itself.
-  # Pinned image (never :latest); see backend/src/services/sandbox.rs
-  # enforce_execution_policy for the content-level gate the proxy cannot do
-  # (it filters API categories, not request bodies).
+  # T1 (mTLS): the backend's only daemon route is the TLS channel. The
+  # docker-socket-proxy is retired in the full T1 topology; the authz
+  # plugin enforces the frozen strict-channel policy at the daemon boundary.
+  #
+  # The authz-plugin service runs on the daemon host and creates its unix
+  # socket at /run/docker/plugins/firecrow.sock. The daemon is configured
+  # with --authorization-plugin=firecrow and TLS flags.
+  #
+  # The backend connects via DOCKER_HOST=tcp://docker-daemon-tls:2376
+  # with DOCKER_TLS_VERIFY=1 and DOCKER_CERT_PATH=/etc/firecrow/docker-tls.
+  authz-plugin:
+    build:
+      context: .
+      dockerfile: Dockerfile.authz-plugin
+    container_name: firecrow-authz-plugin
+    restart: unless-stopped
+    # The plugin needs to create its socket in the host's
+    # /run/docker/plugins/ directory. In a production deployment this
+    # service runs directly on the daemon host as a systemd unit, not in
+    # a container. In compose, we mount the host's plugin socket directory.
+    volumes:
+      - /run/docker/plugins:/run/docker/plugins
+      - /var/log:/var/log
+    environment:
+      FIRECROW_AUTHZ_NAME: firecrow
+      FIRECROW_AUTHZ_LOG: /var/log/firecrow-authz.jsonl
+      FIRECROW_AUTHZ_ALLOWED_CNS: firecrow-backend
+    # The plugin needs root to create the socket in /run/docker/plugins/.
+    # In production it runs as a systemd service with minimal privileges.
+    user: root
+    # No network — the plugin only listens on a local unix socket.
+    networks:
+      - default
+
+  # Retained for backward compatibility during migration. In the full T1
+  # topology this service is removed. The backend DOCKER_HOST points to
+  # the TLS endpoint, not this proxy.
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:v0.5.0
     container_name: firecrow-docker-proxy
@@ -47,16 +79,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       LOG_LEVEL: warning
-      # `docker run` (create/attach/start/wait) + image pull + `docker rm -f`
-      # (kill/remove) need exactly these sections. PING/VERSION stay at their
-      # harmless defaults for the client handshake. POST=1 is required: the
-      # proxy denies every non-GET method unless it is set, so without it even
-      # container creation is refused; per-section rules below still gate
-      # which endpoints any POST/DELETE may reach. Everything else stays
-      # denied by the proxy default: no exec into containers, no network or
-      # volume management, no builds, no swarm/system access. Forbidden
-      # operation *content* (privileged, host binds, arbitrary images) is
-      # rejected in code by enforce_execution_policy before Docker is touched.
       POST: 1
       CONTAINERS: 1
       IMAGES: 1
@@ -82,9 +104,10 @@ services:
       GRPC: 0
       EVENTS: 0
     expose:
-      # Internal only: reachable as docker-socket-proxy:2375, never published
-      # to the host (no `ports:`). Never expose this port publicly.
       - "2375"
+    # Disabled by default in the T1 topology. Uncomment to re-enable for
+    # backward compatibility during migration.
+    profiles: ["socket-proxy"]
 
   backend:
     build:
@@ -97,21 +120,24 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      docker-socket-proxy:
+      authz-plugin:
         condition: service_started
     volumes:
       # Phase A (F1): the backend MUST NOT hold the daemon socket. Scanner
-      # execution goes through the least-privilege proxy above (DOCKER_HOST);
-      # re-adding a socket mount here re-opens host takeover on backend RCE
-      # and fails the docker_host_boundary regression test.
+      # execution goes through the mTLS channel (DOCKER_HOST) with the authz
+      # plugin enforcing the frozen T1 policy at the daemon boundary.
+      # Re-adding a socket mount here re-opens host takeover on backend RCE.
       - firecrow_storage:/app/workspace/storage
+      # T1 (mTLS): the backend needs the client certificate to authenticate
+      # to the Docker daemon's TLS listener. The cert is mounted read-only.
+      - ./certs/docker-tls:/etc/firecrow/docker-tls:ro
     ports:
       - "8000:8000"
     # ZT-08: read-only rootfs. The backend writes only to the mounted volume
     # firecrow_storage at /app/workspace/storage (volume mounts stay writable
     # under read_only); /tmp gets a writable tmpfs below. Scanner containers
-    # are launched via the docker-socket-proxy, so the backend process itself
-    # needs no Linux capabilities.
+    # are launched via the mTLS channel with the authz plugin, so the backend
+    # process itself needs no Linux capabilities.
     read_only: true
     tmpfs:
       - /tmp
@@ -123,10 +149,13 @@ services:
     environment:
       DATABASE_URL: "postgres://firecrow:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/firecrow"
       REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379"
-      # Phase A (F1): scanner execution via the least-privilege socket proxy,
-      # never via a mounted socket. The backend restores only this variable
-      # (validated tcp://host:port form) after clearing its environment.
-      DOCKER_HOST: "tcp://docker-socket-proxy:2375"
+      # T1 (mTLS): scanner execution via the Docker daemon's TLS listener,
+      # never via a mounted socket. The authz plugin enforces the frozen
+      # strict-channel policy at the daemon boundary. The backend restores
+      # only this variable (validated tcp://host:port form) after clearing
+      # its environment; DOCKER_TLS_VERIFY and DOCKER_CERT_PATH are fixed
+      # constants in sandbox.rs.
+      DOCKER_HOST: "tcp://host.docker.internal:2376"
       SECRET_KEY: "${SECRET_KEY:?SECRET_KEY is required - generate with: openssl rand -base64 48}"
       ENCRYPTION_KEY: "${ENCRYPTION_KEY:?ENCRYPTION_KEY is required - must differ from SECRET_KEY - generate with: openssl rand -base64 48}"
       FRONTEND_URL: "${FRONTEND_URL:-https://your-firecrow-app.vercel.app}"

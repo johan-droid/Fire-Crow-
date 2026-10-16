@@ -798,6 +798,43 @@ pub fn validated_docker_host(raw: &std::ffi::OsStr) -> Option<String> {
     Some(format!("tcp://{host}:{port}"))
 }
 
+/// Parse the `X.Y.Z` version out of `docker --version` output.
+///
+/// Real output shapes (all observed):
+///   `Docker version 29.1.3, build 29.1.3-0ubuntu3~24.04.2`   (Ubuntu package)
+///   `Docker version 29.1.3, build f52814d`                   (static binary)
+///   `Docker version 20.10.24, build 20.10.24`                (bookworm package)
+///
+/// The version token carries a trailing comma, so a naive `split('.')` leaves
+/// `"3,"` unparseable and the whole preflight fails on a *supported* CLI —
+/// the exact defect this function exists to prevent. Each numeric component is
+/// therefore truncated at the first non-digit rather than parsed wholesale.
+/// Returns None when no `major.minor.patch` triple can be found.
+fn parse_docker_cli_version(stdout: &str) -> Option<(u32, u32, u32)> {
+    // The first whitespace-separated token that *starts* with a digit is the
+    // version (the leading words are "Docker version").
+    let token = stdout
+        .split_whitespace()
+        .find(|p| p.chars().next().is_some_and(|c| c.is_ascii_digit()))?;
+
+    let mut nums = Vec::with_capacity(3);
+    for part in token.split('.') {
+        // Take the leading digit run; stop at ',', '-', '+' or any suffix.
+        let digits: String = part.chars().take_while(char::is_ascii_digit).collect();
+        if digits.is_empty() {
+            return None;
+        }
+        nums.push(digits.parse::<u32>().ok()?);
+        if nums.len() == 3 {
+            break;
+        }
+    }
+    match nums.as_slice() {
+        [a, b, c] => Some((*a, *b, *c)),
+        _ => None,
+    }
+}
+
 /// F-G2-05 compatibility preflight: verifies the docker CLI version is new
 /// enough to speak to the daemon's minimum API version (1.44 on this host).
 /// A client older than the daemon's MinAPIVersion gets "client version too
@@ -824,21 +861,9 @@ async fn validate_docker_cli_version() -> Result<()> {
     }
 
     let version_str = String::from_utf8_lossy(&output.stdout);
-    // Expected format: "Docker version X.Y.Z, build ..."
-    let version_part = version_str
-        .split_whitespace()
-        .find(|p| p.chars().next().is_some_and(char::is_numeric))
+    let version = parse_docker_cli_version(&version_str)
         .ok_or_else(|| AppError::Internal("could not parse docker version".into()))?;
 
-    let nums: Vec<u32> = version_part
-        .split('.')
-        .filter_map(|n| n.parse().ok())
-        .collect();
-    if nums.len() < 3 {
-        return Err(AppError::Internal("could not parse docker version".into()));
-    }
-
-    let version = (nums[0], nums[1], nums[2]);
     if version < MIN_DOCKER_VERSION {
         return Err(AppError::Internal(format!(
             "docker CLI version {}.{}.{} is too old; minimum required is {}.{}.{} for daemon API compatibility (F-G2-05)",
@@ -1005,10 +1030,16 @@ impl SandboxManager {
         // socket proxy and is restored below in validated `tcp://host:port`
         // form only. Values listed in `spec.env` travel into the container as
         // validated `-e` flags, which `docker_argv` renders.
+        //
+        // T1 (mTLS): the backend's only daemon route is the TLS channel. The
+        // certificate path and TLS verification flag are fixed constants —
+        // not env passthrough — preserving the anti-tamper intent (FC-SAND-03).
         cmd.env_clear();
         if let Some(raw) = std::env::var_os("DOCKER_HOST") {
             if let Some(host) = validated_docker_host(&raw) {
                 cmd.env("DOCKER_HOST", host);
+                cmd.env("DOCKER_TLS_VERIFY", "1");
+                cmd.env("DOCKER_CERT_PATH", "/etc/firecrow/docker-tls");
             } else {
                 tracing::warn!("ignoring malformed DOCKER_HOST; docker client will fail closed");
             }
@@ -1157,7 +1188,8 @@ async fn terminate(child: &mut tokio::process::Child, name: &str) {
     // normal exit; this covers the abnormal one.
     // FC-SAND-03 fix: env_clear() prevents inheriting a tampered DOCKER_HOST
     // or DOCKER_TLS_VERIFY from the environment; only the canonical DOCKER_HOST
-    // from our own process env is re-injected (if present).
+    // from our own process env is re-injected (if present). T1: fixed TLS
+    // constants for the mTLS channel.
     let mut cmd = tokio::process::Command::new("docker");
     cmd.args(["rm", "-f", name])
         .stdin(Stdio::null())
@@ -1166,7 +1198,86 @@ async fn terminate(child: &mut tokio::process::Child, name: &str) {
         .env_clear();
     if let Ok(docker_host) = std::env::var("DOCKER_HOST") {
         cmd.env("DOCKER_HOST", docker_host);
+        cmd.env("DOCKER_TLS_VERIFY", "1");
+        cmd.env("DOCKER_CERT_PATH", "/etc/firecrow/docker-tls");
     }
     let _ = cmd.status().await;
     tracing::debug!(%name, "Sandbox terminated and container removed");
+}
+
+#[cfg(test)]
+mod cli_version_tests {
+    use super::parse_docker_cli_version;
+
+    /// The exact output that broke the preflight: the version token carries a
+    /// trailing comma. A naive `split('.').parse()` leaves `"3,"` unparseable
+    /// and rejects a *supported* CLI, which is the F-G2-05 regression.
+    #[test]
+    fn trailing_comma_on_the_version_token_is_parsed() {
+        assert_eq!(
+            parse_docker_cli_version("Docker version 29.1.3, build 29.1.3-0ubuntu3~24.04.2\n"),
+            Some((29, 1, 3))
+        );
+    }
+
+    #[test]
+    fn static_binary_build_string_is_parsed() {
+        assert_eq!(
+            parse_docker_cli_version("Docker version 29.1.3, build f52814d\n"),
+            Some((29, 1, 3))
+        );
+    }
+
+    #[test]
+    fn two_component_version_is_parsed() {
+        assert_eq!(
+            parse_docker_cli_version("Docker version 20.10.24, build 20.10.24\n"),
+            Some((20, 10, 24))
+        );
+    }
+
+    #[test]
+    fn suffix_after_patch_is_ignored() {
+        assert_eq!(
+            parse_docker_cli_version("Docker version 24.0.0-rc1, build abc\n"),
+            Some((24, 0, 0))
+        );
+    }
+
+    #[test]
+    fn supported_versions_are_accepted_and_old_ones_rejected() {
+        const MIN: (u32, u32, u32) = (24, 0, 0);
+        // Supported (>= MIN).
+        for ok in [
+            "Docker version 29.1.3, build x",
+            "Docker version 24.0.0, build x",
+        ] {
+            let v = parse_docker_cli_version(ok).expect("must parse");
+            assert!(v >= MIN, "{ok} must be accepted");
+        }
+        // Below MIN: the exact bookworm package that motivated F-G2-05.
+        for old in [
+            "Docker version 20.10.24, build x",
+            "Docker version 19.03.15, build x",
+        ] {
+            let v = parse_docker_cli_version(old).expect("must parse");
+            assert!(v < MIN, "{old} must be rejected as too old");
+        }
+    }
+
+    #[test]
+    fn malformed_output_is_rejected_not_defaulted() {
+        for bad in [
+            "",
+            "Docker version\n",
+            "not a version at all",
+            "Docker version ., build x",
+        ] {
+            assert_eq!(
+                parse_docker_cli_version(bad),
+                None,
+                "{bad:?} must fail closed, never default to a version"
+            );
+        }
+    }
 }

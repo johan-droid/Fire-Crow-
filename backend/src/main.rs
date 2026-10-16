@@ -163,10 +163,8 @@ async fn main() -> anyhow::Result<()> {
         // stop, swarm/k8s, Render). As container PID 1 the process must handle
         // SIGTERM explicitly or the signal is discarded and the container is
         // force-killed without draining the worker pool.
-        let mut sigterm = tokio::signal::unix::signal(
-            tokio::signal::unix::SignalKind::terminate(),
-        )
-        .expect("install SIGTERM handler");
+        let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("install SIGTERM handler");
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {}
             _ = sigterm.recv() => {}

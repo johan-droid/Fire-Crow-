@@ -51,7 +51,11 @@ RUN groupadd --system --gid 10001 firecrow \
     # Only workspace/storage is a mounted volume; the rest are boot-time
     # layout only (runtime temp goes to /tmp, a tmpfs).
     && mkdir -p /app/workspace/storage /app/workspace/reports /app/workspace/temp /app/workspace/scans /app/scanners/semgrep \
-    && chown -R 10001:10001 /app/workspace /app/scanners
+    && chown -R 10001:10001 /app/workspace /app/scanners \
+    # T1 (mTLS): the backend connects to the Docker daemon over TLS. The
+    # client certificate is mounted read-only at /etc/firecrow/docker-tls.
+    && mkdir -p /etc/firecrow/docker-tls \
+    && chown -R 10001:10001 /etc/firecrow/docker-tls
 
 # Copy compiled binary from builder
 COPY --from=builder /app/target/release/firecrow-backend /usr/local/bin/firecrow-backend

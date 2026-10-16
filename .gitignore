@@ -89,7 +89,8 @@ junit.xml
 
 # Docker & Cloud Deployment
 docker-compose.override.yml
-.docker/
+docker-authz-plugin/target/
+certs/
 .render/
 
 # IDE & Editor Settings

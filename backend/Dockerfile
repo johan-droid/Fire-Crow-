@@ -37,8 +37,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a dedicated non-root runtime user and application directories.
-# Phase A (F1): the backend reaches Docker only through the least-privilege
-# socket proxy (DOCKER_HOST); it holds no Docker socket mount and needs no
+# Phase A (F1): the backend reaches Docker only through the mTLS channel
+# (DOCKER_HOST=tcp://...:2376); it holds no Docker socket mount and needs no
 # root privileges of its own. Numeric UID/GID so the identity survives image
 # rebuilds and user-namespace remapping. No over-broad permission workarounds:
 # owned directories carry the ownership instead.
@@ -46,7 +46,11 @@ RUN groupadd --system --gid 10001 firecrow \
     && useradd --system --uid 10001 --gid firecrow --no-create-home \
         --shell /bin/false firecrow \
     && mkdir -p /app/workspace/storage /app/workspace/reports /app/workspace/temp /app/workspace/scans /app/scanners/semgrep \
-    && chown -R 10001:10001 /app/workspace /app/scanners
+    && chown -R 10001:10001 /app/workspace /app/scanners \
+    # T1 (mTLS): the backend connects to the Docker daemon over TLS. The
+    # client certificate is mounted read-only at /etc/firecrow/docker-tls.
+    && mkdir -p /etc/firecrow/docker-tls \
+    && chown -R 10001:10001 /etc/firecrow/docker-tls
 
 # Copy compiled binary from builder
 COPY --from=builder /app/target/release/firecrow-backend /usr/local/bin/firecrow-backend
