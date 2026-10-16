@@ -82,6 +82,10 @@ html:has(.lp) { scroll-behavior: smooth; scroll-padding-top: 84px; /* clear the 
 .lp-cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
 .lp-fineprint { margin-top: 20px; font-size: .875rem; color: var(--lp-muted); }
 
+/* Honest preview disclosure (signed-out visitors only) */
+.lp-demo-note { margin-top: 22px; max-width: 40em; padding: 12px 16px; border: 1px solid var(--lp-line); border-left: 3px solid var(--lp-ember); border-radius: 0 10px 10px 0; background: var(--lp-paper); font-size: .875rem; line-height: 1.5; color: var(--lp-muted); }
+.lp-demo-note strong { color: var(--lp-ink); font-weight: 700; }
+
 /* Ledger (the one elevated object) */
 .lp-ledger { background: var(--lp-panel); color: var(--lp-on-panel); border: 1px solid var(--lp-panel-line); border-radius: 18px; padding: 22px; box-shadow: 0 1px 0 #ffffff0a inset, 0 30px 60px -30px rgba(0, 0, 0, .8); min-width: 0; }
 .lp-ledger-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--lp-panel-line); }
@@ -159,13 +163,8 @@ html:has(.lp) { scroll-behavior: smooth; scroll-padding-top: 84px; /* clear the 
 /* Access */
 .lp-access { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: clamp(32px, 6vw, 96px); align-items: center; }
 .lp-access p { margin: 16px 0 28px; color: var(--lp-on-panel-muted); max-width: 32em; }
-.lp-form { display: grid; gap: 10px; }
-.lp-form label { font-weight: 600; font-size: .9375rem; }
-.lp-form-row { display: flex; gap: 10px; flex-wrap: wrap; }
-.lp-form input { flex: 1 1 220px; min-height: 46px; padding: 0 14px; border-radius: 10px; border: 1.5px solid var(--lp-panel-line); background: var(--lp-panel-2); color: var(--lp-on-panel); font: 400 1rem var(--lp-body); }
-.lp-form input::placeholder { color: #8c92a4; }
-.lp-form input:focus-visible { outline-color: #ff9a6b; }
-.lp-access .lp-sent { margin: 0; padding: 18px; border: 1px solid var(--lp-panel-line); border-radius: 12px; color: var(--lp-on-panel); }
+.lp-access-ask { display: grid; gap: 18px; justify-items: start; }
+.lp-access-ask p { margin: 0; }
 
 /* FAQ */
 .lp-faq { border-top: 1px solid var(--lp-rule); }

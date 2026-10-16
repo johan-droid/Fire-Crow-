@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { BrandMark } from './BrandMark';
 import { Ledger } from './landing/site/Ledger';
 import { HeroCanvas3D } from './scene';
@@ -61,7 +61,19 @@ const NAV = [
   { href: '#failures', label: 'When scans fail' },
   { href: '#faq', label: 'FAQ' },
   { href: '#studio', label: 'Studio' },
+  { href: '#access', label: 'Request access' },
 ];
+
+/**
+ * Shown only to signed-out visitors. On the free-tier preview a cold backend
+ * takes tens of seconds to answer, and real scanner execution is unavailable
+ * until the supported Docker topology is in place. Saying so up front is the
+ * honest alternative to a spinner that looks like a hang or a fake result.
+ */
+const DEMO_NOTE = {
+  tag: 'Preview environment',
+  body: 'This deployment runs on the free tier as a demo: the API may take up to a minute to wake on the first request, and live scanner execution stays disabled until the audited Docker boundary is provisioned.',
+};
 
 const STUDIO_PILLARS = [
   {
@@ -74,7 +86,7 @@ const STUDIO_PILLARS = [
     tag: 'Zero-trust runtime',
     title: 'Ephemeral sandbox isolation',
     body: 'Developer tools must never compromise the systems they audit. Fire Crow runs every scanner in a disposable container with all Linux capabilities dropped, mounting your code read-only and discarding the container the moment it finishes.',
-    meta: 'privileges: dropped · network: airgapped',
+    meta: 'privileges: dropped · network: none (OSV via filtered proxy)',
   },
   {
     tag: 'Studio ecosystem',
@@ -93,8 +105,6 @@ const FAILURE_ROWS = [
 
 export default function LandingPage({ user, onNavigateLogin, onNavigateConsole }: LandingPageProps) {
   const [menu, setMenu] = useState(false);
-  const [email, setEmail] = useState('');
-  const [sent, setSent] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -124,11 +134,6 @@ export default function LandingPage({ user, onNavigateLogin, onNavigateConsole }
 
   const primary = user && onNavigateConsole ? onNavigateConsole : onNavigateLogin;
   const primaryLabel = user ? 'Open console' : 'Sign in to run an audit';
-
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (email.trim()) setSent(true);
-  };
 
   return (
     <div className="lp" id="top">
@@ -191,6 +196,11 @@ export default function LandingPage({ user, onNavigateLogin, onNavigateConsole }
                 <button type="button" className="lp-btn lp-btn-ember" onClick={primary}>{primaryLabel}</button>
                 <a href="#how" className="lp-btn lp-btn-quiet">See how a scan runs</a>
               </div>
+              {!user && (
+                <p className="lp-demo-note" role="note">
+                  <strong>{DEMO_NOTE.tag}</strong> — {DEMO_NOTE.body}
+                </p>
+              )}
               <p className="lp-fineprint">The audit shown is a sample. Select a finding to open it.</p>
             </Reveal>
             <Reveal delay={120}><Ledger /></Reveal>
@@ -276,25 +286,20 @@ export default function LandingPage({ user, onNavigateLogin, onNavigateConsole }
               </p>
               <button type="button" className="lp-btn lp-btn-ember" onClick={primary}>{primaryLabel}</button>
             </div>
-            {sent ? (
-              <p className="lp-sent" role="status">Request received. We&rsquo;ll email you about capacity and onboarding.</p>
-            ) : (
-              <form className="lp-form" onSubmit={submit}>
-                <label htmlFor="lp-email">Work email for dedicated capacity</label>
-                <div className="lp-form-row">
-                  <input
-                    id="lp-email"
-                    type="email"
-                    required
-                    autoComplete="email"
-                    placeholder="name@company.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                  <button type="submit" className="lp-btn lp-btn-light">Request access</button>
-                </div>
-              </form>
-            )}
+            <div className="lp-access-ask">
+              <p>
+                Dedicated capacity and self-hosted runners are arranged case by case.
+                Open a request on GitHub and we&rsquo;ll pick it up.
+              </p>
+              <a
+                className="lp-btn lp-btn-light"
+                href={`${REPO_URL}/issues/new`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Request capacity on GitHub
+              </a>
+            </div>
           </div>
         </section>
 

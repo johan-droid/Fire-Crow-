@@ -153,8 +153,8 @@ export const CAPABILITIES: CapabilityItem[] = [
     id: 'isolation',
     eyebrow: 'CONTAINER SECURITY',
     title: 'Ephemeral Sandbox Isolation',
-    description: 'Scanners execute inside disposable, non-root micro-containers with --cap-drop=ALL, read-only repository mounts, and zero network egress.',
-    technicalDetail: 'Container workspaces are destroyed immediately upon audit completion. Code is never stored or used for model training.',
+    description: 'Scanners execute inside disposable, non-root micro-containers with --cap-drop=ALL, read-only repository mounts, and no route off the host.',
+    technicalDetail: 'Semgrep and Gitleaks run with --network=none. OSV-Scanner attaches only to an internal network whose single reachable destination is a filtering egress proxy. Container workspaces are destroyed on completion; code is never stored or used for model training.',
     badge: 'Zero Host Access',
   },
   {
@@ -192,10 +192,10 @@ export const CAPABILITIES: CapabilityItem[] = [
   {
     id: 'artifacts',
     eyebrow: 'AUDIT REPORTING',
-    title: 'Exportable Compliance Artifacts',
-    description: 'Generate structured JSON ledgers, printable HTML views, and SOC2 / ISO-27001 control-aligned PDF reports on demand.',
-    technicalDetail: 'Cryptographically hashed audit records with full execution timestamps and scanner version metadata.',
-    badge: 'PDF / JSON / HTML',
+    title: 'Exportable Audit Artifacts',
+    description: 'Generate structured JSON ledgers, printable HTML views, and Markdown reports on demand.',
+    technicalDetail: 'Cryptographically hashed audit records with full execution timestamps and scanner version metadata. These are audit artifacts, not a compliance certification.',
+    badge: 'JSON / HTML / Markdown',
   },
 ];
 
@@ -211,7 +211,7 @@ export const WORKFLOW_STEPS: WorkflowStep[] = [
     number: '02',
     title: 'Sandboxed Scanner Execution',
     description: 'Dedicated scanner containers spin up with zero host privileges, mounting source files in read-only mode to prevent script execution.',
-    specs: ['--cap-drop=ALL', 'Read-only source mount', 'Egress blocked'],
+    specs: ['--cap-drop=ALL', 'Read-only source mount', 'Internal-only network'],
   },
   {
     number: '03',
@@ -223,7 +223,7 @@ export const WORKFLOW_STEPS: WorkflowStep[] = [
     number: '04',
     title: 'Deterministic Report & Export',
     description: 'The audit results are finalized into an immutable security ledger with mathematical scoring, actionable remediation, and optional AI summaries.',
-    specs: ['Deterministic score (0-100)', 'Actionable remediation', 'JSON / HTML / PDF export'],
+    specs: ['Deterministic score (0-100)', 'Actionable remediation', 'JSON / HTML / Markdown export'],
   },
 ];
 
@@ -239,7 +239,7 @@ export const PRICING_TIERS: PricingTier[] = [
       { text: '5 Repository audits per month' },
       { text: 'Tri-engine scanning (SAST, Secrets, CVEs)' },
       { text: 'Ephemeral container isolation' },
-      { text: 'Standard PDF & JSON report exports' },
+      { text: 'Standard JSON, HTML & Markdown report exports' },
       { text: 'Community support via GitHub' },
     ],
     ctaLabel: 'Get Started',
@@ -256,7 +256,7 @@ export const PRICING_TIERS: PricingTier[] = [
       { text: 'Priority scanner container execution' },
       { text: 'Tri-engine analysis (Semgrep, OSV, Gitleaks)' },
       { text: 'Optional AI executive narrative briefing' },
-      { text: 'SOC2 & ISO-27001 mapped PDF reports' },
+      { text: 'Cryptographically hashed audit records' },
       { text: 'Interactive audit findings explorer' },
     ],
     ctaLabel: 'Start Pro Trial',
@@ -304,6 +304,6 @@ export const FAQ_ITEMS: FAQItem[] = [
   {
     id: 'faq-5',
     question: 'How do I download or share audit reports?',
-    answer: 'Every completed audit can be viewed in the interactive console or downloaded as a standalone JSON data ledger, printable HTML view, or formal executive PDF report.\n\nReports include cryptographic verification hashes and line-level remediation evidence.',
+    answer: 'Every completed audit can be viewed in the interactive console or downloaded as a standalone JSON data ledger, printable HTML view, or a Markdown report.\n\nReports include cryptographic verification hashes and line-level remediation evidence.',
   },
 ];
