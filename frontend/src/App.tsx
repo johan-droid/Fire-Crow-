@@ -6,8 +6,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 // Single API-origin contract (FC-DEP-01): base URL resolution, credentials,
 // and error handling live in ./api/client — never re-implemented here.
 import { api, getApiBase } from './api/client';
-import { ApiError } from './api/errors';
-import { parseSsePayload } from './api/sse';
+import { ApiError, withTimeout } from './api/errors';
+import { parseSsePayload, sseReconnectDelay, SSE_MAX_RECONNECTS } from './api/sse';
 import { filterFindings, fromDetailFindings, fromReportFindings, isSafeExternalUrl } from './api/explorer';
 import { buildSubmitRequest, isValidCommitSha } from './api/validation';
 import type {
@@ -92,15 +92,22 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
     'Content-Type': 'application/json',
     ...(options.headers as Record<string, string> || {}),
   };
-  const res = await fetch(`${API_BASE}${endpoint}`, {
-    credentials: 'include',
-    ...options,
-    headers,
-  });
+  // Bounded: a cold free-tier backend must surface a 408, never a hang.
+  // Callers already treat non-2xx as responses; timeout arrives as ApiError.
+  return withTimeout(
+    (signal) =>
+      fetch(`${API_BASE}${endpoint}`, {
+        credentials: 'include',
+        ...options,
+        headers,
+        signal,
+      }),
+    25_000,
+    `Request to ${endpoint}`,
+  );
 
   // Session cookies are HttpOnly: only the server's logout response can clear
   // them, never JavaScript. 401s surface to callers as responses.
-  return res;
 };
 
 // Lightweight in-memory cache for dashboard summary (5 s TTL, avoids duplicate calls on re-render)
@@ -442,6 +449,9 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
     let sse: EventSource | null = null;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
     let sseFailed = false;
+    let streamDone = false;
+    let sseAttempts = 0;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
 
     const fetchPhases = async () => {
@@ -476,6 +486,25 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
     // SSE: Authenticate via HttpOnly credentials (withCredentials: true)
     const sseUrl = `${API_BASE}/sse/job/${targetJobId}`;
 
+    // A dead stream falls back to polling — but not on the first failure:
+    // a cold free-tier backend needs seconds, so re-establish the stream
+    // with bounded backoff first, and poll only after reconnects run out.
+    const giveUpToPolling = () => {
+      if (sseFailed) return;
+      sseFailed = true;
+      try { sse?.close(); } catch {}
+      sse = null;
+      startPolling();
+    };
+    const scheduleReconnect = () => {
+      if (streamDone) return;
+      sseAttempts += 1;
+      try { sse?.close(); } catch {}
+      sse = null;
+      if (sseAttempts > SSE_MAX_RECONNECTS || cancelled) { giveUpToPolling(); return; }
+      reconnectTimer = setTimeout(() => { if (!cancelled) connectSse(); }, sseReconnectDelay(sseAttempts));
+    };
+    const connectSse = () => {
     try {
       sse = new EventSource(sseUrl, { withCredentials: true });
       const onUpdate = (ev: MessageEvent) => {
@@ -495,6 +524,8 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
         }
         try { sse?.close(); } catch {}
         sse = null;
+        streamDone = true;
+        if (reconnectTimer) clearTimeout(reconnectTimer);
         void fetchJobsLite(); // final sync
       };
       const onErrorEvent = (ev: MessageEvent) => {
@@ -508,23 +539,23 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
       sse.addEventListener('done', onDone as EventListener);
       sse.addEventListener('error', onErrorEvent as EventListener);
       sse.onerror = () => {
-        if (sseFailed) return;
-        sseFailed = true;
-        try { sse?.close(); } catch {}
-        sse = null;
-        startPolling();
+        scheduleReconnect();
       };
-      // If not OPEN in 2.5s → fallback (backend emits instantly, so this catches auth/firewall blocks)
+      // If not OPEN in 2.5s → reconnect path (backend emits instantly when
+      // warm, so this catches auth/firewall blocks; cold starts retry above)
       setTimeout(() => {
         if (!cancelled && sse && sse.readyState !== 1 && !sseFailed) {
-          sseFailed = true; try { sse.close(); } catch {} sse = null; startPolling();
+          scheduleReconnect();
         }
       }, 2500);
       // If SSE never fires update within 4s, also trigger phases fetch to avoid blank
       setTimeout(() => { if (!cancelled && !sseFailed && sse) void fetchPhases(); }, 4000);
     } catch {
-      startPolling();
+      giveUpToPolling();
     }
+    }; // connectSse
+
+    connectSse();
 
     // Safety net: if SSE object never created
     setTimeout(() => { if (!cancelled && !sse && !pollTimer) startPolling(); }, 3200);
@@ -533,6 +564,7 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
       cancelled = true;
       try { sse?.close(); } catch {}
       if (pollTimer) clearInterval(pollTimer);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
     };
   }, [location.pathname, activeMonitorJobId, fetchJobsLite]);
 

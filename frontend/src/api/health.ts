@@ -114,18 +114,19 @@ export const CONNECTION_STYLES: Record<ConnectionState, StateStyle> = {
 
 /** Conservative polling cadence: no request storm, no overlap. */
 export const HEALTH_POLL_MS = 45_000;
-export const HEALTH_TIMEOUT_MS = 8_000;
+/** Conservative probe budget: a free-tier cold start needs tens of seconds. */
+export const HEALTH_TIMEOUT_MS = 30_000;
 /** Backoff ceiling: after repeated failures, poll no slower than this. */
 export const HEALTH_POLL_MAX_MS = 300_000;
 /**
  * Consecutive timeouts before `waking` is reported as `offline` instead.
  *
- * A single timeout is ambiguous (cold start on a free tier). Three in a row
- * with our own bounded timeout is no longer explained by a cold start, so the
- * indicator stops hedging. Escalation is about duration of *our* waits, not
- * about knowing the platform's internal state.
+ * A single timeout is ambiguous (cold start on a free tier). Four in a row
+ * with our own 30s bounded timeout (~2 minutes of waiting) is no longer
+ * explained by a cold start, so the indicator stops hedging. Escalation is
+ * about duration of *our* waits, not about knowing the platform's state.
  */
-export const WAKING_TIMEOUT_ESCALATION = 3;
+export const WAKING_TIMEOUT_ESCALATION = 4;
 
 /**
  * Next poll delay given consecutive transport-level failures (offline or

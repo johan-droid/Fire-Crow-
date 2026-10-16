@@ -1,7 +1,7 @@
 // Thin typed client for the existing Axum API. No business logic, no score or
 // coverage recomputation: the backend's deterministic report is the source of
 // truth. Every historical action takes an explicit execution_id.
-import { ApiError, DELIVERY_TIMEOUT_MS, deliveryTimeoutNote, toApiError, withTimeout } from './errors.js';
+import { ApiError, DELIVERY_TIMEOUT_MS, deliveryTimeoutNote, fetchWithRetry, toApiError, withTimeout } from './errors.js';
 import { resolveApiBase } from './api-base.js';
 import {
   auditPaths,
@@ -34,12 +34,23 @@ export function getApiBase(): string {
   return resolveApiBase(import.meta.env.VITE_API_URL as string | undefined);
 }
 
-async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${getApiBase()}${path}`, {
-    credentials: 'include',
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
-  });
+const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+async function requestJson<T>(path: string, init: RequestInit = {}, opts: { timeoutMs?: number } = {}): Promise<T> {
+  const method = (init.method ?? 'GET').toUpperCase();
+  // Retries only for idempotent methods: a timed-out POST may already have
+  // executed server-side, and retrying it could double-submit (see
+  // fetchWithRetry). Every attempt is bounded; a cold backend surfaces fast.
+  const res = await fetchWithRetry(
+    `${getApiBase()}${path}`,
+    {
+      credentials: 'include',
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) },
+    },
+    fetch,
+    { retry: IDEMPOTENT_METHODS.has(method), timeoutMs: opts.timeoutMs },
+  );
   if (!res.ok) throw await toApiError(res);
   const text = await res.text();
   if (!text.trim()) {
@@ -55,10 +66,15 @@ async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> 
 
 /** Non-JSON downloads (markdown/html reports): resolved only on 2xx + body. */
 async function requestText(path: string, accept: string): Promise<string> {
-  const res = await fetch(`${getApiBase()}${path}`, {
-    credentials: 'include',
-    headers: { Accept: accept },
-  });
+  const res = await fetchWithRetry(
+    `${getApiBase()}${path}`,
+    {
+      credentials: 'include',
+      headers: { Accept: accept },
+    },
+    fetch,
+    { retry: true },
+  );
   if (!res.ok) throw await toApiError(res);
   return res.text();
 }

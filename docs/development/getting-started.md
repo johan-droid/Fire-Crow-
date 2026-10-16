@@ -102,10 +102,13 @@ cargo run
 ```
 
 ### Step D: Configure Frontend Environment
-Create `frontend/.env.development`:
+Create `frontend/.env.development` (leave the URL empty to use the Vite dev
+proxy, which forwards same-origin `/api/v1` to the backend):
 ```env
-VITE_API_URL=http://localhost:8080
+VITE_API_URL=
 ```
+(To bypass the proxy, use the absolute backend origin with the version
+prefix: `VITE_API_URL=http://localhost:8000/api/v1`.)
 
 Install packages and run Vite dev server:
 ```bash

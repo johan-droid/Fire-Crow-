@@ -88,6 +88,85 @@ export function isApiError(err: unknown): err is ApiError {
 /** Delivery POST budget: the outcome stays unknown after this, never failed. */
 export const DELIVERY_TIMEOUT_MS = 60_000;
 
+/** True for statuses the caller may retry with backoff, never tight-loop. */
+export function isRetryableStatus(status: number): boolean {
+  return status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+/** Per-attempt budget: under the server's 30s cutoff so the client speaks first. */
+export const REQUEST_TIMEOUT_MS = 25_000;
+/** Bounded retries: 3 attempts max, then the error surfaces honestly. */
+export const REQUEST_MAX_ATTEMPTS = 3;
+
+function retryDelayMs(attempt: number, res: Response | null, baseDelayMs = 500): number {
+  const retryAfter = res?.headers.get('Retry-After');
+  if (retryAfter) {
+    const secs = Number(retryAfter);
+    if (Number.isFinite(secs) && secs >= 0) return Math.min(secs * 1000, 10_000);
+  }
+  return Math.min(baseDelayMs * 2 ** (attempt - 1), 4000);
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Single-shot fetch with a per-attempt timeout and bounded retries.
+ *
+ * Retries only when `retry` is true (idempotent methods — never blindly
+ * re-POST: a client timeout cannot cancel server-side work, so retrying a
+ * mutation could double-submit). Respects `Retry-After`, links the caller's
+ * signal (unmount/sign-out cancels immediately), and throws the last
+ * ApiError / network error when attempts run out — never a fabricated result.
+ */
+export async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  fetchImpl: typeof fetch,
+  opts: { timeoutMs?: number; maxAttempts?: number; retry?: boolean; baseDelayMs?: number } = {},
+): Promise<Response> {
+  const timeoutMs = opts.timeoutMs ?? REQUEST_TIMEOUT_MS;
+  const maxAttempts = opts.maxAttempts ?? REQUEST_MAX_ATTEMPTS;
+  const baseDelayMs = opts.baseDelayMs ?? 500;
+  const retry = opts.retry ?? true;
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const ctrl = new AbortController();
+    let ownTimeout = false;
+    const timer = setTimeout(() => {
+      ownTimeout = true;
+      ctrl.abort();
+    }, timeoutMs);
+    const onCallerAbort = () => ctrl.abort();
+    init.signal?.addEventListener('abort', onCallerAbort, { once: true });
+    try {
+      const res = await fetchImpl(url, { ...init, signal: ctrl.signal });
+      if (retry && attempt < maxAttempts && isRetryableStatus(res.status)) {
+        await sleep(retryDelayMs(attempt, res, baseDelayMs));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      if (ownTimeout && !init.signal?.aborted) {
+        // Our deadline fired (not the caller's cancel): a 408 with the
+        // honest blast radius — the server may still have processed it.
+        throw new ApiError(
+          408,
+          'timeout',
+          'Request timed out — the outcome is unknown. Retry idempotent reads; do not blindly resubmit.',
+          true,
+        );
+      }
+      lastError = err;
+      if (!retry || init.signal?.aborted || attempt >= maxAttempts) throw err;
+      await sleep(retryDelayMs(attempt, null, baseDelayMs));
+    } finally {
+      clearTimeout(timer);
+      init.signal?.removeEventListener('abort', onCallerAbort);
+    }
+  }
+  throw lastError;
+}
+
 /**
  * Timeout copy per channel. States the outcome is unknown and points at the
  * persisted delivery status — never success, never conclusive failure, never

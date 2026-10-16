@@ -43,3 +43,14 @@ describe('severityRank', () => {
     assert.deepEqual(ranks, [0, 1, 2, 3, 4, 5, 5]);
   });
 });
+
+describe('sseReconnectDelay (bounded backoff across cold starts)', () => {
+  it('backs off 2s/4s/8s/16s then caps', async () => {
+    const { sseReconnectDelay, SSE_MAX_RECONNECTS } = await import('../src/api/sse.js');
+    assert.deepEqual(
+      [1, 2, 3, 4, 5, 10].map(sseReconnectDelay),
+      [2000, 4000, 8000, 16000, 16000, 16000],
+    );
+    assert.equal(SSE_MAX_RECONNECTS, 4);
+  });
+});

@@ -52,7 +52,7 @@ In the Vercel project settings under **Environment Variables**, configure:
 
 | Variable | Value | Description |
 | :--- | :--- | :--- |
-| `VITE_API_URL` | `https://firecrow-backend.onrender.com` | Base URL of your deployed Render backend |
+| `VITE_API_URL` | `https://firecrow-backend.onrender.com` | Base URL of your deployed Render backend (the client appends `/api/v1` automatically; a value ending in `/api/v1` also works) |
 | `VITE_APP_NAME` | `FireCrow` | Application brand name |
 
 ---

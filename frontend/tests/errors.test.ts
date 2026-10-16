@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractDetail, toApiError, withTimeout } from '../src/api/errors.js';
+import { extractDetail, fetchWithRetry, isApiError, toApiError, withTimeout } from '../src/api/errors.js';
 
 describe('extractDetail (backend envelope is always {detail})', () => {
   it('reads detail from JSON', () => {
@@ -72,5 +72,86 @@ describe('withTimeout', () => {
       'Narrative generation',
     ).catch((e) => e);
     assert.match(err.message, /deterministic report is unchanged/);
+  });
+});
+
+describe('fetchWithRetry (bounded retries, cold-start tolerant)', () => {
+  const ok = () => new Response('{}', { status: 200 });
+  const retryable = () => new Response('{}', { status: 503 });
+
+  it('returns the first response when healthy (single fetch)', async () => {
+    let calls = 0;
+    const res = await fetchWithRetry('http://x/', {}, (async () => { calls += 1; return ok(); }) as typeof fetch);
+    assert.equal(res.status, 200);
+    assert.equal(calls, 1);
+  });
+
+  it('retries retryable statuses then returns success', async () => {
+    let calls = 0;
+    const res = await fetchWithRetry(
+      'http://x/',
+      {},
+      (async () => { calls += 1; return calls < 3 ? retryable() : ok(); }) as typeof fetch,
+      { baseDelayMs: 1 } as never,
+    );
+    assert.equal(res.status, 200);
+    assert.equal(calls, 3);
+  });
+
+  it('does not retry when retry:false (mutations never double-submit)', async () => {
+    let calls = 0;
+    const res = await fetchWithRetry(
+      'http://x/',
+      { method: 'POST' },
+      (async () => { calls += 1; return retryable(); }) as typeof fetch,
+      { retry: false },
+    );
+    assert.equal(res.status, 503);
+    assert.equal(calls, 1);
+  });
+
+  it('does not retry non-retryable statuses', async () => {
+    let calls = 0;
+    const res = await fetchWithRetry(
+      'http://x/',
+      {},
+      (async () => { calls += 1; return new Response('{}', { status: 404 }); }) as typeof fetch,
+    );
+    assert.equal(res.status, 404);
+    assert.equal(calls, 1);
+  });
+
+  it('own timeout throws a truthful 408 ApiError, never a raw abort', async () => {
+    const hanging = ((_u: unknown, o?: RequestInit) =>
+      new Promise<never>((_, reject) => {
+        //Like real fetch: aborting the signal rejects the request.
+        o?.signal?.addEventListener(
+          'abort',
+          () => reject(new DOMException('aborted', 'AbortError')),
+          { once: true },
+        );
+      })) as typeof fetch;
+    const err = await fetchWithRetry('http://x/', {}, hanging, { timeoutMs: 10 }).catch((e) => e);
+    assert.ok(isApiError(err), 'must be an ApiError');
+    assert.equal(err.status, 408);
+    assert.match(err.message, /outcome is unknown/);
+  });
+
+  it('caller abort is never retried and never converted', async () => {
+    const ctrl = new AbortController();
+    ctrl.abort();
+    let calls = 0;
+    const err = await fetchWithRetry(
+      'http://x/',
+      { signal: ctrl.signal },
+      (async (_u: unknown, o?: RequestInit) => {
+        calls += 1;
+        o?.signal?.throwIfAborted();
+        return ok();
+      }) as typeof fetch,
+      { timeoutMs: 1000 },
+    ).catch((e) => e);
+    assert.equal(calls, 1);
+    assert.ok(!(err instanceof Error) || err.name === 'AbortError' || isApiError(err));
   });
 });

@@ -39,3 +39,17 @@ export function severityRank(s: string): number {
     default: return 5;
   }
 }
+
+/**
+ * Reconnect delay for a failed EventSource, by failed attempt (1-based).
+ * Bounded exponential backoff (2s/4s/8s/16s, capped): spans a free-tier
+ * cold start across 4 attempts (~30s) without hammering a struggling
+ * backend, then the caller falls back to polling. Pure for tests.
+ */
+export function sseReconnectDelay(failedAttempt: number): number {
+  if (failedAttempt <= 0) return 2000;
+  return Math.min(2000 * 2 ** (failedAttempt - 1), 16000);
+}
+
+/** Reconnect attempts before giving up the stream for polling fallback. */
+export const SSE_MAX_RECONNECTS = 4;

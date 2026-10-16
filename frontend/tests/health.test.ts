@@ -68,8 +68,8 @@ describe('state labels always carry text + scanner disclaimer', () => {
 });
 
 describe('polling budget is conservative', () => {
-  it('interval is 30-60s and timeout bounded', () => {
-    assert.ok(HEALTH_TIMEOUT_MS >= 3000 && HEALTH_TIMEOUT_MS <= 15_000, 'timeout must be bounded');
+  it('interval is 30-60s and timeout bounded for cold starts', () => {
+    assert.ok(HEALTH_TIMEOUT_MS >= 3000 && HEALTH_TIMEOUT_MS <= 60_000, 'timeout must be bounded');
   });
 });
 

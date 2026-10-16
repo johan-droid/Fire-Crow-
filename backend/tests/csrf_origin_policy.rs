@@ -156,3 +156,47 @@ async fn security_f4_read_only_requests_ignore_the_origin_policy(pool: PgPool) {
         .await;
     assert_eq!(res.status_code(), 200, "/health must stay reachable");
 }
+
+/// Preflight on a decoupled (Vercel -> Render) topology answers with the
+/// exact-origin echo, a cacheable max-age (cold starts must not pay a
+/// preflight per call), and exposes Retry-After so browser JS can honor the
+/// documented backoff contract.
+#[sqlx::test(migrations = "./migrations")]
+async fn security_f4_preflight_carries_free_tier_cors_contract(pool: PgPool) {
+    use axum::http::Method;
+    let (app, _state) = csrf_app(pool).await;
+    let res = app
+        .method(Method::OPTIONS, "/api/v1/auth/exchange")
+        .add_header("origin", ALLOWED_ORIGIN)
+        .add_header("access-control-request-method", "POST")
+        .await;
+    assert_eq!(
+        res.status_code(),
+        200,
+        "allowed-origin preflight must succeed"
+    );
+    let headers = res.headers();
+    assert_eq!(
+        headers
+            .get("access-control-allow-origin")
+            .map(|v| v.to_str().unwrap()),
+        Some(ALLOWED_ORIGIN),
+        "exact origin echo, never a wildcard with credentials"
+    );
+    assert!(
+        headers.contains_key("access-control-max-age"),
+        "preflight must be cacheable for cold-start frugality"
+    );
+    let exposed = app
+        .get("/health")
+        .add_header("origin", ALLOWED_ORIGIN)
+        .await
+        .headers()
+        .get("access-control-expose-headers")
+        .map(|v| v.to_str().unwrap().to_lowercase())
+        .unwrap_or_default();
+    assert!(
+        exposed.contains("retry-after"),
+        "Retry-After must be readable by browser JS for backoff: {exposed}"
+    );
+}
