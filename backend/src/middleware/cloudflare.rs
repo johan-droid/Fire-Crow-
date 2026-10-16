@@ -184,7 +184,7 @@ pub fn trusted_proxies() -> &'static [(IpAddr, u8)] {
     TRUSTED_PROXY_CIDRS.get_or_init(Vec::new).as_slice()
 }
 
-fn is_trusted_proxy_ip(ip: IpAddr, trusted: &[(IpAddr, u8)]) -> bool {
+pub(crate) fn is_trusted_proxy_ip(ip: IpAddr, trusted: &[(IpAddr, u8)]) -> bool {
     trusted
         .iter()
         .any(|(net, bits)| ip_in_cidr(ip, *net, *bits))

@@ -20,6 +20,7 @@ import type {
   JobDetailResponse,
   JobResponse,
   JobsLiteResponse,
+  LoginResponse,
   NarrativeResponse,
   PhaseLedgerEntry,
   StatusResponse,
@@ -69,9 +70,14 @@ async function requestText(path: string, accept: string): Promise<string> {
 export const api = {
   // --- auth / user ---
   login: (username: string, password: string) =>
-    requestJson<unknown>(authPaths.login(), {
+    requestJson<LoginResponse>(authPaths.login(), {
       method: 'POST',
       body: JSON.stringify({ username, password }),
+    }),
+  loginMfa: (mfaToken: string, code: string) =>
+    requestJson<LoginResponse>(authPaths.loginMfa(), {
+      method: 'POST',
+      body: JSON.stringify({ mfa_token: mfaToken, code }),
     }),
   register: (username: string, email: string, password: string) =>
     requestJson<unknown>(authPaths.register(), {

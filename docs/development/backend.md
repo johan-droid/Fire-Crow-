@@ -30,8 +30,8 @@ Requests execute through an onion-layered Tower middleware stack:
 1. **Trace & Request ID**: Assigns a unique `X-Request-ID` UUID to every incoming HTTP request and initializes Tokio tracing spans.
 2. **CORS Validation**: Evaluates the `Origin` header against `CORS_ALLOWED_ORIGINS`. Preflight `OPTIONS` requests receive validated headers.
 3. **Governor Rate Limiting**: Token-bucket rate limiting applied globally and with custom quota buckets on sensitive endpoints.
-4. **Session Extraction & Cookie Guard**: Decrypts the `fc_session` cookie and verifies user state against the database.
-5. **Double-Submit CSRF Guard**: Validates that mutating requests (`POST`, `PUT`, `DELETE`, `PATCH`) carry an `X-CSRF-Token` matching the client-accessible `fc_csrf` token.
+4. **Session Extraction & Cookie Guard**: Decrypts the `fc_access_token` cookie and verifies user state against the database.
+5. **Origin-Allowlist CSRF Guard**: Validates that mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`) carry an `Origin` header in the configured origin allowlist; cookie-bearing mutations with no `Origin` header are rejected, while cookie-less `Authorization: Bearer` callers pass through unaffected.
 
 ---
 
@@ -42,7 +42,7 @@ Located at `backend/src/agents/fetch.rs`, the `FetchAgent` implements robust def
 ```mermaid
 flowchart TD
     GH["GitHub Archive Stream (tar.gz)"] --> StreamReader["HTTP Chunked Reader (8KB buffers)"]
-    StreamReader --> SizeCheck{"Accumulated bytes > 50MB?"}
+    StreamReader --> SizeCheck{"Download > 100MB or unpack > 150MB?"}
     SizeCheck -- Yes --> Abort["Abort Download & Delete Partial Work"]
     SizeCheck -- No --> Gunzip["Streaming Gzip Decompressor"]
     Gunzip --> TarReader["Pax/UStar Tar Entry Validator"]
@@ -55,7 +55,7 @@ flowchart TD
 
 ### Key Intake Bounds:
 - **Streaming Ingestion**: The HTTP body is consumed in bounded chunks via `reqwest::Response::bytes_stream()`. The archive is never buffered entirely into memory.
-- **Decompression Ceiling (Anti-Bomb)**: Maximum unpacked archive size is hard-capped at **50 MB** (`MAX_UNPACK_BYTES = 52_428_800`). If an archive expands beyond 50MB, extraction aborts immediately with a `QuotaExceeded` error.
+- **Decompression Ceiling (Anti-Bomb)**: The compressed download is capped at **100 MB** (`MAX_DOWNLOAD_BYTES`) and the maximum unpacked archive size is hard-capped at **150 MB** (`MAX_TOTAL_BYTES = 157,286,400`, pinned by `tests/repo_fetch_bounds.rs`); individual files are capped at 20 MB (`MAX_FILE_BYTES`) and the tree at 20,000 files (`MAX_FILE_COUNT`). If an archive expands beyond the budget, extraction aborts immediately with a `QuotaExceeded` / HTTP `413` error.
 - **Path Traversal Protection**: Every tar entry path is inspected. Any entry containing relative directory traversal components (`..`) or leading root slashes (`/`) is rejected.
 - **Symlink Jail**: Symlinks pointing outside the ephemeral workspace directory are dropped to prevent reading host system files (`/etc/passwd`, Docker socket, etc.).
 - **Permissions Cleansing**: File permissions inside the extracted directory are normalized to `0600` for files and `0700` for directories. Executable bits (`0755`) are removed from all untrusted files.

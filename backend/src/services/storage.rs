@@ -109,6 +109,17 @@ impl StorageBackend for S3StorageBackend {
                 }
             })?;
 
+        // F-02-10 (ZT-06-10): reject oversized objects before collecting the
+        // body into memory. S3/R2 always answers with Content-Length; if the
+        // header were ever absent the collect proceeds as before (comment
+        // documents the residual).
+        if output
+            .content_length()
+            .is_some_and(|len| len > crate::agents::fetch::MAX_DOWNLOAD_BYTES as i64)
+        {
+            return Err(AppError::PayloadTooLarge);
+        }
+
         let data = output.body.collect().await.map_err(|e| {
             AppError::StorageError(format!("Failed reading R2 response body: {}", e))
         })?;
@@ -185,7 +196,14 @@ impl StorageBackend for LocalStorageBackend {
         if key.contains("..") || key.starts_with('/') {
             return Err(AppError::Forbidden("Invalid key".into()));
         }
-        std::fs::read(self.base_dir.join(key)).map_err(|e| {
+        let path = self.base_dir.join(key);
+        // F-02-10 (ZT-06-10): bound the read before materializing the buffer —
+        // an unbounded fs::read let one oversized artifact exhaust memory.
+        let len = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        if len > crate::agents::fetch::MAX_DOWNLOAD_BYTES {
+            return Err(AppError::PayloadTooLarge);
+        }
+        std::fs::read(path).map_err(|e| {
             // A DB row whose backing object is gone (retention sweep, manual
             // deletion, half-completed upload) is a missing resource, not a
             // server fault: 404 lets the client distinguish "no such artifact"
@@ -266,7 +284,12 @@ impl StorageService {
         {
             return Err(AppError::BadRequest("Invalid artifact path segment".into()));
         }
-        let key = format!("artifacts/{}/{}/{}", job_id.trim(), artifact_type.trim(), file_name.trim());
+        let key = format!(
+            "artifacts/{}/{}/{}",
+            job_id.trim(),
+            artifact_type.trim(),
+            file_name.trim()
+        );
         let sha256 = format!("{:x}", Sha256::digest(&data));
         let content_type = MimeGuess::from_path(file_name)
             .first_or_octet_stream()
@@ -304,6 +327,40 @@ fn classify_get_object_error(err: &aws_sdk_s3::operation::get_object::GetObjectE
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// F-02-10 (ZT-06-10): artifact downloads are bounded by the documented
+    /// 100 MiB cap — an oversized object is rejected BEFORE it is materialized
+    /// in memory, and an under-cap object still round-trips. The over-cap file
+    /// is sparse (`File::set_len`), so the test costs no disk.
+    #[tokio::test]
+    async fn local_download_enforces_the_artifact_size_bound() {
+        let dir = std::env::temp_dir().join(format!("fc-artifact-cap-{}", uuid::Uuid::new_v4()));
+        let backend = LocalStorageBackend::new(&dir);
+
+        let big = dir.join("artifacts/job1/report.bin");
+        std::fs::create_dir_all(big.parent().unwrap()).unwrap();
+        let f = std::fs::File::create(&big).unwrap();
+        f.set_len(crate::agents::fetch::MAX_DOWNLOAD_BYTES + 1)
+            .unwrap();
+        drop(f);
+        let err = backend
+            .download("artifacts/job1/report.bin")
+            .await
+            .expect_err("over-cap artifact must be rejected");
+        assert!(
+            matches!(err, AppError::PayloadTooLarge),
+            "expected PayloadTooLarge, got {err:?}"
+        );
+
+        std::fs::write(dir.join("artifacts/job1/small.bin"), b"ok").unwrap();
+        let bytes = backend
+            .download("artifacts/job1/small.bin")
+            .await
+            .expect("under-cap artifact downloads");
+        assert_eq!(bytes, b"ok");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn missing_s3_key_maps_to_not_found_without_masking_other_failures() {

@@ -7,7 +7,9 @@ import {
   classifyHealth,
   CONNECTION_STYLES,
   HEALTH_TIMEOUT_MS,
+  nextPollDelay,
   probeBackend,
+  relativeCheckLabel,
   transitionToast,
   TOAST_COPY,
 } from '../src/api/health.js';
@@ -171,6 +173,150 @@ describe('committed deployment configs: Preview can no longer reach production (
     assert.ok(
       verifyRouting(prodLike, 'staging').some((v) => v.code === 'production-host-in-staging'),
       'staging must reject the old production rewrite',
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FC-OPS-EMAIL-001: Render-Free cold-start honesty + bounded backoff
+// ---------------------------------------------------------------------------
+
+describe('classifyHealth — a timeout is ambiguous, not an outage', () => {
+  it('our own timeout aborts classify as waking, never offline', () => {
+    assert.equal(
+      classifyHealth({ status: null, body: null, transportError: true, timedOut: true }, 'ready'),
+      'waking',
+    );
+  });
+  it('a refusal/DNS failure (no timeout) stays definitively offline', () => {
+    assert.equal(
+      classifyHealth({ status: null, body: null, transportError: true, timedOut: false }, 'ready'),
+      'offline',
+    );
+  });
+  it('a successful response is classified by its body regardless of timedOut', () => {
+    assert.equal(
+      classifyHealth({ status: 200, body: OK_READY.body, transportError: false, timedOut: false }, 'ready'),
+      'online',
+    );
+  });
+});
+
+describe('probeBackend — distinguishes our timeout from a refusal', () => {
+  it('an AbortError from the signal is reported as timedOut', async () => {
+    const abortError = Object.assign(new Error('aborted'), { name: 'AbortError' });
+    const result = await probeBackend('http://x/health', (() => {
+      throw abortError;
+    }) as unknown as typeof fetch);
+    assert.equal(result.transportError, true);
+    assert.equal(result.timedOut, true);
+  });
+  it('a connection refusal is not a timeout', async () => {
+    const result = await probeBackend('http://x/health', (() => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch);
+    assert.equal(result.transportError, true);
+    assert.equal(result.timedOut, false);
+  });
+});
+
+describe('CONNECTION_STYLES.waking — honest cold-start copy', () => {
+  it('exists with a visible text label', () => {
+    assert.ok(CONNECTION_STYLES.waking, 'waking must be a styled state');
+    assert.ok(CONNECTION_STYLES.waking.label.length > 0, 'text always accompanies the dot');
+  });
+  it('states the ambiguity and never claims platform knowledge', () => {
+    const { ariaLabel, label } = CONNECTION_STYLES.waking;
+    assert.match(ariaLabel, /may be starting/i, 'must offer cold start as the explanation');
+    assert.match(ariaLabel, /not confirmed down/i, 'must not claim an outage');
+    for (const source of [ariaLabel, label]) {
+      assert.ok(
+        !/asleep|sleeping|slept|crash|redeploy|render (is|was|put)/i.test(source),
+        `waking copy must not diagnose the platform: ${source}`,
+      );
+    }
+  });
+});
+
+describe('transitionToast — waking enters quietly, its exits are announced', () => {
+  it('entering waking never toasts (the badge speaks)', () => {
+    assert.equal(transitionToast('online', 'waking'), 'none');
+    assert.equal(transitionToast('degraded', 'waking'), 'none');
+  });
+  it('waking -> online is a recovery, not proof of uptime', () => {
+    assert.equal(transitionToast('waking', 'online'), 'info-recovered');
+  });
+  it('waking -> offline (escalated timeouts) is a loss alert', () => {
+    assert.equal(transitionToast('waking', 'offline'), 'warn-lost');
+  });
+  it('waking -> degraded reports the dependency truth', () => {
+    assert.equal(transitionToast('waking', 'degraded'), 'warn-degraded');
+  });
+});
+
+describe('nextPollDelay — bounded backoff, normal cadence after recovery', () => {
+  it('no failures means the base interval', () => {
+    assert.equal(nextPollDelay(0), 45_000);
+  });
+  it('doubles per consecutive failure', () => {
+    assert.equal(nextPollDelay(1), 90_000);
+    assert.equal(nextPollDelay(2), 180_000);
+  });
+  it('is capped at the ceiling, however long the outage', () => {
+    assert.equal(nextPollDelay(3), 300_000);
+    assert.equal(nextPollDelay(50), 300_000);
+  });
+  it('never schedules faster than the base interval', () => {
+    assert.ok(nextPollDelay(-1) >= 45_000, 'no aggressive polling for negative counts');
+  });
+});
+
+describe('relativeCheckLabel — last successful check time', () => {
+  it('sub-minute is just now', () => assert.equal(relativeCheckLabel(1_000_000, 1_030_000), 'just now'));
+  it('minutes', () => assert.equal(relativeCheckLabel(1_000_000, 1_120_000), '2m ago'));
+  it('hours', () => assert.equal(relativeCheckLabel(0, 90 * 60_000), '1h ago'));
+  it('days', () => assert.equal(relativeCheckLabel(0, 50 * 3_600_000), '2d ago'));
+});
+
+describe('BackendStatusIndicator — mount + escalation wiring (structural)', () => {
+  const login = readFileSync(join(process.cwd(), 'src', 'LoginPage.tsx'), 'utf8');
+  const app = readFileSync(join(process.cwd(), 'src', 'App.tsx'), 'utf8');
+  const indicator = readFileSync(
+    join(process.cwd(), 'src', 'api', 'BackendStatusIndicator.tsx'),
+    'utf8',
+  );
+
+  it('is imported and rendered on the login surface, not dead code', () => {
+    assert.match(login, /import \{ BackendStatusIndicator \} from '\.\/api\/BackendStatusIndicator'/);
+    assert.match(login, /<BackendStatusIndicator \/>/, 'must be mounted on the login page');
+  });
+  it('stays out of the console workspace (committed design rule)', () => {
+    assert.ok(
+      !app.includes('BackendStatusIndicator'),
+      'the console must not import infrastructure widgets (dashboard.test.ts enforces this)',
+    );
+  });
+  it('escalates repeated timeouts and offers a manual retry', () => {
+    assert.match(indicator, /WAKING_TIMEOUT_ESCALATION/, 'escalation constant is wired');
+    assert.match(indicator, /backend-status-retry/, 'manual retry affordance exists');
+    assert.match(indicator, /aria-live="polite"/, 'state changes announced politely');
+  });
+  it('aborts the in-flight probe and clears timers on unmount', () => {
+    assert.match(indicator, /ctrlRef\.current\?\.abort\(\)/, 'in-flight request aborted on cleanup');
+    assert.match(indicator, /clearTimeout\(timer\)/, 'pending timer cleared on cleanup');
+  });
+  it('never reschedules after unmount (FC-RELEASE-017 finding 4)', () => {
+    // A probe in flight at unmount settles into `finally`, which used to
+    // schedule unconditionally — leaving a background poller alive per visit.
+    assert.match(
+      indicator,
+      /if \(!alive\) return;\s*\n\s*\/\/ Never overlap/,
+      'run() must bail when unmounted before doing any work',
+    );
+    assert.match(
+      indicator,
+      /if \(alive\) schedule\(nextPollDelay/,
+      'the finally reschedule must be guarded by aliveness',
     );
   });
 });

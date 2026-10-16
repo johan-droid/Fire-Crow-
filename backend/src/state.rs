@@ -27,6 +27,7 @@ pub fn global_job_tx() -> broadcast::Sender<JobBroadcastEvent> {
         .clone()
 }
 
+#[allow(clippy::result_large_err)]
 pub fn broadcast_job_event(
     event: JobBroadcastEvent,
 ) -> Result<usize, broadcast::error::SendError<JobBroadcastEvent>> {
@@ -83,6 +84,7 @@ impl AppState {
         &self.csrf
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn broadcast_job_update(
         &self,
         event: JobBroadcastEvent,

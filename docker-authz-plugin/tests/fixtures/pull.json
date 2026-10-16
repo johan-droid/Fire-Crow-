@@ -1,0 +1,14 @@
+{
+ "User": "firecrow-backend",
+ "UserAuthNMethod": "TLS",
+ "RequestMethod": "POST",
+ "RequestUri": "/v1.52/images/create?fromImage=docker.io%2Flibrary%2Falpine&tag=latest",
+ "RequestHeaders": {
+  "Accept-Encoding": "gzip",
+  "Content-Length": "0",
+  "User-Agent": "Docker-Client/29.1.3 (linux)"
+ },
+ "RequestPeerCertificates": [
+  "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJLRENCendJVUloQkNwRW1vUktkazl1aE9FZURCOGZGMDZYMHdDZ1lJS29aSXpqMEVBd0l3RXpFUk1BOEcKQTFVRUF3d0labU10ZERFdFkyRXdIaGNOTWpZeE1ERTFNVGN5T0RRMFdoY05Nall4TURFM01UY3lPRFEwV2pBYgpNUmt3RndZRFZRUUREQkJtYVhKbFkzSnZkeTFpWVdOclpXNWtNRmt3RXdZSEtvWkl6ajBDQVFZSUtvWkl6ajBECkFRY0RRZ0FFSml3dllCQjJhVHJFanJKT3NkR0g4WTZxcjNRWTA0YVllL0JPdC9ueXlBaTZwdmtVV04ydjR2M3MKRExHeHZlOWJrY1BtZHlQZy9POXFXZ2lwbzRlVkZ6QUtCZ2dxaGtqT1BRUURBZ05JQURCRkFpQVRaOUEyK3F5VApYK1RpaExVcjFTVGRGS292UmF3UCtvelk2MkdYWlo3YjZRSWhBSjNBL2ZjWTBudzB3RUZWQStsSEQ5d25NZnQ1Cktyd0VUck5KNS9GOXBuMzUKLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo="
+ ]
+}

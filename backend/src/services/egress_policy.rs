@@ -1,7 +1,9 @@
 //! OSV scanner egress policy and destination validation (Phase C / H2).
 //!
-//! OSV-Scanner is the sole scanner granted network access ([`NetworkMode::Bridge`]),
-//! which it requires to query the live Open Source Vulnerabilities database.
+//! OSV-Scanner is the sole scanner granted network access, and since G1
+//! (FC-ZT-SEC-001 §4) that access is attachment to the internal
+//! `scanners-internal` network ([`NetworkMode::Filtered`]) behind the
+//! mandatory filtering-proxy sidecar — never the default bridge.
 //! This module defines the strict egress allowlist and validation logic to block
 //! access to cloud metadata services, RFC 1918 private networks, loopback,
 //! and arbitrary non-OSV external destinations.

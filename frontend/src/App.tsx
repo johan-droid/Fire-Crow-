@@ -118,41 +118,41 @@ function App() {
   type AuthState = 'initializing' | 'signed_out' | 'authenticated' | 'error';
   const [authState, setAuthState] = useState<AuthState>('initializing');
 
-  // Console navigation: the developer security workspace. Legacy admin routes
-  // (jobs, diagnostics, sso, pam, iam, domains, mfa, activity) resolve to the
-  // closest workspace window so old links and history entries keep working.
-  type ConsoleWindow = 'overview' | 'repositories' | 'audits' | 'findings' | 'settings';
-  const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
-    jobs: 'audits',
-    reports: 'audits',
-    diagnostics: 'settings',
-    sso: 'settings',
-    pam: 'settings',
-    iam: 'settings',
-    domains: 'settings',
-    mfa: 'settings',
-    activity: 'settings',
-  };
+// Console navigation: the developer security workspace. Legacy admin routes
+// (jobs, diagnostics, sso, pam, iam, domains, mfa, activity) resolve to the
+// closest workspace window so old links and history entries keep working.
+type ConsoleWindow = 'overview' | 'repositories' | 'audits' | 'findings' | 'settings';
+const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
+  jobs: 'audits',
+  reports: 'audits',
+  diagnostics: 'settings',
+  sso: 'settings',
+  pam: 'settings',
+  iam: 'settings',
+  domains: 'settings',
+  mfa: 'settings',
+  activity: 'settings',
+};
   const navigate = useNavigate();
   const location = useLocation();
-  const getWindowFromPath = (): ConsoleWindow => {
-    const seg = location.pathname.replace(/^\/console\/?/, '').split('/')[0];
+  const getWindowFromPath = useCallback((path: string): ConsoleWindow => {
+    const seg = path.replace(/^\/console\/?/, '').split('/')[0];
     if (['overview', 'repositories', 'audits', 'findings', 'settings'].includes(seg)) return seg as ConsoleWindow;
     if (seg in LEGACY_WINDOWS) return LEGACY_WINDOWS[seg];
     return 'overview';
-  };
-  const activeWindow = getWindowFromPath();
+  }, [LEGACY_WINDOWS]);
+  const activeWindow = getWindowFromPath(location.pathname);
   // keep dashTab for internal handlers; sync from router
   const [dashTab, setDashTabRaw] = useState<ConsoleWindow>('overview');
   const setDashTab = (w: ConsoleWindow) => navigate(`/console/${w}`);
   void setDashTab;
   useEffect(() => {
-    const w = getWindowFromPath();
+    const w = getWindowFromPath(location.pathname);
     if (w !== dashTab) setDashTabRaw(w);
     if (location.pathname === '/console' || location.pathname === '/console/') navigate('/console/overview', { replace: true });
     const seg = location.pathname.replace(/^\/console\/?/, '').split('/')[0];
     if (seg in LEGACY_WINDOWS) navigate(`/console/${LEGACY_WINDOWS[seg]}`, { replace: true });
-  }, [location.pathname]);
+  }, [location.pathname, dashTab, navigate, getWindowFromPath, LEGACY_WINDOWS]);
 
   // Live Backend Data States
   const [jobs, setJobs] = useState<JobResponse[]>([]);
@@ -190,6 +190,10 @@ function App() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [_selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const [mfaStatus, setMfaStatus] = useState<MfaStatus>({ enabled: false, backup_codes_remaining: 0 });
+  // P0-A: when a password login meets an MFA-enabled account, the backend
+  // returns a short-lived challenge instead of a session; this holds it while
+  // the second-factor step is on screen.
+  const [mfaChallenge, setMfaChallenge] = useState<string | null>(null);
   const [activeMonitorJobId, setActiveMonitorJobId] = useState<string | null>(null);
   const [monitorPhases, setMonitorPhases] = useState<PhaseLedgerEntry[]>([]);
 
@@ -591,6 +595,16 @@ function App() {
       try {
         const exchangeData = await api.exchangeCode(code);
 
+        // P0-A: the exchange endpoint is MFA-gated for MFA-enabled accounts
+        // (including those signing in via GitHub). Hold the challenge and show
+        // the second-factor step instead of completing the session.
+        if (exchangeData?.status === 'mfa_required' && exchangeData.mfa_token) {
+          setMfaChallenge(exchangeData.mfa_token);
+          setAuthState('signed_out');
+          navigate('/login');
+          return;
+        }
+
         if (exchangeData.user_id && exchangeData.username) {
           setUser({
             user_id: exchangeData.user_id,
@@ -646,11 +660,30 @@ function App() {
       sessionCheckedRef.current = true;
       checkSession();
     }
-  }, [fetchDashboardData]);
+  }, [fetchDashboardData, navigate, location.pathname]);
 
   const handleGitHubLogin = () => {
     const privacyVersion = '2026-06-06';
     window.location.href = `${API_BASE}/auth/github?privacy_policy_accepted=true&privacy_policy_version=${privacyVersion}`;
+  };
+
+  // Shared tail of every successful credential login (password or redeemed
+  // MFA): read the session identity, flip to authenticated, and route.
+  const completeSession = async () => {
+    const me = await api.me();
+    setUser({
+      user_id: me.user_id,
+      username: me.username,
+      email: me.email,
+      credit_balance: me.credit_balance,
+    });
+    setAuthState('authenticated');
+    const rawTarget =
+      (location.state as { returnTo?: string } | null)?.returnTo ||
+      new URLSearchParams(location.search).get('returnTo');
+    const returnTarget = sanitizeReturnTarget(rawTarget);
+    navigate(returnTarget);
+    fetchDashboardData(true, { force: true });
   };
 
   const handlePasswordLogin = async (identifier: string, password: string) => {
@@ -658,27 +691,54 @@ function App() {
     setError('');
     setAuthFormError('');
     try {
-      await api.login(identifier, password);
-      const me = await api.me();
-      setUser({
-        user_id: me.user_id,
-        username: me.username,
-        email: me.email,
-        credit_balance: me.credit_balance,
-      });
-      setAuthState('authenticated');
-      const rawTarget =
-        (location.state as { returnTo?: string } | null)?.returnTo ||
-        new URLSearchParams(location.search).get('returnTo');
-      const returnTarget = sanitizeReturnTarget(rawTarget);
-      navigate(returnTarget);
-      fetchDashboardData(true, { force: true });
+      const res = await api.login(identifier, password);
+      // P0-A: an MFA-enabled account gets a challenge, not a session. Hold it
+      // and surface the second-factor step; no session cookie exists yet.
+      if (res?.status === 'mfa_required' && res.mfa_token) {
+        setMfaChallenge(res.mfa_token);
+        return;
+      }
+      await completeSession();
     } catch (err) {
       console.warn('Password login failed:', err);
       setAuthFormError(err instanceof ApiError ? err.message : 'Invalid credentials or network failure.');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // P0-A: redeem the MFA challenge with a TOTP code or a recovery code.
+  const handleMfaVerify = async (code: string) => {
+    if (!mfaChallenge) return;
+    setIsLoading(true);
+    setError('');
+    setAuthFormError('');
+    try {
+      await api.loginMfa(mfaChallenge, code);
+    } catch (err) {
+      // Redemption itself failed — the challenge is still unconsumed (or
+      // rejected); retrying with a fresh code is meaningful.
+      console.warn('MFA verification failed:', err);
+      setAuthFormError(err instanceof ApiError ? err.message : 'Invalid authentication code.');
+      setIsLoading(false);
+      return;
+    }
+    // Redemption succeeded: the challenge is consumed server-side and the
+    // session cookie is set. Never report this state as a bad code.
+    setMfaChallenge(null);
+    try {
+      await completeSession();
+    } catch (err) {
+      console.warn('Session load failed after MFA redemption:', err);
+      setAuthFormError('Signed in, but loading your account failed. Refresh the page to continue.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleMfaCancel = () => {
+    setMfaChallenge(null);
+    setAuthFormError('');
   };
 
   const handleRegister = async (username: string, email: string, password: string) => {
@@ -1036,7 +1096,7 @@ function App() {
       const returnTarget = sanitizeReturnTarget(rawTarget);
       navigate(returnTarget, { replace: true });
     }
-  }, [isLogin, user, authState, navigate, location.state]);
+  }, [isLogin, user, authState, navigate, location.state, location.search]);
 
   // Render Landing View immediately — visitors to the public marketing page
   // must never be blocked by backend session verification.
@@ -1059,6 +1119,9 @@ function App() {
         onGitHubLogin={handleGitHubLogin}
         onPasswordLogin={handlePasswordLogin}
         onRegister={handleRegister}
+        mfaToken={mfaChallenge}
+        onMfaVerify={handleMfaVerify}
+        onMfaCancel={handleMfaCancel}
         error={error}
         authFormError={authFormError}
         clearErrors={() => { setError(''); setAuthFormError(''); }}

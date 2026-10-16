@@ -32,11 +32,11 @@ jobs:
       - name: Compile
         run: cargo check --locked
       - name: Unit tests (no database)
-        run: cargo test --lib --bins
+        run: cargo test --lib --bins --locked
       - name: Config security suite (no database)
-        run: cargo test --test config_security
+        run: cargo test --test config_security --locked
       - name: Security regression suite (no database)
-        run: cargo test --test security_regressions
+        run: cargo test --test security_regressions --locked
 
   frontend:
     runs-on: ubuntu-latest

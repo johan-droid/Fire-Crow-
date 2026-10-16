@@ -103,14 +103,17 @@ pub async fn update_tenant(
             .get("billing_email")
             .and_then(|v| v.as_str())
             .map(String::from),
+        // P2-E (ZT-06-20): `as i32` truncates i64 silently; a huge value
+        // wraps negative and a negative one is stored verbatim. Clamp to
+        // 0..=i32::MAX before the cast so neither can happen.
         max_users: payload
             .get("max_users")
             .and_then(|v| v.as_i64())
-            .map(|v| v as i32),
+            .map(|v| v.clamp(0, i32::MAX as i64) as i32),
         max_storage_gb: payload
             .get("max_storage_gb")
             .and_then(|v| v.as_i64())
-            .map(|v| v as i32),
+            .map(|v| v.clamp(0, i32::MAX as i64) as i32),
     };
 
     TenantService::update(state.pool(), &id, &updates)

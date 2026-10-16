@@ -8,8 +8,8 @@ This reference documents the complete HTTP and real-time streaming API contract 
 
 - **Base URL**: Local: `http://localhost:8080/api` • Production: `https://api.firecrow.dev/api`
 - **Content-Type**: `application/json; charset=utf-8`
-- **Session Transport**: `fc_session` (Cookie: `HttpOnly`, `Secure`, `SameSite=Lax`)
-- **CSRF Token**: `X-CSRF-Token` header matching the readable `fc_csrf` cookie
+- **Session Transport**: `fc_access_token` (plus `fc_access_token_refresh`; cookies are `HttpOnly`, `Secure`, `SameSite`)
+- **CSRF**: No token header or cookie. Mutating requests (`POST`/`PUT`/`PATCH`/`DELETE`) must carry an allowlisted `Origin` header; cookie-bearing mutations with no `Origin` are rejected with 403. `Authorization: Bearer` callers are unaffected.
 - **Request Tracing**: All responses include `X-Request-ID: <UUID>`
 
 ### Rate Limiting Headers
@@ -72,40 +72,50 @@ curl -s http://localhost:8080/health
 
 ### B. Authentication & Session Endpoints
 
-#### `POST /api/auth/login`
-- **Purpose**: Authenticate user with email and password.
+#### `POST /api/v1/auth/login`
+- **Purpose**: Authenticate user with username and password.
 - **Auth**: Public
 - **Rate Limit**: 5 requests / min
 - **Request Body**:
 ```json
 {
-  "email": "security@company.com",
+  "username": "security@company.com",
   "password": "CorrectHorseBatteryStaple!"
 }
 ```
-- **Response**: `200 OK`
-- **Cookies Set**: `fc_session` (`HttpOnly`), `fc_csrf` (`SameSite=Lax`)
+- **Response** (MFA disabled): `200 OK`
+- **Cookies Set**: `fc_access_token` (`HttpOnly`), `fc_access_token_refresh`
+- **Response** (MFA enabled): `200 OK` with **no cookies** and no session —
+  `{"status": "mfa_required", "mfa_token": "<challenge>", "username": "..."}`
+  The short-lived (5-minute), single-use `mfa_token` must be redeemed at
+  `POST /api/v1/auth/login/mfa` before any session exists.
 ```bash
-curl -i -X POST http://localhost:8080/api/auth/login \
+curl -i -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"security@company.com","password":"SecretPassword123!"}'
+  -d '{"username":"security@company.com","password":"SecretPassword123!"}'
 ```
 
-#### `POST /api/auth/mfa/verify`
-- **Purpose**: Complete two-factor authentication via 6-digit TOTP code.
-- **Auth**: Pre-auth session cookie required
-- **Rate Limit**: 5 requests / min
+#### `POST /api/v1/auth/login/mfa`
+- **Purpose**: Redeem the `mfa_token` challenge from login (or the OAuth
+  exchange step) with a 6-digit TOTP code or a single-use recovery code.
+- **Auth**: Public endpoint — authorization is the challenge itself
+  (`mfa_token`); **no pre-auth session cookie exists or is required**.
+- **Rate Limit**: 5 requests / min, plus an account lockout after 5 wrong
+  codes within 10 minutes.
 - **Request Body**:
 ```json
 {
-  "totp_code": "482910"
+  "mfa_token": "<challenge from POST /api/v1/auth/login>",
+  "code": "482910"
 }
 ```
-- **Response**: `200 OK` (promotes session to fully authenticated)
+- **Response**: `200 OK` (sets `fc_access_token` / `fc_access_token_refresh`;
+  identity metadata only — tokens are never echoed in the body).
+  Wrong code: `401`. Locked account: `429`. Used/expired challenge: `401`.
 
 #### `GET /api/auth/session`
 - **Purpose**: Get current user identity and active tenant context.
-- **Auth**: Required (`fc_session`)
+- **Auth**: Required (`fc_access_token`)
 - **Rate Limit**: Global
 - **Response**: `200 OK`
 ```json
@@ -122,7 +132,7 @@ curl -i -X POST http://localhost:8080/api/auth/login \
 #### `POST /api/auth/logout`
 - **Purpose**: Revoke session and clear cookies.
 - **Auth**: Required
-- **Response**: `200 OK` (Expires `fc_session` and `fc_csrf` cookies)
+- **Response**: `200 OK` (Expires `fc_access_token` and `fc_access_token_refresh` cookies)
 
 ---
 
@@ -132,7 +142,7 @@ curl -i -X POST http://localhost:8080/api/auth/login \
 - **Purpose**: Initiate asynchronous tri-engine security audit for a repository.
 - **Auth**: Required
 - **Rate Limit**: 10 requests / min
-- **Headers**: `X-CSRF-Token: <token>`
+- **Headers**: `Origin: <allowlisted-origin>` (no CSRF token header)
 - **Request Body**:
 ```json
 {
@@ -152,8 +162,8 @@ curl -i -X POST http://localhost:8080/api/auth/login \
 ```
 ```bash
 curl -X POST http://localhost:8080/api/audit/run \
-  -b "fc_session=...; fc_csrf=abc" \
-  -H "X-CSRF-Token: abc" \
+  -b "fc_access_token=..." \
+  -H "Origin: http://localhost:3000" \
   -H "Content-Type: application/json" \
   -d '{"repository":"https://github.com/org/repo","branch":"main"}'
 ```

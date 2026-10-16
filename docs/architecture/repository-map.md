@@ -56,7 +56,7 @@ backend/
     ├── config.rs                    # Strongly typed environment configuration (AppConfig) & validation
     ├── agents/                      # Orchestration & scanner execution pipeline
     │   ├── mod.rs                   # Agent module exports
-    │   ├── fetch.rs                 # FetchAgent: Stream-bounded tarball download & unpack (50MB ceiling)
+    │   ├── fetch.rs                 # FetchAgent: Stream-bounded tarball download & unpack (100MB download / 150MB unpack ceiling)
     │   ├── scanner.rs               # ScannerAgent: Ephemeral Docker container manager (Gitleaks/Semgrep/OSV)
     │   └── summary.rs               # SummaryAgent: Isolated Google Gemini executive narrative generator
     ├── schemas/                     # Core domain data contracts
@@ -66,12 +66,14 @@ backend/
     ├── db/                          # Database connection and queries
     │   ├── mod.rs                   # Database connection pool manager (sqlx::PgPool)
     │   └── audit_repo.rs            # CRUD queries for audit jobs, users, and audit records
-    ├── auth/                        # Security & authentication subsystem
-    │   ├── mod.rs
-    │   ├── middleware.rs            # Session extractor, CSRF double-submit guard, IDOR owner assertion
-    │   ├── password.rs              # Argon2id password hashing and verification
-    │   ├── totp.rs                  # RFC 6238 TOTP engine for multi-factor authentication (MFA)
-    │   └── oauth.rs                 # GitHub OAuth 2.0 authorization code flow
+    ├── middleware/                    # Security & authentication subsystem
+    │   ├── auth.rs                    # Session extractors (`AuthenticatedUser`/`AdminUser`), IDOR owner assertion
+    │   └── csrf.rs                    # Origin-header allowlist CSRF guard for mutating methods (no CSRF token)
+    ├── services/                      # Business services
+    │   ├── auth.rs                    # Argon2id password hashing, MFA/TOTP challenges, GitHub OAuth state
+    │   ├── session.rs                 # Session store & revocation
+    │   ├── egress_policy.rs           # OSV egress allowlist & `OSV_EGRESS_PROXY` validation (fail-closed)
+    │   └── sandbox.rs                 # Ephemeral scanner container manager
     └── routes/                      # HTTP endpoint controllers
         ├── auth.rs                  # /api/auth routes (login, logout, session, mfa)
         ├── audit.rs                 # /api/audit routes (run, status, list, export)
@@ -106,7 +108,7 @@ frontend/
 │   │   ├── FindingDrawer.tsx        # Slide-out drawer with code snippet & CWE remediation
 │   │   └── Modal.tsx                # Accessible backdrop dialog
 │   └── services/
-│       └── api.ts                   # Fetch API client, CSRF header injection, typed response DTOs
+│       └── api.ts                   # Fetch API client, credentials inclusion, typed response DTOs
 ```
 
 ---
@@ -117,16 +119,16 @@ Use this matrix to identify exactly which files must be created or modified for 
 
 | Goal / Task Description | Primary Files to Touch | Supporting / Test Files |
 | :--- | :--- | :--- |
-| **Add a new API endpoint** | [backend/src/routes/](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/routes/)<br/>[backend/src/app.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/app.rs) | [frontend/src/services/api.ts](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/services/api.ts)<br/>[docs/api/README.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/api/README.md) |
-| **Add a new scanner engine** | [backend/src/agents/scanner.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/agents/scanner.rs)<br/>[backend/src/schemas/canonical_audit.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/schemas/canonical_audit.rs) | [docs/deployment/containers.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/deployment/containers.md)<br/>[docs/development/maintenance.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/development/maintenance.md) |
-| **Update SAST scanning rules** | [backend/scanners/semgrep/firecrow-sast.yml](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/scanners/semgrep/firecrow-sast.yml) | Semgrep unit test fixtures |
-| **Add a database table / column** | `backend/migrations/` (new SQL file)<br/>[backend/src/db/](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/db/) | [backend/src/schemas/](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/schemas/) |
-| **Modify audit state machine** | `backend/migrations/` (update trigger `audit_jobs_lifecycle_guard_fn`)<br/>[backend/src/schemas/audit_state.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/schemas/audit_state.rs) | [docs/architecture/adr/003-execution-lifecycle.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/architecture/adr/003-execution-lifecycle.md) |
-| **Modify risk score weights** | [backend/src/agents/scanner.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/agents/scanner.rs) (or normalizer module) | [frontend/src/dash.tsx](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/dash.tsx)<br/>[docs/development/backend.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/development/backend.md) |
-| **Change token/session expiry** | [backend/src/config.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/config.rs)<br/>[backend/src/auth/middleware.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/auth/middleware.rs) | [docs/configuration/environment.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/configuration/environment.md) |
-| **Adjust rate limiting rules** | [backend/src/app.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/app.rs) | [backend/src/config.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/config.rs)<br/>[docs/api/README.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/api/README.md) |
-| **Modify Docker sandboxing flags** | [backend/src/agents/scanner.rs](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/backend/src/agents/scanner.rs) | [docs/deployment/containers.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/deployment/containers.md)<br/>[docs/security/threat-model.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/security/threat-model.md) |
-| **Add a new dashboard view/widget** | [frontend/src/dash.tsx](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/dash.tsx)<br/>[frontend/src/dashboard.css](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/dashboard.css) | [frontend/src/services/api.ts](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/services/api.ts) |
-| **Update landing page copy/pricing** | [frontend/src/landing/components/](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/landing/components/) | [frontend/src/LandingPage.tsx](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/LandingPage.tsx) |
-| **Change global design tokens / theme**| [frontend/src/index.css](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/index.css)<br/>[frontend/src/dashboard.css](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/frontend/src/dashboard.css) | All UI components |
-| **Add a new test suite** | `frontend/tests/` or `backend/tests/` | [docs/development/testing.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/development/testing.md) |
+| **Add a new API endpoint** | [backend/src/routes/](../../../../../../backend/src/routes)<br/>[backend/src/app.rs](../../../../../../backend/src/app.rs) | [frontend/src/services/api.ts](../../../../../../frontend/src/services/api.ts)<br/>[docs/api/README.md](../../../../../../docs/api/README.md) |
+| **Add a new scanner engine** | [backend/src/agents/scanner.rs](../../../../../../backend/src/agents/scanner.rs)<br/>[backend/src/schemas/canonical_audit.rs](../../../../../../backend/src/schemas/canonical_audit.rs) | [docs/deployment/containers.md](../../../../../../docs/deployment/containers.md)<br/>[docs/development/maintenance.md](../../../../../../docs/development/maintenance.md) |
+| **Update SAST scanning rules** | [backend/scanners/semgrep/firecrow-sast.yml](../../../../../../backend/scanners/semgrep/firecrow-sast.yml) | Semgrep unit test fixtures |
+| **Add a database table / column** | `backend/migrations/` (new SQL file)<br/>[backend/src/db/](../../../../../../backend/src/db) | [backend/src/schemas/](../../../../../../backend/src/schemas) |
+| **Modify audit state machine** | `backend/migrations/` (update trigger `audit_jobs_lifecycle_guard_fn`)<br/>[backend/src/schemas/audit_state.rs](../../../../../../backend/src/schemas/audit_state.rs) | [docs/architecture/adr/003-execution-lifecycle.md](../../../../../../docs/architecture/adr/003-execution-lifecycle.md) |
+| **Modify risk score weights** | [backend/src/agents/scanner.rs](../../../../../../backend/src/agents/scanner.rs) (or normalizer module) | [frontend/src/dash.tsx](../../../../../../frontend/src/dash.tsx)<br/>[docs/development/backend.md](../../../../../../docs/development/backend.md) |
+| **Change token/session expiry** | [backend/src/config.rs](../../../../../../backend/src/config.rs)<br/>[backend/src/middleware/auth.rs](../../../../../../backend/src/middleware/auth.rs) | [docs/configuration/environment.md](../../../../../../docs/configuration/environment.md) |
+| **Adjust rate limiting rules** | [backend/src/app.rs](../../../../../../backend/src/app.rs) | [backend/src/config.rs](../../../../../../backend/src/config.rs)<br/>[docs/api/README.md](../../../../../../docs/api/README.md) |
+| **Modify Docker sandboxing flags** | [backend/src/agents/scanner.rs](../../../../../../backend/src/agents/scanner.rs) | [docs/deployment/containers.md](../../../../../../docs/deployment/containers.md)<br/>[docs/security/threat-model.md](../../../../../../docs/security/threat-model.md) |
+| **Add a new dashboard view/widget** | [frontend/src/dash.tsx](../../../../../../frontend/src/dash.tsx)<br/>[frontend/src/dashboard.css](../../../../../../frontend/src/dashboard.css) | [frontend/src/services/api.ts](../../../../../../frontend/src/services/api.ts) |
+| **Update landing page copy/pricing** | [frontend/src/landing/components/](../../../../../../frontend/src/landing/components) | [frontend/src/LandingPage.tsx](../../../../../../frontend/src/LandingPage.tsx) |
+| **Change global design tokens / theme**| [frontend/src/index.css](../../../../../../frontend/src/index.css)<br/>[frontend/src/dashboard.css](../../../../../../frontend/src/dashboard.css) | All UI components |
+| **Add a new test suite** | `frontend/tests/` or `backend/tests/` | [docs/development/testing.md](../../../../../../docs/development/testing.md) |

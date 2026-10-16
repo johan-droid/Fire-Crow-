@@ -51,7 +51,7 @@ The Node.js test runner verifies critical invariant rules across multiple test f
 1. **`auth-idor.test.js`**:
    - Asserts tenant isolation on audit fetching (`GET /api/audit/:id`).
    - Asserts non-admin users cannot read cross-tenant audits.
-   - Asserts CSRF double-submit token mismatch is rejected with 403.
+   - Asserts mutating requests are rejected with 403 by the Origin-allowlist CSRF policy (disallowed `Origin`, or auth cookies with no `Origin`).
 2. **`audit-lifecycle.test.js`**:
    - Verifies sequential transitions (`queued` ➔ `running` ➔ `completed`).
    - Verifies illegal transitions fail closed with appropriate error codes.
@@ -64,7 +64,7 @@ The Node.js test runner verifies critical invariant rules across multiple test f
    - Verifies that AI summary layer cannot modify finding count or risk score.
    - Verifies schema rejects hallucinated findings.
 5. **`stream-intake.test.js`**:
-   - Verifies 50MB unpacking ceiling triggers immediate abort.
+   - Verifies the 150MB unpacking ceiling triggers immediate abort.
    - Verifies symlink escape attempts and directory traversal (`..`) are dropped.
 
 ### Backend Rust Test Suite
@@ -82,7 +82,7 @@ Test inputs are kept in version-controlled fixtures rather than pulled dynamical
 - Mock scanner JSON payloads for Gitleaks secrets, Semgrep SAST alerts, and OSV CVE records.
 - Standard archive tarballs for stream-bounded intake testing, including:
   - `clean-repo.tar.gz` (standard small repo)
-  - `bomb-repo.tar.gz` (highly compressed archive expanding over 50MB)
+  - `bomb-repo.tar.gz` (highly compressed archive expanding over 150MB)
   - `traversal-repo.tar.gz` (archive with `../` path entries)
 
 ### Mocking Policy:

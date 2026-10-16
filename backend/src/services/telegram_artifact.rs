@@ -245,4 +245,3 @@ pub fn escape_markdown_v2(text: &str) -> String {
     }
     escaped
 }
-

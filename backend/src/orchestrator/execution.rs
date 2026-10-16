@@ -280,41 +280,25 @@ pub async fn reap_abandoned_execution(
     Ok(true)
 }
 
-/// Fail whatever execution is currently running for a job, if any.
+/// Fail a job whose worker never opened (or no longer holds) an execution.
 ///
-/// Phase 12.1 worker fallback. `run_audit_job` only learns that the pipeline
-/// failed *after* the fact (an `Err` return or a 30-minute timeout), at which
-/// point it holds no lease. Writing `audit_jobs.status='failed'` directly —
-/// as the old `mark_job_failed` did — would leave the still-`running`
-/// execution open forever (findings under a failed job, attempt history with
-/// no ending). This closes the running execution first, through the same
-/// ownership/terminality rules as any other finalization, then moves the job
-/// with it in the same transaction. If no execution is running (claim-time
-/// failure before `begin_execution`), it falls back to a guarded job-only
-/// write that still refuses to clobber a terminal audit.
-pub async fn fail_running_execution(pool: &PgPool, job_id: &str, reason: &str) -> Result<()> {
-    let running: Option<(String, String)> = sqlx::query_as(
-        "SELECT id, owner_token FROM audit_executions WHERE job_id=$1 AND status='running'",
-    )
-    .bind(job_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(AppError::Database)?;
-    if let Some((execution_id, owner_token)) = running {
-        let lease = ExecutionLease {
-            execution_id,
-            job_id: job_id.to_string(),
-            attempt_number: 0,
-            owner_token,
-        };
-        // The lease was read from the row itself, so ownership holds; the
-        // reaper cannot interleave here into a different owner because there
-        // is only one running execution per job (partial unique index).
-        return finalize_without_findings(pool, &lease, "failed", reason).await;
-    }
-    let _ = sqlx::query(
+/// P0-D (ZT-10-4): the worker-side fallback for a failure that happened
+/// *before* `begin_execution` succeeded — there is no lease, so there is no
+/// execution this caller is entitled to touch. It must therefore never read a
+/// running execution's `owner_token` and finalize through it (the old
+/// `fail_running_execution` did exactly that: it SELECTed the victim row's
+/// token and used it to authorize the write, so a stale worker whose attempt
+/// had been reaped could fail a *newer* attempt opened by a different worker).
+/// Instead this writes only `audit_jobs`, and only when no live execution
+/// remains for the job — if a successor worker holds a running execution, the
+/// guarded UPDATE matches zero rows and that execution is left untouched.
+pub async fn fail_job_if_unowned(pool: &PgPool, job_id: &str, reason: &str) -> Result<()> {
+    sqlx::query(
         "UPDATE audit_jobs SET status='failed', error_message=$1, finished_at=NOW()
-          WHERE id=$2 AND status IN ('queued','running')",
+          WHERE id=$2 AND status IN ('queued','running')
+            AND NOT EXISTS (
+                SELECT 1 FROM audit_executions WHERE job_id=$2 AND status='running'
+            )",
     )
     .bind(reason)
     .bind(job_id)

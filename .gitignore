@@ -144,3 +144,12 @@ fix[0-9]-ov390*.png
 insp-390*.png
 ov-390*.png
 pop-ov390*.png
+
+# ==========================================
+# Internal audit & campaign artifacts (NEVER pushed to origin)
+# ==========================================
+# Verification evidence bundles (harnesses, logs, proofs) and campaign
+# reports are local-only working documents. They describe exploitation
+# details and are deliberately excluded from the public repository.
+evidence/
+/FC-*.md

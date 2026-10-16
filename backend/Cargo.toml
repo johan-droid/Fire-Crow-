@@ -46,7 +46,7 @@ url = "2.5"
 otpauth = "0.5"
 governor = "0.8"
 futures = "0.3"
-flate2 = { version = "1.0", features = ["tokio"] }
+flate2 = { version = "1.1" }
 tokio-util = { version = "0.7", features = ["compat"] }
 aes = "0.8"
 aes-gcm = "0.10"
@@ -68,6 +68,11 @@ tokio-stream = "0.1"
 
 [dev-dependencies]
 axum-test = "15.4"
+# FC-RELEASE-017: peer-aware login tests call the handler directly with an
+# explicit ConnectInfo. Both crates are already main dependencies (no new
+# downloads; resolves offline from the locked cache).
+axum = { version = "0.7", features = ["macros", "json", "ws"] }
+axum-extra = { version = "0.9", features = ["typed-header", "cookie"] }
 wiremock = "0.6"
 proptest = "1.5"
 criterion = { version = "0.5", features = ["html_reports"] }

@@ -50,6 +50,8 @@ html:has(.lg), body:has(.lg) { background: #0a0e14; overflow-x: hidden; }
 .lg-submit:hover:not(:disabled) { background: var(--lg-ember-dark); color: #fff; }
 .lg-switch { margin-top: 22px; color: var(--lg-muted); }
 .lg-switch button { padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--lg-ink); text-decoration: underline; text-underline-offset: 4px; cursor: pointer; }
+.lg-link { margin-top: 4px; padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--lg-muted); text-decoration: underline; text-underline-offset: 4px; cursor: pointer; }
+.lg-link:hover:not(:disabled) { color: var(--lg-ink); }
 
 /* Right value panel — distinct from the form side via a subtle ember glow + hairline */
 .lg-panel { position: relative; background: radial-gradient(120% 100% at 82% 0%, rgba(234, 88, 12, .12), transparent 55%), linear-gradient(180deg, #0d1219, #0a0e14); border-left: 1px solid var(--lg-line); color: var(--lg-ink); display: flex; align-items: center; padding: clamp(32px, 6vw, 88px); }
@@ -69,3 +71,6 @@ html:has(.lg), body:has(.lg) { background: #0a0e14; overflow-x: hidden; }
   .lg-panel { padding: 40px 24px 56px; border-left: 0; border-top: 1px solid var(--lg-line); }
   .lg-form-side { padding: 20px 24px 8px; }
 }
+
+/* FC-OPS-EMAIL-001: backend status pill on the login surface. */
+.lg-backend-status { margin-top: 1.1rem; display: flex; }

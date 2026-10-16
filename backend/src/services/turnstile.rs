@@ -60,7 +60,9 @@ impl TurnstileService {
         token: &str,
         remote_ip: Option<&str>,
     ) -> Result<TurnstileVerifyResponse> {
-        if !self.enabled || self.secret_key.is_empty() {
+        if !self.enabled {
+            // Explicitly disabled (dev/test default): no challenge is asked
+            // of the client and none is verified.
             return Ok(TurnstileVerifyResponse {
                 success: true,
                 error_codes: vec![],
@@ -69,6 +71,15 @@ impl TurnstileService {
                 action: None,
                 cdata: None,
             });
+        }
+        // P0-A (ZT-01-23): enabled-but-unconfigured must fail CLOSED. The old
+        // `!enabled || secret.is_empty()` stub silently approved every token,
+        // so an operator who switched Turnstile on without a secret got a
+        // control that verified nothing.
+        if self.secret_key.is_empty() {
+            return Err(AppError::Internal(
+                "Turnstile is enabled but no secret key is configured".into(),
+            ));
         }
 
         let req = TurnstileVerifyRequest {

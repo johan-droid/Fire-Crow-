@@ -127,6 +127,12 @@ pub struct Settings {
     pub google_client_secret: String,
     #[serde(default)]
     pub resend_api_key: String,
+    /// Sender address for the Resend transport (`RESEND_FROM_EMAIL`).
+    ///
+    /// Falls back to `sender_email` when empty, so one verified sender identity
+    /// can serve both transports. FC-OPS-EMAIL-001.
+    #[serde(default)]
+    pub resend_from_email: String,
     #[serde(default)]
     pub brevo_api_key: String,
     #[serde(default)]
@@ -328,6 +334,7 @@ impl std::fmt::Debug for Settings {
             .field("google_client_id", &self.google_client_id)
             .field("google_client_secret", &HIDDEN)
             .field("resend_api_key", &HIDDEN)
+            .field("resend_from_email", &self.resend_from_email)
             .field("brevo_api_key", &HIDDEN)
             .field("sender_email", &self.sender_email)
             .field("smtp_host", &self.smtp_host)
@@ -690,6 +697,20 @@ impl Settings {
             ));
         }
 
+        // FC-OPS-EMAIL-001: a Resend key with no sender address anywhere fails
+        // startup loudly instead of surfacing at first delivery. SMTP stays the
+        // fallback transport when no Resend key is configured.
+        if !settings.resend_api_key.trim().is_empty()
+            && settings.resend_from_email.trim().is_empty()
+            && settings.sender_email.trim().is_empty()
+        {
+            return Err(ConfigError::Message(
+                "RESEND_API_KEY is set but no sender address is configured: set \
+                 RESEND_FROM_EMAIL (or SENDER_EMAIL), or unset RESEND_API_KEY."
+                    .into(),
+            ));
+        }
+
         // Render and containerized deployments fail closed/timeout if bound to loopback (127.0.0.1).
         // If an operator accidentally sets HOST=127.0.0.1 in the Render dashboard (e.g. copied from .env.local),
         // override it to 0.0.0.0 so Render's port detection and reverse proxy can connect.
@@ -746,10 +767,29 @@ impl Settings {
         // would put every user behind the proxy into one shared rate-limit
         // bucket, or worse, tempt an operator to "fix" it by trusting
         // arbitrary private ranges.
-        if let Err(e) =
-            crate::middleware::cloudflare::parse_trusted_proxy_cidrs(&settings.trusted_proxy_cidrs)
+        let trusted_proxies = match crate::middleware::cloudflare::parse_trusted_proxy_cidrs(
+            &settings.trusted_proxy_cidrs,
+        ) {
+            Err(e) => return Err(ConfigError::Message(e)),
+            Ok(proxies) => proxies,
+        };
+
+        // P1-B (ZT-06-7): on Render the platform ingress IP is not published
+        // as a stable CIDR list, so a fresh deployment ships with an empty
+        // TRUSTED_PROXY_CIDRS. That default is safe (forwarding headers are
+        // ignored, so rate-limit buckets key on the shared ingress IP —
+        // coarse for every user, but spoof-proof), yet it is easy to miss and
+        // operators may be tempted to "fix" it by trusting arbitrary ranges.
+        // Warn once; set the list from Render's authoritative docs — do not
+        // guess CIDRs here.
+        if trusted_proxies.is_empty()
+            && (std::env::var("RENDER").is_ok() || std::env::var("RENDER_EXTERNAL_URL").is_ok())
         {
-            return Err(ConfigError::Message(e));
+            tracing::warn!(
+                "TRUSTED_PROXY_CIDRS is empty on Render: rate-limit buckets will be keyed by the \
+                 shared ingress IP (coarse but spoof-proof). Set TRUSTED_PROXY_CIDRS from Render's \
+                 authoritative proxy-CIDR documentation to restore per-client buckets."
+            );
         }
 
         Ok(())

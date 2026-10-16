@@ -11,6 +11,52 @@ const app = readFileSync(join(SRC, 'App.tsx'), 'utf8');
 const client = readFileSync(join(SRC, 'api', 'client.ts'), 'utf8');
 const all = app + client;
 
+// Vercel is the only thing serving the CSP header (dev Vite serves none), so
+// both deployment configs are the whole attack surface for it.
+const cspOf = (file: string): string => {
+  const config = JSON.parse(readFileSync(file, 'utf8'));
+  const headers: Array<{ headers: Array<{ key: string; value: string }> }> = config.headers ?? [];
+  for (const entry of headers) {
+    for (const header of entry.headers) {
+      if (header.key === 'Content-Security-Policy') return header.value;
+    }
+  }
+  throw new Error(`no Content-Security-Policy header in ${file}`);
+};
+
+const directivesOf = (csp: string): Record<string, string[]> => {
+  const out: Record<string, string[]> = {};
+  for (const part of csp.split(';')) {
+    const tokens = part.trim().split(/\s+/).filter(Boolean);
+    if (tokens.length > 0) out[tokens[0]] = tokens.slice(1);
+  }
+  return out;
+};
+
+describe('Content-Security-Policy (vercel.json)', () => {
+  for (const file of ['../vercel.json', 'vercel.json']) {
+    const relative = file;
+    const csp = cspOf(join(process.cwd(), file));
+    const directives = directivesOf(csp);
+
+    it(`${relative}: script-src has no 'unsafe-inline'`, () => {
+      const script = directives['script-src'] ?? [];
+      assert.ok(script.length > 0, 'script-src directive missing');
+      assert.ok(!script.includes("'unsafe-inline'"),
+        `script-src allows inline: ${script.join(' ')}`);
+    });
+    it(`${relative}: connect-src allows no plain http: or websocket schemes`, () => {
+      const connect = directives['connect-src'] ?? [];
+      for (const banned of ['http:', 'ws:', 'wss:']) {
+        assert.ok(!connect.includes(banned), `connect-src includes ${banned}: ${connect.join(' ')}`);
+      }
+    });
+    it(`${relative}: no directive contains 'unsafe-eval'`, () => {
+      assert.ok(!csp.includes('unsafe-eval'), `CSP allows unsafe-eval: ${csp}`);
+    });
+  }
+});
+
 describe('session hygiene', () => {
   it('never stores tokens in web storage (cookies are HttpOnly)', () => {
     const hits = all.match(/(localStorage|sessionStorage)\.(getItem|setItem)\(([^)]*)\)/g) ?? [];

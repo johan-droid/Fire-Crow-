@@ -59,8 +59,8 @@ Vulnerability descriptions and scanner rule details must be rendered as raw text
 // <div dangerouslySetInnerHTML={{ __html: finding.description }} /> // VULNERABILITY
 ```
 
-### Rule 2: Double-Submit CSRF Token Enforcement
-All state-modifying fetch requests (`POST`, `PUT`, `DELETE`) in `frontend/src/services/api.ts` must include the `X-CSRF-Token` header read from the `fc_csrf` cookie.
+### Rule 2: Origin-Header CSRF Enforcement
+The backend enforces the CSRF control (`backend/src/middleware/csrf.rs`): all state-modifying requests (`POST`, `PUT`, `PATCH`, `DELETE`) must carry an `Origin` header listed in the configured origin allowlist, and mutations that carry the auth cookies but no `Origin` header are rejected with 403. There is no CSRF token header or cookie — frontend requests must simply be sent from an allowlisted origin with `credentials: 'include'`. Non-browser clients using `Authorization: Bearer` headers are unaffected.
 
 ### Rule 3: Safe External URL Handling
 When rendering links to external repositories or GitHub commits, enforce safe protocols:

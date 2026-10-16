@@ -215,7 +215,8 @@ pub struct Scanner {
     pub parser: &'static str,
     /// Network access this scanner requires. Deny-by-default: the secret and
     /// source scanners ask for [`NetworkMode::None`], and only the dependency
-    /// scanner declares the live-database exception (`Scanner::osv`).
+    /// scanner declares the live-database exception (`Scanner::osv`, filtered
+    /// through the internal network + proxy sidecar).
     pub network: NetworkMode,
     pub timeout_secs: u64,
     pub resource_limits: ResourceLimits,
@@ -320,7 +321,11 @@ impl Scanner {
                 ),
             ],
             parser: OSV_PARSER,
-            network: NetworkMode::Bridge,
+            // G1 (FC-ZT-SEC-001 §4): attachment ONLY to the internal
+            // `scanners-internal` network — no external route exists there, so
+            // the filtering-proxy sidecar is the sole path out. The proxy env
+            // below is then addressing, not the boundary.
+            network: NetworkMode::Filtered,
             timeout_secs: OSV_TIMEOUT_SECS,
             resource_limits: ResourceLimits::default(),
             extra_tmpfs: Vec::new(),
@@ -1466,7 +1471,12 @@ fn osv_group_finding(
         fixed_text,
     );
     if evidence.len() > OSV_EVIDENCE_MAX_CHARS {
-        evidence.truncate(OSV_EVIDENCE_MAX_CHARS);
+        // `evidence` embeds package/version/advisory strings from upstream
+        // feeds, which may be multibyte; plain `truncate` would panic mid-char.
+        crate::services::redaction::truncate_at_char_boundary(
+            &mut evidence,
+            OSV_EVIDENCE_MAX_CHARS,
+        );
         evidence.push_str("... [truncated]");
     }
 
@@ -1814,8 +1824,11 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
 
 /// Run the dependency scanner over `input` and return its result.
 ///
-/// V3 enforcement point: the OSV container keeps `--network=bridge` (it must
-/// reach the proxy), but it never runs without a validated filtering proxy.
+/// V3 enforcement point, G1 topology (FC-ZT-SEC-001 §4): the OSV container is
+/// attached ONLY to the internal `scanners-internal` network (no external
+/// route exists there), but it still never runs without a validated
+/// filtering proxy — the sidecar is the sole path out, and the proxy env is
+/// its address, not the boundary.
 /// A missing or malformed `OSV_EGRESS_PROXY` yields `Failed` with zero
 /// findings — unknown coverage, never "clean" — before Docker is touched.
 /// The proxy itself must allowlist `api.osv.dev:443`/`osv.dev:443` and deny

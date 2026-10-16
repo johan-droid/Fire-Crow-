@@ -19,7 +19,7 @@ The system enforces strict operational invariants:
 
 - **Original Security Audit Revision**: `36f342b3f849b9fdea786322cfd730f166f1379f`
 - **Authoritative Git Revision**: `36f342b3f849b9fdea786322cfd730f166f1379f`
-- **Baseline Audit Artifact**: [`documentation/INTERNAL_SECURITY_AUDIT.md`](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/documentation/INTERNAL_SECURITY_AUDIT.md)
+- **Baseline Audit Artifact**: [`documentation/INTERNAL_SECURITY_AUDIT.md`](../../../../../documentation/INTERNAL_SECURITY_AUDIT.md)
 
 ---
 
@@ -60,7 +60,7 @@ API Gateway & Auth Middleware
 Job & Execution Orchestrator
         ↓ (PostgreSQL Lifecycle Guard Trigger)
 Repository Acquisition (Bounded Stream Fetch)
-        ↓ (Max 50MB Decompressed / Pax & Traversal Guards)
+        ↓ (Max 150MB Decompressed / Pax & Traversal Guards)
 Container Sandbox (Isolated Network Egress / Cap-Drop / No-Exec / Non-Root)
         ↓ (Gitleaks / OSV / Semgrep Scanners)
 Canonical Audit v1 Normalization & Fingerprinting
@@ -90,7 +90,7 @@ Delivery Subsystems (Email / Telegram / Webhooks)
 
 ## 6. Resource & Concurrency Protection
 
-- **HTTP Response & Decompression**: Streaming chunks enforce Content-Length limits and total decompressed limits (50MB) incrementally. Gzip/tar bombs abort execution immediately without memory spike.
+- **HTTP Response & Decompression**: Streaming chunks enforce Content-Length limits and total decompressed limits (150MB unpacked; 100MB compressed download cap) incrementally. Gzip/tar bombs abort execution immediately without memory spike.
 - **Rate Limiting**: Axum rate-limiting middleware limits submission rates per user session.
 - **Worker & Lease Integrity**: Stale worker claims are automatically reclaimed after 5 minutes via atomic database state updates.
 

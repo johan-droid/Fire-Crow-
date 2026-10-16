@@ -22,14 +22,14 @@ flowchart TD
     end
 
     subgraph DockerHost["Scanner Execution Tier (Docker Daemon)"]
-        Proxy["docker-socket-proxy (Port 2375)\nLeast-Privilege Socket Filter"]
+        Proxy["docker-socket-proxy (private network only)\nLeast-Privilege Socket Filter"]
         Engine["Docker Engine Runtime\nEphemeral Scanners (Gitleaks, Semgrep, OSV)"]
     end
 
     Browser -->|HTTPS| SPA
     Browser -->|Cross-Origin HTTPS (SameSite=none)| API
     API -->|Internal SSL| DB
-    API -->|DOCKER_HOST tcp://...:2375| Proxy
+    API -->|"DOCKER_HOST (over authenticated private channel)"| Proxy
     Proxy --> Engine
 ```
 
@@ -80,7 +80,7 @@ Review and complete the environment variables in the Render Dashboard under **fi
 | `CORS_ORIGINS` | `https://your-firecrow-app.vercel.app` | Whitelisted cross-origin origin |
 | `AUTH_COOKIE_SAMESITE` | `none` | **Critical for Cross-Origin Auth**: Allows browsers to send session cookies between Vercel and Render |
 | `AUTH_COOKIE_SECURE` | `true` | Mandated by modern browsers when `SameSite=none` is used |
-| `DOCKER_HOST` | `tcp://<docker-host>:2375` | Endpoint of the Docker daemon / socket proxy |
+| `DOCKER_HOST` | `tcp://<proxy-mesh-hostname>:2375` | Endpoint of the least-privilege Docker socket proxy, reachable **only** over an authenticated private network (Tailscale/WireGuard mesh) — never a public IP |
 | `GEMINI_API_KEY` | `AIzaSy...` | Google Gemini API key for automated executive narrative reports |
 | `GEMINI_MODEL` | `gemini-1.5-flash` | Optimized model for fast, deterministic security summaries |
 
@@ -90,6 +90,15 @@ Review and complete the environment variables in the Render Dashboard under **fi
 
 Fire Crow requires access to a Docker daemon to launch isolated micro-containers for **Gitleaks**, **Semgrep**, and **OSV-Scanner**. Because Render Free Tier web services do not run host Docker engines or allow `/var/run/docker.sock` mounts, you provide Docker access through `DOCKER_HOST`.
 
+### Hard requirement: no public Docker endpoint
+
+The Docker API has no meaningful authentication of its own. A plain `tcp://` port `2375` endpoint reachable from the public internet is a full host-compromise vector — **even behind TLS**, because TLS only encrypts the channel: it grants no authorization, so anyone who can complete the handshake has unrestricted Docker API access. Never publish the daemon or the socket proxy on a public IP, and never front it with a public tunnel URL. Instead:
+
+- Keep `docker-socket-proxy` bound to `localhost` / the internal Docker network only. The committed `docker-compose.yml` exposes it as `docker-socket-proxy:2375` on an internal network and never publishes the port — preserve that posture.
+- Reach the proxy only through an **authenticated private channel** (the two options below).
+
+The least-privilege socket proxy itself remains the right architecture in both options: the backend never touches `/var/run/docker.sock` directly, and the proxy's filter (`CONTAINERS: 1`, `IMAGES: 1`, `ALLOW_START: 1`) caps what a compromised backend could ask Docker to do — but only if the proxy port is unreachable from the public internet.
+
 ### Option A: Free Cloud Virtual Machine (Oracle Cloud / AWS EC2 / Fly.io)
 Deploy `docker-socket-proxy` on an unmetered free tier Linux instance (e.g., Oracle Cloud Always Free 1-4 OCPU ARM instance or AWS EC2 t4g.small):
 
@@ -97,24 +106,25 @@ Deploy `docker-socket-proxy` on an unmetered free tier Linux instance (e.g., Ora
    ```bash
    docker compose up -d docker-socket-proxy
    ```
-2. The proxy exposes port `2375` restricted to container operations (`CONTAINERS: 1`, `IMAGES: 1`, `ALLOW_START: 1`).
-3. Set in Render:
+2. The proxy stays bound to the instance's loopback/private interface only — do **not** publish port `2375` to the public internet.
+3. Join the Render backend and the instance to the same private mesh network (e.g., Tailscale or WireGuard), then set in Render:
    ```env
-   DOCKER_HOST=tcp://your-vps-ip:2375
+   DOCKER_HOST=tcp://<proxy-mesh-hostname>:2375
    ```
+   The hostname must only resolve and connect inside the authenticated mesh.
 
 ### Option B: Cloudflare Tunnel / Tailscale to Local Docker (For Live Demos)
 If showcasing Fire Crow live during an interview, portfolio review, or hackathon:
 
-1. Start the proxy locally:
+1. Start the proxy locally (bound to localhost only):
    ```bash
    docker compose up -d docker-socket-proxy
    ```
-2. Expose port `2375` using Cloudflare Tunnel or Tailscale:
-   ```bash
-   cloudflared tunnel --url tcp://localhost:2375
-   ```
-3. Set the tunnel domain in Render as `DOCKER_HOST=tcp://<tunnel-domain>:2375`.
+2. Reach it over an authenticated private channel only:
+   - **Tailscale**: add the machine to your tailnet and point `DOCKER_HOST` at the proxy's tailnet address (peers must be logged into your tailnet to connect).
+   - **cloudflared**: use a Cloudflare Tunnel with an Access-protected **private network** route (a cloudflared private-network connector), so only members with valid Access credentials can connect.
+   - Do **not** run `cloudflared tunnel --url tcp://localhost:2375` or any other public quick-tunnel URL: that republishes an unauthenticated Docker endpoint for anyone on the internet.
+3. Set the private endpoint in Render as `DOCKER_HOST=tcp://<proxy-mesh-hostname>:2375`.
 
 ---
 

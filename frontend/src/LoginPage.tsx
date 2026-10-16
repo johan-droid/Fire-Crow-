@@ -1,6 +1,7 @@
 import { useState, type FormEvent, useEffect, useRef, type ReactNode } from 'react';
 import { Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { BrandMark } from './BrandMark';
+import { BackendStatusIndicator } from './api/BackendStatusIndicator';
 import { NextLabSymbol } from './landing/components/BrandLogos';
 import './login-site.css';
 
@@ -56,6 +57,10 @@ export interface LoginPageProps {
   onGitHubLogin: () => void;
   onPasswordLogin?: (identifier: string, password: string) => Promise<void>;
   onRegister?: (username: string, email: string, password: string) => Promise<void>;
+  /** P0-A: present when the backend returned an MFA challenge instead of a session. */
+  mfaToken?: string | null;
+  onMfaVerify?: (code: string) => Promise<void>;
+  onMfaCancel?: () => void;
   error: string;
   authFormError: string;
   clearErrors: () => void;
@@ -68,6 +73,9 @@ export default function LoginPage({
   onGitHubLogin,
   onPasswordLogin,
   onRegister,
+  mfaToken,
+  onMfaVerify,
+  onMfaCancel,
   error,
   authFormError,
   clearErrors,
@@ -76,6 +84,7 @@ export default function LoginPage({
   const [mode, setMode] = useState<'signin' | 'register'>('signin');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [mfaCode, setMfaCode] = useState('');
   const [registerUsername, setRegisterUsername] = useState('');
   const [registerEmail, setRegisterEmail] = useState('');
   const [registerPassword, setRegisterPassword] = useState('');
@@ -169,6 +178,27 @@ export default function LoginPage({
     }
   };
 
+  // P0-A: redeem the held MFA challenge with a TOTP or recovery code.
+  const handleMfaSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    clearErrors();
+    const code = mfaCode.trim();
+    if (!code) {
+      setFieldErrors({ mfaCode: 'Please enter your authentication code.' });
+      return;
+    }
+    setFieldErrors({});
+    if (onMfaVerify) {
+      setLocalSubmitting(true);
+      try {
+        await onMfaVerify(code);
+        setMfaCode('');
+      } finally {
+        setLocalSubmitting(false);
+      }
+    }
+  };
+
   // Switch tabs cleanly without lingering errors
   const clearErrorsRef = useRef(clearErrors);
   clearErrorsRef.current = clearErrors;
@@ -199,19 +229,27 @@ export default function LoginPage({
           </button>
 
           <div className="lg-card">
-            <h1 id="lg-heading">{mode === 'signin' ? 'Sign in' : 'Create your account'}</h1>
+            <h1 id="lg-heading">
+              {mfaToken ? 'Two-factor authentication' : mode === 'signin' ? 'Sign in' : 'Create your account'}
+            </h1>
             <p className="lg-sub">
-              {mode === 'signin'
-                ? 'Run deterministic audits and read reports you can verify.'
-                : 'Pick a username and a password of at least 10 characters.'}
+              {mfaToken
+                ? 'Enter the 6-digit code from your authenticator app, or one of your recovery codes.'
+                : mode === 'signin'
+                  ? 'Run deterministic audits and read reports you can verify.'
+                  : 'Pick a username and a password of at least 10 characters.'}
             </p>
 
-            <button type="button" onClick={onGitHubLogin} className="lg-github" disabled={isSubmitting}>
-              <GitHubIcon />
-              <span>Continue with GitHub</span>
-            </button>
+            {!mfaToken && (
+              <>
+                <button type="button" onClick={onGitHubLogin} className="lg-github" disabled={isSubmitting}>
+                  <GitHubIcon />
+                  <span>Continue with GitHub</span>
+                </button>
 
-            <p className="lg-or" aria-hidden="true"><span>or use a password</span></p>
+                <p className="lg-or" aria-hidden="true"><span>or use a password</span></p>
+              </>
+            )}
 
             {activeError && (
               <div className="lg-error" role="alert">
@@ -220,8 +258,30 @@ export default function LoginPage({
               </div>
             )}
 
-            <form className="lg-form" onSubmit={handleCredentialSubmit} noValidate>
-              {mode === 'signin' ? (
+            <form className="lg-form" onSubmit={mfaToken ? handleMfaSubmit : handleCredentialSubmit} noValidate>
+              {mfaToken ? (
+                <>
+                  <Field id="lg-mfa-code" label="Authentication code" error={fieldErrors.mfaCode}>
+                    <input
+                      id="lg-mfa-code"
+                      name="one-time-code"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                      disabled={isSubmitting}
+                      aria-invalid={Boolean(fieldErrors.mfaCode)}
+                      aria-describedby={errId('lg-mfa-code', 'mfaCode')}
+                      required
+                      autoFocus
+                    />
+                  </Field>
+                  <button type="button" className="lg-link" onClick={onMfaCancel} disabled={isSubmitting}>
+                    Back to sign in
+                  </button>
+                </>
+              ) : mode === 'signin' ? (
                 <>
                   <Field id="lg-identifier" label="Email or username" error={fieldErrors.identifier}>
                     <input
@@ -325,17 +385,29 @@ export default function LoginPage({
 
               <button type="submit" className="lg-submit" disabled={isSubmitting}>
                 {isSubmitting
-                  ? mode === 'signin' ? 'Signing in…' : 'Creating account…'
-                  : mode === 'signin' ? 'Sign in' : 'Create account'}
+                  ? mfaToken ? 'Verifying…' : mode === 'signin' ? 'Signing in…' : 'Creating account…'
+                  : mfaToken ? 'Verify' : mode === 'signin' ? 'Sign in' : 'Create account'}
               </button>
             </form>
 
-            <p className="lg-switch">
-              {mode === 'signin' ? 'New to Fire Crow? ' : 'Already have an account? '}
-              <button type="button" onClick={() => handleTabChange(mode === 'signin' ? 'register' : 'signin')}>
-                {mode === 'signin' ? 'Create an account' : 'Sign in'}
-              </button>
-            </p>
+            {!mfaToken && (
+              <p className="lg-switch">
+                {mode === 'signin' ? 'New to Fire Crow? ' : 'Already have an account? '}
+                <button type="button" onClick={() => handleTabChange(mode === 'signin' ? 'register' : 'signin')}>
+                  {mode === 'signin' ? 'Create an account' : 'Sign in'}
+                </button>
+              </p>
+            )}
+          </div>
+
+          {/* FC-OPS-EMAIL-001: truthful backend status. Deliberately on the
+              login surface, not the console: the workspace stays free of
+              infrastructure widgets (tests/dashboard.test.ts enforces it), and
+              this is where a cold backend is first felt — sign-in cannot
+              succeed until it wakes. Observes the real /health endpoint on a
+              bounded cadence; never a hardcoded state. */}
+          <div className="lg-backend-status">
+            <BackendStatusIndicator />
           </div>
         </section>
 

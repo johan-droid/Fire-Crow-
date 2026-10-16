@@ -24,6 +24,19 @@ pub fn contains_known_credential_assignment(text: &str) -> bool {
     })
 }
 
+/// Truncates `s` to at most `max` bytes, backing off to the nearest UTF-8
+/// character boundary.
+///
+/// `String::truncate` panics when `max` splits a multi-byte character, and
+/// every caller here feeds it attacker-controlled text (scanner stderr,
+/// report snippets) — the panic would be remotely reachable.
+pub fn truncate_at_char_boundary(s: &mut String, max: usize) {
+    if s.len() > max {
+        let end = s.as_str().floor_char_boundary(max);
+        s.truncate(end);
+    }
+}
+
 pub fn redact_text(text: &str, max_length: usize) -> String {
     let mut result = text.to_string();
     let patterns = [
@@ -51,8 +64,54 @@ pub fn redact_text(text: &str, max_length: usize) -> String {
         }
     }
     if max_length > 0 && result.len() > max_length {
-        result.truncate(max_length);
+        truncate_at_char_boundary(&mut result, max_length);
         result.push_str("... [truncated]");
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{redact_text, truncate_at_char_boundary};
+
+    /// A 300-char multibyte string truncated to a byte length that splits a
+    /// character must not panic and must stay within the byte budget.
+    #[test]
+    fn truncate_multibyte_never_panics_and_respects_limit() {
+        let mut s = "é".repeat(300); // 600 bytes
+        let max = 451; // splits the 226th char (odd byte index)
+        truncate_at_char_boundary(&mut s, max);
+        assert!(s.len() <= max);
+        assert_eq!(s, "é".repeat(225)); // backed off to byte 450
+    }
+
+    /// Same guarantee through the public redaction entry point, including the
+    /// truncation marker.
+    #[test]
+    fn redact_text_multibyte_truncation_no_panic() {
+        let text = "日".repeat(300); // 900 bytes, 3 bytes/char
+        let out = redact_text(&text, 401); // splits a char if unguarded
+        assert!(out.len() <= 401 + "... [truncated]".len());
+        let kept = out.trim_end_matches("... [truncated]");
+        assert!(text.starts_with(kept), "kept must be a prefix of input");
+    }
+
+    #[test]
+    fn truncate_empty_string_is_noop() {
+        let mut s = String::new();
+        truncate_at_char_boundary(&mut s, 0);
+        assert!(s.is_empty());
+        truncate_at_char_boundary(&mut s, 10);
+        assert!(s.is_empty());
+    }
+
+    #[test]
+    fn truncate_exact_boundary_is_noop() {
+        let mut s = "é".repeat(10); // exactly 20 bytes
+        truncate_at_char_boundary(&mut s, 20);
+        assert_eq!(s, "é".repeat(10));
+        // Exact-limit input is not truncated at all by redact_text either.
+        let out = redact_text(&s, 20);
+        assert!(!out.contains("[truncated]"));
+    }
 }

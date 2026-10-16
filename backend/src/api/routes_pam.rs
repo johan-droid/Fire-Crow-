@@ -45,10 +45,15 @@ pub async fn approve_request(
     Path(id): Path<String>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<PrivilegedAccessGrant>> {
+    // P2-E (ZT-06-20): `as i32` truncates silently; a huge or negative
+    // admin-supplied duration would wrap. Clamp to a sane positive range
+    // (1 minute .. 30 days) — clamping rather than rejecting keeps the
+    // admin UX forgiving while bounding the stored grant.
     let duration_minutes = payload
         .get("duration_minutes")
         .and_then(|v| v.as_i64())
-        .unwrap_or(60) as i32;
+        .unwrap_or(60)
+        .clamp(1, 60 * 24 * 30) as i32;
     PamService::approve_request(state.pool(), &id, &user.0.user_id, duration_minutes)
         .await
         .map(Json)

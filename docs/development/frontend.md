@@ -63,13 +63,10 @@ The API client encapsulates all network communication with the Axum backend serv
    const API_BASE = import.meta.env.VITE_API_URL || '/api';
    ```
    In production on Vercel, requests route directly to the decoupled backend host (e.g. `https://api.firecrow.dev`). In local development with Vite dev server, requests route to `http://localhost:8080`.
-2. **Double-Submit CSRF Header Injection**:
-   Every mutating request (`POST`, `PUT`, `DELETE`) reads the `fc_csrf` cookie and injects the header:
-   ```typescript
-   headers['X-CSRF-Token'] = getCookie('fc_csrf');
-   ```
+2. **CSRF Posture (Origin Allowlist)**:
+   The backend enforces an `Origin`-header allowlist on all mutating requests (`POST`, `PUT`, `PATCH`, `DELETE`); cookie-bearing mutations with no `Origin` header are rejected (`backend/src/middleware/csrf.rs`). The client sends no CSRF token header — requests only need to come from an allowlisted origin.
 3. **Credentials Inclusion**:
-   All fetch requests include `credentials: 'include'` to ensure `HttpOnly` session cookies (`fc_session`) are transmitted across cross-origin requests.
+   All fetch requests include `credentials: 'include'` to ensure `HttpOnly` session cookies (`fc_access_token`) are transmitted across cross-origin requests.
 4. **Typed Response DTOs**:
    All endpoints return strongly typed TypeScript interfaces matching backend models (`CanonicalAuditRecord`, `AuditJobDTO`, `UserSessionDTO`).
 

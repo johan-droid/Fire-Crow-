@@ -19,7 +19,7 @@ use std::collections::HashSet;
 fn approved_specs() -> Vec<(Scanner, NetworkMode, SandboxSpec)> {
     let scanners = [
         (Scanner::gitleaks(), NetworkMode::None),
-        (Scanner::osv(), NetworkMode::Bridge),
+        (Scanner::osv(), NetworkMode::Filtered),
         (Scanner::semgrep(), NetworkMode::None),
     ];
     scanners
@@ -182,7 +182,7 @@ fn backend_images_run_as_dedicated_non_root_user() {
 fn scanner_constructors_match_the_execution_allowlist() {
     for (scanner, network) in [
         (Scanner::gitleaks(), NetworkMode::None),
-        (Scanner::osv(), NetworkMode::Bridge),
+        (Scanner::osv(), NetworkMode::Filtered),
         (Scanner::semgrep(), NetworkMode::None),
     ] {
         assert!(
@@ -328,4 +328,65 @@ fn docker_host_accepts_only_tcp_host_port_form() {
             "DOCKER_HOST {bad:?} must fail closed"
         );
     }
+}
+
+// --- FC-RELEASE-017 findings 5+7 -------------------------------------------
+
+/// Both images must pre-create every workspace dir `ensure_workspace_dirs`
+/// creates at boot. The Render image (`backend/Dockerfile`) once created
+/// only one of the four, so a `read_only: true` run aborted with EROFS
+/// before the app could create the rest itself.
+#[test]
+fn images_precreate_all_boot_workspace_dirs() {
+    for rel in ["Dockerfile", "../Dockerfile"] {
+        let text = std::fs::read_to_string(repo_path(&[rel])).expect("Dockerfile must be readable");
+        for dir in [
+            "/app/workspace/storage",
+            "/app/workspace/reports",
+            "/app/workspace/temp",
+            "/app/workspace/scans",
+        ] {
+            assert!(
+                text.contains(dir),
+                "{rel} must pre-create {dir} (boot creates it; a read-only rootfs cannot)"
+            );
+        }
+    }
+}
+
+/// `WORKSPACE_DIR` is a compile-time constant (`env!("CARGO_MANIFEST_DIR")`
+/// in `config.rs`); shipping it as a runtime ENV invites operators to set a
+/// value the binary silently ignores. Neither image may set it.
+#[test]
+fn images_set_no_dead_workspace_dir_env() {
+    for rel in ["Dockerfile", "../Dockerfile"] {
+        let text = std::fs::read_to_string(repo_path(&[rel])).expect("Dockerfile must be readable");
+        assert!(
+            !text.lines().map(str::trim).any(|l| l.starts_with("ENV WORKSPACE_DIR")),
+            "{rel} must not set ENV WORKSPACE_DIR: config::WORKSPACE_DIR is compile-time, a runtime value would be a silent no-op"
+        );
+    }
+}
+
+/// FC-ZT-SEC-001 §4 (independent review): the retired `Bridge` mode approves
+/// nothing, ever — not even the OSV image it once served. A coordinated
+/// revert (constructor + allowlist both back to `Bridge`) must fail at the
+/// policy gate, not just at the constructor assertions elsewhere.
+#[test]
+fn retired_bridge_mode_approves_no_scanner_at_all() {
+    let (_, _, osv_spec) = &approved_specs()[1];
+    for network in [NetworkMode::Bridge, NetworkMode::None] {
+        let mut spec = osv_spec.clone();
+        spec.network = network;
+        assert!(
+            enforce_execution_policy(&spec).is_err(),
+            "OSV with {network:?} must be rejected: only Filtered is approved"
+        );
+    }
+    let mut osv_filtered = osv_spec.clone();
+    osv_filtered.network = NetworkMode::Filtered;
+    assert!(
+        enforce_execution_policy(&osv_filtered).is_ok(),
+        "the approved OSV+Filtered pair must pass"
+    );
 }

@@ -100,6 +100,25 @@ async fn security_f4_refresh_cookie_mutation_without_origin_is_rejected(pool: Pg
     assert_eq!(res.status_code(), 403);
 }
 
+/// ZT-03-15: the legacy refresh cookie — literally named `refresh_token`,
+/// still accepted by the refresh endpoint — must count as an auth cookie
+/// too. A mutation carrying only the legacy cookie and no Origin is the same
+/// forged browser-shaped request as the derived-name variant above.
+#[sqlx::test(migrations = "./migrations")]
+async fn security_zt_03_15_legacy_refresh_cookie_mutation_without_origin_is_rejected(pool: PgPool) {
+    let (app, _state) = csrf_app(pool).await;
+    let res = app
+        .post("/api/v1/auth/refresh")
+        .add_header("cookie", "refresh_token=forged-garbage-token")
+        .json(&serde_json::json!({}))
+        .await;
+    assert_eq!(
+        res.status_code(),
+        403,
+        "the legacy refresh_token cookie must trigger the no-Origin refusal"
+    );
+}
+
 /// Cookie-less callers without an Origin are not a CSRF vector and keep
 /// working: a cross-site page cannot attach an `Authorization` header.
 #[sqlx::test(migrations = "./migrations")]

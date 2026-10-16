@@ -301,7 +301,7 @@ fn report_with(findings: &[Finding]) -> CanonicalAuditReport {
         repo_branch: "main",
         repo_owner: "example",
         repo_name: "repo",
-        snapshot_commit: Some(COMMIT.into()),
+        snapshot_commit: Some(COMMIT),
         snapshot_file_count: 12,
         snapshot_total_size: 4096,
         results: &results,

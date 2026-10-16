@@ -269,10 +269,28 @@ export interface AuthMeResponse {
   credit_balance?: number;
 }
 
-export interface ExchangeResponse {
-  access_token?: string | null;
-  token_type?: string | null;
-  user_id: string;
-  username: string;
+/**
+ * P0-A: `/auth/login` and `/auth/login/mfa` respond with identity metadata
+ * only — session tokens live exclusively in HttpOnly cookies. An MFA-enabled
+ * account receives `status: 'mfa_required'` plus a short-lived challenge
+ * instead of a session; the challenge is redeemed at `/auth/login/mfa`.
+ */
+export interface LoginResponse {
+  token_type?: string;
+  username?: string;
+  user_id?: string;
   email?: string | null;
+  status?: 'mfa_required';
+  mfa_token?: string;
+}
+
+export interface ExchangeResponse {
+  token_type?: string | null;
+  // Present on the full-session response. Absent when the backend returns an
+  // MFA challenge instead (status: 'mfa_required'), which carries mfa_token.
+  user_id?: string;
+  username?: string;
+  email?: string | null;
+  status?: 'mfa_required';
+  mfa_token?: string;
 }

@@ -23,14 +23,14 @@ flowchart TB
     subgraph BackendHost["Backend Service Host (Render / Linux Docker Host)"]
         subgraph AxumServer["Axum 0.7 Web Engine"]
             Router["HTTP Router (/api/*) & SSE/WS Stream"]
-            Middleware["Middleware Pipeline:\n- Trace/Request ID\n- CORS Validation\n- Governor Rate Limiter\n- Session Cookie Auth\n- Double-Submit CSRF Guard"]
+            Middleware["Middleware Pipeline:\n- Trace/Request ID\n- CORS Validation\n- Governor Rate Limiter\n- Session Cookie Auth\n- Origin-Allowlist CSRF Guard"]
             AuthMod["Authentication & MFA Service\n(OAuth / Argon2id / TOTP)"]
             AuditMod["Audit Orchestration Engine"]
             ExportMod["Compliance Report Generator\n(JSON / HTML / PDF)"]
         end
 
         subgraph Agents["Deterministic Pipeline Agents"]
-            FetchAgent["FetchAgent\nStream-bounded Intake\n50MB Unpack Cap"]
+            FetchAgent["FetchAgent\nStream-bounded Intake\n150MB Unpack Cap"]
             ScanAgent["ScannerAgent\nMicro-Sandbox Manager"]
             ScoreAgent["Scoring Engine\nDeterministic Math Model"]
             SummaryAgent["SummaryAgent\nIsolated Gemini Narrative"]
@@ -108,7 +108,7 @@ sequenceDiagram
     API->>DB: UPDATE audit_jobs SET status='running' (Phase: INTAKE)
     API->>Fetch: Execute streaming tarball intake
     Fetch->>GH: Stream GET /repos/{owner}/{repo}/tarball/{branch}
-    Note over Fetch: 50MB Decompression Ceiling Enforced<br/>Pax-header verification<br/>Symlink traversal blocked
+    Note over Fetch: 150MB Decompression Ceiling Enforced<br/>Pax-header verification<br/>Symlink traversal blocked
     Fetch-->>API: Extracted local sandbox workspace: /tmp/fc_work_{uuid}
 
     API->>DB: UPDATE audit_jobs SET phase='SCANNING'
@@ -171,14 +171,14 @@ The host filesystem stores temporary artifacts during the execution window only:
 ```mermaid
 flowchart LR
     subgraph Client["Client Browser"]
-        CookieStorage["fc_session (HttpOnly, Secure, SameSite=Lax)\nfc_csrf (Readable Cookie)"]
-        HeaderInject["X-CSRF-Token: <fc_csrf value>"]
+        CookieStorage["fc_access_token (HttpOnly, Secure, SameSite)\nfc_access_token_refresh cookie"]
+        OriginAttach["Origin header attached by browser\non POST/PUT/PATCH/DELETE"]
     end
 
     subgraph AuthPipeline["Axum Authentication Pipeline"]
-        ExtractCookie["Extract 'fc_session' Cookie"]
+        ExtractCookie["Extract 'fc_access_token' Cookie"]
         SessionCheck["Verify DB Session & Expiry (15m Access)"]
-        CSRFGuard["Validate X-CSRF-Token matches fc_csrf Cookie"]
+        CSRFGuard["Origin-Header Allowlist\n(reject disallowed Origin;\nreject cookie mutations with no Origin)"]
         RBAC["Assert User Ownership / Tenant ID (Prevent IDOR)"]
     end
 
@@ -188,7 +188,7 @@ flowchart LR
     end
 
     CookieStorage -->|Automatic Cookie Transmission| ExtractCookie
-    HeaderInject -->|Header Submission| CSRFGuard
+    OriginAttach -->|Origin Header| CSRFGuard
     ExtractCookie --> SessionCheck
     SessionCheck --> CSRFGuard
     CSRFGuard --> RBAC
@@ -197,8 +197,8 @@ flowchart LR
 
 ### Authentication Invariants:
 1. **Cookie-Based Sessions**: Session tokens are held in `HttpOnly`, `Secure`, `SameSite=Lax` cookies. JavaScript cannot access the session token, defeating XSS token theft.
-2. **Double-Submit CSRF Protection**: State-changing requests (`POST`, `PUT`, `DELETE`) require an `X-CSRF-Token` header that matches the value in the readable `fc_csrf` cookie.
-3. **MFA Verification Gate**: Accounts with MFA enabled receive a pre-auth session token restricted to `/api/auth/mfa/verify`. Access to audit engines and repository data is blocked until TOTP verification succeeds.
+2. **Origin-Header CSRF Protection**: State-changing requests (`POST`, `PUT`, `PATCH`, `DELETE`) must carry an `Origin` header listed in the configured allowlist; a request with any other `Origin` is rejected with 403, and a mutation carrying the auth cookies but no `Origin` header is also rejected. Non-browser callers using `Authorization: Bearer` headers are unaffected, and `SameSite` cookie attributes are defense-in-depth — not the CSRF control.
+3. **MFA Verification Gate**: Accounts with MFA enabled never receive a session at password time — `POST /auth/login` returns a `{"status": "mfa_required", "mfa_token"}` challenge (no cookies), and the same challenge is returned by the OAuth exchange for MFA-enabled accounts. A session is minted only by `POST /auth/login/mfa` after TOTP or recovery-code verification; the session-issuing login/exchange paths check `mfa_enabled` first. (Pre-existing exemption: `POST /auth/refresh` rotates an existing session's tokens without re-checking `mfa_enabled`, so sessions opened *before* MFA enrollment keep refreshing; enabling MFA does not revoke pre-existing sessions.)
 4. **IDOR & Tenant Isolation**: Every audit query (`/api/audit/{id}`) executes with `WHERE id = $1 AND owner_id = $2` unless the authenticated user holds the `admin` role. Cross-tenant reads return `404 Not Found`.
 
 ---

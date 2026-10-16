@@ -49,10 +49,7 @@ pub async fn download_artifact(
             "Content-Disposition",
             format!("attachment; filename=\"{}\"", safe_filename),
         )
-        .header(
-            "Content-Security-Policy",
-            "sandbox; default-src 'none'",
-        )
+        .header("Content-Security-Policy", "sandbox; default-src 'none'")
         .header("X-Content-Type-Options", "nosniff")
         .body(axum::body::Body::from(data))
         .unwrap())

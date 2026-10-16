@@ -55,8 +55,6 @@ services:
       # Optional Redis cache & rate limiting
       - key: REDIS_URL
         sync: false
-      - key: WORKSPACE_DIR
-        value: "/app"
 
 databases:
   - name: firecrow-db

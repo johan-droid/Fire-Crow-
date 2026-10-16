@@ -1,0 +1,17 @@
+[package]
+name = "docker-authz-plugin"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "FireCrow Docker daemon authorization plugin (T1 strict channel)"
+
+[lib]
+name = "docker_authz_plugin"
+path = "src/lib.rs"
+
+[[bin]]
+name = "docker-authz-plugin"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "=1.0.151"

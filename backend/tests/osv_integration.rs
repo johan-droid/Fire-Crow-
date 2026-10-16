@@ -126,7 +126,7 @@ fn egress_belongs_to_osv_only() {
 
     assert_eq!(Scanner::gitleaks().network, NetworkMode::None);
     assert!(!Scanner::gitleaks().network.is_excepted());
-    assert_eq!(osv().network, NetworkMode::Bridge);
+    assert_eq!(osv().network, NetworkMode::Filtered);
     assert!(osv().network.is_excepted());
 
     let gitleaks_argv = docker_argv(&input().sandbox_spec(&Scanner::gitleaks()), "g");
@@ -134,8 +134,9 @@ fn egress_belongs_to_osv_only() {
     assert!(!gitleaks_argv.iter().any(|a| a.contains("network=bridge")));
 
     let osv_argv = docker_argv(&input().sandbox_spec(&osv()), "o");
-    assert!(osv_argv.iter().any(|a| a == "--network=bridge"));
+    assert!(osv_argv.iter().any(|a| a == "--network=scanners-internal"));
     assert!(!osv_argv.iter().any(|a| a == "--network=none"));
+    assert!(!osv_argv.iter().any(|a| a == "--network=bridge"));
 }
 
 // ---------------------------------------------------------------------------

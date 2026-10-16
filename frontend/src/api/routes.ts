@@ -27,6 +27,7 @@ export const auditPaths = {
 
 export const authPaths = {
   login: () => '/auth/login',
+  loginMfa: () => '/auth/login/mfa',
   register: () => '/auth/register',
   logout: () => '/auth/logout',
   me: () => '/auth/me',

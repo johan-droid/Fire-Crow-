@@ -34,6 +34,23 @@ pub struct DodoWebhookEvent {
 
 pub struct DodoPaymentService;
 
+/// P1-G (ZT-06-14): the only webhook `event_type` values that may credit
+/// balance. `event_type` is attacker-influenceable (the HMAC proves the body
+/// came from the configured sender, not that its contents are meaningful),
+/// and it was previously stringified straight into the stored description
+/// with no check at all. Anything outside this allowlist — refunds, failures,
+/// lifecycle noise, or an arbitrary forged string — is rejected before it
+/// touches the ledger or the `payment_records` row. Billing is currently
+/// disabled, so the set is deliberately minimal; extend it only alongside the
+/// matching credit logic. Idempotency is unchanged: legitimate events are
+/// still deduped on `transaction_reference` by `PaymentService::record_payment`.
+const ALLOWED_WEBHOOK_EVENT_TYPES: &[&str] = &["payment.succeeded", "subscription.active"];
+
+/// Whether an event type may credit balance (see the allowlist above).
+fn credits_balance(event_type: &str) -> bool {
+    ALLOWED_WEBHOOK_EVENT_TYPES.contains(&event_type)
+}
+
 impl DodoPaymentService {
     fn get_base_url(settings: &Settings) -> &'static str {
         if settings.dodo_payments_environment == "live_mode"
@@ -115,6 +132,17 @@ impl DodoPaymentService {
         _settings: &Settings,
         event: DodoWebhookEvent,
     ) -> Result<crate::models::PaymentRecord> {
+        // P1-G (ZT-06-14): allowlist before anything is recorded. Unknown
+        // event types are an error (not a silent 200) so a misconfigured or
+        // spoofed sender is visible instead of quietly minting credit.
+        if !credits_balance(&event.event_type) {
+            // Fixed message: no echo of the attacker-controlled event_type
+            // into logs or the response.
+            return Err(crate::error::AppError::BadRequest(
+                "Unsupported webhook event type".into(),
+            ));
+        }
+
         let payment_req = CreatePaymentRequest {
             tenant_id: event.tenant_id,
             amount: event.amount,
@@ -125,5 +153,28 @@ impl DodoPaymentService {
         };
 
         PaymentService::record_payment(pool, &event.user_id, payment_req).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{credits_balance, ALLOWED_WEBHOOK_EVENT_TYPES};
+
+    /// P1-G (ZT-06-14): only allowlisted payment-success events credit
+    /// balance; everything else (refunds, failures, forged strings) must not.
+    #[test]
+    fn webhook_event_allowlist_gates_balance_credits() {
+        assert!(credits_balance("payment.succeeded"));
+        assert!(credits_balance("subscription.active"));
+        for rejected in [
+            "payment.failed",
+            "refund.processed",
+            "",
+            "Payment.Succeeded",
+        ] {
+            assert!(!credits_balance(rejected), "{rejected} must not credit");
+        }
+        // Case-sensitivity is deliberate: the allowlist is exact-match.
+        assert!(ALLOWED_WEBHOOK_EVENT_TYPES.len() == 2);
     }
 }

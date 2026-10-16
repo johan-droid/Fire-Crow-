@@ -81,8 +81,10 @@ services:
         value: "gemini-1.5-flash"
       - key: REDIS_URL
         sync: false
-      - key: WORKSPACE_DIR
-        value: "/app"
+      # NOTE (FC-RELEASE-017 finding 7): no WORKSPACE_DIR key. The binary's
+      # workspace base is the compile-time config::WORKSPACE_DIR
+      # (env!("CARGO_MANIFEST_DIR") == /app via the builder WORKDIR); a
+      # runtime value would be silently ignored, so no such variable is set.
 
 databases:
   - name: firecrow-db

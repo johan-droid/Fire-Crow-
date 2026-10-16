@@ -33,7 +33,18 @@ pub struct TokenClaims {
 pub enum TokenType {
     Access,
     Refresh,
+    /// P0-A: half-authenticated MFA challenge. Minted after password
+    /// verification for an MFA-enabled account; redeemable ONLY at
+    /// `POST /auth/login/mfa`. `require_token_type` rejects it for both
+    /// Access and Refresh, so it can never authorize a protected route or
+    /// mint a session by itself.
+    Mfachallenge,
 }
+
+/// P0-A challenge lifetime: long enough for a user to type a TOTP code,
+/// short enough to bound a stolen challenge. Single-use via family
+/// revocation on successful redemption.
+pub const MFA_CHALLENGE_TTL_MINUTES: i64 = 5;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuthState {
@@ -170,6 +181,34 @@ pub fn create_refresh_token(
     Ok((token, jti))
 }
 
+/// P0-A: mint a half-authenticated MFA challenge token. Purpose
+/// `Mfachallenge`, short TTL, its own session family so redeeming it can be
+/// single-used by revoking the family.
+pub fn create_mfa_challenge_token(
+    user_id: &str,
+    username: &str,
+    secret: &str,
+    tenant_id: &str,
+) -> Result<(String, String)> {
+    let (encoding_key, _) = build_jwt_keys(secret)?;
+    let now = Utc::now();
+    let jti = Uuid::new_v4().to_string();
+    let claims = TokenClaims {
+        sub: user_id.into(),
+        username: username.into(),
+        exp: (now + Duration::minutes(MFA_CHALLENGE_TTL_MINUTES)).timestamp(),
+        nbf: now.timestamp() - 5,
+        iat: now.timestamp(),
+        jti: jti.clone(),
+        token_family: Uuid::new_v4().to_string(),
+        token_type: TokenType::Mfachallenge,
+        tenant_id: tenant_id.into(),
+    };
+    let token = jsonwebtoken::encode(&Header::default(), &claims, &encoding_key)
+        .map_err(|e| AppError::Internal(format!("JWT encode error: {e}")))?;
+    Ok((token, jti))
+}
+
 pub fn validate_token(token: &str, secret: &str) -> Result<TokenData<TokenClaims>> {
     let (_, decoding_key) = build_jwt_keys(secret)?;
     let mut validation = Validation::default();
@@ -191,23 +230,37 @@ pub async fn validate_token_with_anti_replay(
     pool: &sqlx::PgPool,
 ) -> Result<TokenData<TokenClaims>> {
     let data = validate_token(token, secret)?;
+    // P0-A / P1-H (ZT-01-8): a Redis error must NEVER read as "not
+    // revoked". Revocation lives in both stores (logout and rotation write
+    // Redis *and* `token_revocations`), so on any Redis failure we fall back
+    // to the authoritative database lookup rather than failing open.
     let revoked = if let Some(r) = redis {
         let mut conn = r.clone();
-        let mut is_revoked: bool = redis::AsyncCommands::exists(
-            &mut conn,
-            format!("firecrow:revoked_jti:{}", data.claims.jti),
-        )
-        .await
-        .unwrap_or(false);
-        if !is_revoked {
-            is_revoked = redis::AsyncCommands::exists(
+        let redis_revoked: std::result::Result<bool, redis::RedisError> = async {
+            let mut is_revoked: bool = redis::AsyncCommands::exists(
                 &mut conn,
-                format!("firecrow:revoked_family:{}", data.claims.token_family),
+                format!("firecrow:revoked_jti:{}", data.claims.jti),
             )
-            .await
-            .unwrap_or(false);
+            .await?;
+            if !is_revoked {
+                is_revoked = redis::AsyncCommands::exists(
+                    &mut conn,
+                    format!("firecrow:revoked_family:{}", data.claims.token_family),
+                )
+                .await?;
+            }
+            Ok(is_revoked)
         }
-        is_revoked
+        .await;
+        match redis_revoked {
+            Ok(is_revoked) => is_revoked,
+            Err(err) => {
+                tracing::warn!(
+                    "revocation lookup failed in Redis, falling back to database: {err}"
+                );
+                is_revoked_in_db(pool, &data.claims.jti, &data.claims.token_family).await?
+            }
+        }
     } else {
         // HIGH-02: without Redis, fall back to the database revocation table so
         // logout / rotation still take effect immediately.
@@ -260,7 +313,7 @@ pub async fn validate_access_token(
 /// Returns `true` when this call is the first consumer. Redis uses a single
 /// `SET .. NX EX` round-trip; the database path relies on the unique `jti`
 /// constraint with `ON CONFLICT DO NOTHING` and inspects `rows_affected`.
-async fn consume_jti_once(
+pub async fn consume_jti_once(
     redis: Option<&MultiplexedConnection>,
     pool: &sqlx::PgPool,
     jti: &str,

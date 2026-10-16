@@ -76,3 +76,19 @@ describe('login-site.css responsive styling & scoping', () => {
     assert.ok(loginCss.includes(':focus-visible'), 'focus-visible styling missing');
   });
 });
+
+describe('Turnstile API-only contract (FC-RELEASE-017 finding 3)', () => {
+  it('no credential submit path sends a turnstile_token (no widget exists)', () => {
+    // The backend rejects tokenless logins with 403 when CF_TURNSTILE_ENABLED
+    // is set, but no frontend widget exists and the shipped CSP would block
+    // the challenge script — so the flag is API-only until G7 wires the
+    // widget. This pins that contract: enabling the flag today bricks browser
+    // logins, and the G7 change must deliberately update this test.
+    for (const [name, src] of [['LoginPage.tsx', loginPage], ['App.tsx', app]] as const) {
+      assert.ok(
+        !src.includes('turnstile_token'),
+        `${name} must not reference turnstile_token until the G7 widget lands`,
+      );
+    }
+  });
+});

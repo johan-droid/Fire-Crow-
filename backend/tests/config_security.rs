@@ -34,6 +34,9 @@ const ENV_KEYS: &[&str] = &[
     "GITHUB_APP_ID",
     "GITHUB_APP_PRIVATE_KEY",
     "TRUSTED_PROXY_CIDRS",
+    "RESEND_API_KEY",
+    "RESEND_FROM_EMAIL",
+    "SENDER_EMAIL",
 ];
 
 struct Env {
@@ -594,4 +597,53 @@ fn security_p19b1_app_identity_complete_starts() {
     let rendered = format!("{settings:?}");
     assert!(rendered.contains("123456"), "the public ID stays visible");
     assert!(!rendered.contains("MIIEvg"), "the key stays hidden");
+}
+
+// ---------------------------------------------------------------------------
+// FC-OPS-EMAIL-001: Resend sender configuration
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resend_api_key_without_any_sender_address_fails_closed() {
+    let env = Env::clean();
+    env.with_valid_keys();
+    env.set("RESEND_API_KEY", "re_valid_shaped_key");
+    // RESEND_FROM_EMAIL and SENDER_EMAIL deliberately unset: a key that cannot
+    // build a message must fail at startup, not at first delivery.
+    let res = Settings::new();
+    assert!(
+        res.is_err(),
+        "a Resend key with no sender address anywhere must fail startup"
+    );
+    let message = res.err().unwrap().to_string();
+    assert!(
+        message.contains("RESEND"),
+        "actionable message, got: {message}"
+    );
+}
+
+#[test]
+fn resend_key_with_sender_address_passes_startup_validation() {
+    let env = Env::clean();
+    env.with_valid_keys();
+    env.set("RESEND_API_KEY", "re_valid_shaped_key");
+    env.set("RESEND_FROM_EMAIL", "Fire Crow <reports@example.test>");
+    assert!(
+        Settings::new().is_ok(),
+        "key + explicit sender must validate at startup"
+    );
+}
+
+#[test]
+fn sender_email_alone_satisfies_the_resend_sender_check() {
+    let env = Env::clean();
+    env.with_valid_keys();
+    env.set("RESEND_API_KEY", "re_valid_shaped_key");
+    env.set("SENDER_EMAIL", "reports@example.test");
+    // RESEND_FROM_EMAIL falls back to SENDER_EMAIL, so either satisfies the
+    // startup check.
+    assert!(
+        Settings::new().is_ok(),
+        "SENDER_EMAIL alone must satisfy the Resend sender check"
+    );
 }

@@ -218,22 +218,23 @@ pub async fn run_audit_job(
     {
         Ok(Err(e)) => {
             error!("Worker: job {} failed: {}", job_id, e);
-            // Phase 12.1: the failure path closes the running execution first
-            // (same commit as the job's terminal status) instead of writing
-            // `audit_jobs.status` around the execution. Without this a failed
-            // pipeline would leave a `running` execution with no ending while
-            // the job already reads `failed`.
-            let _ = crate::orchestrator::execution::fail_running_execution(
-                pool,
-                job_id,
-                &e.to_string(),
-            )
-            .await;
+            // P0-D (ZT-10-4): `execute_audit_job` now enforces its own time
+            // budget inside the lease scope and resolves every post-lease
+            // failure to an `Outcome`. An `Err` here means `begin_execution`
+            // itself failed — no lease was opened — so this worker owns no
+            // execution and must only fail the job, and only if no successor
+            // worker holds a live execution for it.
+            let _ =
+                crate::orchestrator::execution::fail_job_if_unowned(pool, job_id, &e.to_string())
+                    .await;
             crate::orchestrator::broadcast_job_progress(pool, job_id).await;
         }
         Err(_) => {
+            // Unreachable in practice (the inner lease-scoped budget fires
+            // first); kept as a last-resort guarded fallback that can never
+            // touch an execution this worker does not own.
             error!("Worker: job {} timed out after 30 minutes", job_id);
-            let _ = crate::orchestrator::execution::fail_running_execution(
+            let _ = crate::orchestrator::execution::fail_job_if_unowned(
                 pool,
                 job_id,
                 "Job timed out after 30 minutes",

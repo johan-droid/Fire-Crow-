@@ -25,6 +25,17 @@ Source code extracted during an audit exists on the host filesystem only for the
 
 ## 2. Security Documentation Suite
 
-1. [docs/security/threat-model.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/security/threat-model.md) — STRIDE threat analysis, trust boundaries, attacker profiles, and mitigations.
-2. [docs/security/secure-development.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/security/secure-development.md) — Secure coding guidelines for Rust and TypeScript, input sanitization, and dependency scanning.
-3. [docs/security/incident-response.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/security/incident-response.md) — Severity tiers, containment playbooks, incident communications, and post-mortem procedures.
+1. [docs/security/threat-model.md](../../../../../../docs/security/threat-model.md) — STRIDE threat analysis, trust boundaries, attacker profiles, and mitigations.
+2. [docs/security/secure-development.md](../../../../../../docs/security/secure-development.md) — Secure coding guidelines for Rust and TypeScript, input sanitization, and dependency scanning.
+3. [docs/security/incident-response.md](../../../../../../docs/security/incident-response.md) — Severity tiers, containment playbooks, incident communications, and post-mortem procedures.
+
+---
+
+## 3. Standing Operational Requirement: Scanner Test-Fixture Credentials
+
+`backend/tests/live_e2e.rs` deliberately plants secret-shaped strings — including a GitHub PAT-shaped fixture (real `ghp_` prefix) — so the secret scanner has something genuine to detect. Whether that fixture ever matched a real credential cannot be determined offline from this repository. The repository owner must:
+
+1. **Verify out-of-band** (e.g. via GitHub token review/revocation) that the planted fixture token is **not** a valid credential, and **rotate/revoke it if it is**.
+2. **Never replace the fixture with a functional credential.** A live token in a test tree defeats the test's purpose and risks exposure through test output, container images, and CI logs.
+
+This is a one-time verification plus a standing rule for any future secret-shaped fixtures added to tests.

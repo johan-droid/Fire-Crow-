@@ -203,22 +203,32 @@ pub const MAX_TIMEOUT_SECS: u64 = 3600;
 /// | Mode | Docker flag | Who |
 /// |------|-------------|-----|
 /// | `None` | `--network=none` | every scanner (default) |
-/// | `Bridge` | `--network=bridge` | OSV only, for the live vulnerability database |
+/// | `Bridge` | `--network=bridge` | nothing (retired by G1; kept only so recorded history still parses) |
+/// | `Filtered` | `--network=scanners-internal` | OSV only: the internal network has no external route, so the filtering-proxy sidecar (the sole straddler) is the only path out |
 ///
-/// `Bridge` is the default bridge network, never `host`: the container can
-/// reach the internet but has no view of the host's interfaces, no metadata
-/// service, and no route to any other container. It is deliberately the weakest
-/// exception that still lets the tool work, so a future scanner cannot widen
-/// the boundary by asking for something stronger — there is nothing stronger
-/// to ask for.
+/// `Bridge` used to be OSV's exception for the live vulnerability database.
+/// G1 (FC-ZT-SEC-001 §4) proved that exception unenforceable — a container on
+/// the default bridge has a full external route and the proxy env vars are
+/// honor-based — so OSV moved to `Filtered`: attachment ONLY to the
+/// `internal: true` `scanners-internal` network, where no direct socket can
+/// leave and the sidecar is the only egress. `none` scanners never move up
+/// to `Filtered`: `--network=none` remains the stronger boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NetworkMode {
     /// `--network=none`. The default, and the only mode most scanners use.
     #[default]
     None,
-    /// `--network=bridge`. Reserved for scanners that query a live
-    /// third-party database as part of doing their job.
+    /// `--network=bridge`. RETIRED — do not assign to new scanners. It
+    /// remains representable so historical execution records and the
+    /// `docker_argv` contract keep parsing; `enforce_execution_policy`
+    /// rejects it for every current scanner (see the allowlist below).
     Bridge,
+    /// `--network=scanners-internal`. The provisioned internal network
+    /// (compose: `internal: true`, fixed name, created before `up`). The
+    /// container gets container-to-container DNS and no external route;
+    /// egress flows solely through the filtering-proxy sidecar via the
+    /// operator's `OSV_EGRESS_PROXY` (`http://egress-proxy:3128` in compose).
+    Filtered,
 }
 
 impl NetworkMode {
@@ -227,6 +237,10 @@ impl NetworkMode {
         match self {
             Self::None => "--network=none".into(),
             Self::Bridge => "--network=bridge".into(),
+            // Fixed topology-contract name (see the variant docs): the
+            // network is provisioned with exactly this name before `up`, so
+            // the backend never has to discover a compose-prefixed name.
+            Self::Filtered => "--network=scanners-internal".into(),
         }
     }
 
@@ -235,13 +249,16 @@ impl NetworkMode {
         match self {
             Self::None => "none",
             Self::Bridge => "bridge",
+            Self::Filtered => "filtered",
         }
     }
 
-    /// True only for a declared exception, so a caller can assert that a
-    /// scanner did not quietly gain egress.
+    /// True only for the live filtered exception, so a caller can assert that
+    /// a scanner did not quietly gain egress. The retired `Bridge` is
+    /// deliberately NOT excepted: it must never execute, so no code path may
+    /// treat it as "needs proxy / may have egress".
     pub fn is_excepted(self) -> bool {
-        !matches!(self, Self::None)
+        matches!(self, Self::Filtered)
     }
 }
 
@@ -261,7 +278,7 @@ pub struct SandboxSpec {
     /// Network access for this run. Deny-by-default: [`NetworkMode::None`]
     /// renders `--network=none`, leaving no exfiltration path for whatever the
     /// scanner reads. Only a scanner that *declares* an exception gets
-    /// [`NetworkMode::Bridge`].
+    /// [`NetworkMode::Filtered`] (internal network + proxy sidecar).
     pub network: NetworkMode,
     /// Argument vector. Never a shell string: an argument containing `;`, `|`,
     /// or `$(...)` is passed through as that literal argument. The one
@@ -589,15 +606,18 @@ pub fn validate_pinned_image(image: &str) -> Result<()> {
 /// it was not granted, or any non-`sh` entrypoint.
 ///
 /// The pairs mirror the scanner descriptors (`Scanner::gitleaks/osv/semgrep`);
-/// `docker_host_boundary` tests assert they cannot drift apart. OSV keeps its
-/// declared `bridge` exception, but since V3 the bridge is only ever used
-/// behind the mandatory filtering proxy: `run_dependency_scan` refuses to
-/// execute without a validated `OSV_EGRESS_PROXY`, so an unproxied container
-/// never exists. Nothing else gets egress because nothing stronger is
-/// representable — [`NetworkMode`] has no host/pid option by construction.
+/// `docker_host_boundary` tests assert they cannot drift apart. OSV is the
+/// sole networked workload, and since G1 (FC-ZT-SEC-001 §4) it rides the
+/// `Filtered` internal network behind the mandatory filtering-proxy sidecar:
+/// `run_dependency_scan` refuses to execute without a validated
+/// `OSV_EGRESS_PROXY`, so an unproxied container never exists, and a
+/// `Bridge` container never exists either — `bridge` is retired for every
+/// current scanner (a full external route the proxy env vars cannot revoke).
+/// Nothing else gets egress because nothing stronger is representable.
+/// `none` scanners stay `none`: the internal network would be a widening.
 pub const APPROVED_SCANNER_EXECUTIONS: [(&str, NetworkMode); 3] = [
     ("ghcr.io/gitleaks/gitleaks:v8.18.4", NetworkMode::None),
-    ("ghcr.io/google/osv-scanner:v2.2.4", NetworkMode::Bridge),
+    ("ghcr.io/google/osv-scanner:v2.2.4", NetworkMode::Filtered),
     ("semgrep/semgrep:1.96.0", NetworkMode::None),
 ];
 
@@ -778,6 +798,58 @@ pub fn validated_docker_host(raw: &std::ffi::OsStr) -> Option<String> {
     Some(format!("tcp://{host}:{port}"))
 }
 
+/// F-G2-05 compatibility preflight: verifies the docker CLI version is new
+/// enough to speak to the daemon's minimum API version (1.44 on this host).
+/// A client older than the daemon's MinAPIVersion gets "client version too
+/// old" and every scanner run fails. Fail fast with a clear message instead
+/// of a cryptic daemon error.
+///
+/// Debian bookworm's `docker.io` pins to 20.10.24 (API 1.41), which is below
+/// the minimum required (24.0.0 → API 1.44). This check catches that before
+/// any scan is attempted.
+async fn validate_docker_cli_version() -> Result<()> {
+    // Minimum docker CLI version that supports API 1.44 (daemon MinAPIVersion).
+    const MIN_DOCKER_VERSION: (u32, u32, u32) = (24, 0, 0);
+
+    let output = tokio::process::Command::new("docker")
+        .arg("--version")
+        .output()
+        .await
+        .map_err(|e| AppError::Internal(format!("docker CLI not found: {e}")))?;
+
+    if !output.status.success() {
+        return Err(AppError::Internal(
+            "docker --version exited non-zero".into(),
+        ));
+    }
+
+    let version_str = String::from_utf8_lossy(&output.stdout);
+    // Expected format: "Docker version X.Y.Z, build ..."
+    let version_part = version_str
+        .split_whitespace()
+        .find(|p| p.chars().next().is_some_and(char::is_numeric))
+        .ok_or_else(|| AppError::Internal("could not parse docker version".into()))?;
+
+    let nums: Vec<u32> = version_part
+        .split('.')
+        .filter_map(|n| n.parse().ok())
+        .collect();
+    if nums.len() < 3 {
+        return Err(AppError::Internal("could not parse docker version".into()));
+    }
+
+    let version = (nums[0], nums[1], nums[2]);
+    if version < MIN_DOCKER_VERSION {
+        return Err(AppError::Internal(format!(
+            "docker CLI version {}.{}.{} is too old; minimum required is {}.{}.{} for daemon API compatibility (F-G2-05)",
+            version.0, version.1, version.2,
+            MIN_DOCKER_VERSION.0, MIN_DOCKER_VERSION.1, MIN_DOCKER_VERSION.2,
+        )));
+    }
+
+    Ok(())
+}
+
 /// Build the exact `docker` argument vector for a run.
 ///
 /// Pure, so the whole isolation contract is verifiable without Docker. Every
@@ -941,6 +1013,16 @@ impl SandboxManager {
                 tracing::warn!("ignoring malformed DOCKER_HOST; docker client will fail closed");
             }
         }
+
+        // F-G2-05 compatibility preflight: the docker CLI must speak a daemon
+        // API version >= the daemon's MinAPIVersion (1.44 on this host). A
+        // client that is too old gets "client version too old" and every scan
+        // fails. Fail fast with a clear message instead of a cryptic daemon
+        // error. Debian bookworm's docker.io pins to 20.10.24 (API 1.41),
+        // which is below the minimum; this check catches that before any scan
+        // is attempted.
+        validate_docker_cli_version().await?;
+
         let mut child = cmd
             .spawn()
             .map_err(|e| AppError::Internal(format!("Failed to execute sandbox: {e}")))?;

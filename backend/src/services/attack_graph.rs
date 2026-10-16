@@ -23,7 +23,9 @@ pub fn calculate_attack_path(start_node_id: &str, edges: &[Edge]) -> Result<Vec<
 
     while let Some((current_id, depth)) = queue.pop_front() {
         if depth > MAX_GRAPH_DEPTH {
-            return Err(AppError::Internal("Maximum attack graph depth exceeded".into()));
+            return Err(AppError::Internal(
+                "Maximum attack graph depth exceeded".into(),
+            ));
         }
 
         // Cycle detection: skip nodes already visited in the path

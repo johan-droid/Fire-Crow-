@@ -1,0 +1,8 @@
+{
+ "RequestMethod": "GET",
+ "RequestUri": "/version",
+ "RequestHeaders": {
+  "Accept": "*/*",
+  "User-Agent": "curl/8.5.0"
+ }
+}

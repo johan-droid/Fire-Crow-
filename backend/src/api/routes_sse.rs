@@ -13,6 +13,47 @@ pub fn router() -> Router<Arc<crate::AppState>> {
         .route("/dashboard", get(sse_dashboard))
 }
 
+/// P1-I (ZT-01/02-24): re-check authorization while a long-lived SSE stream
+/// stays open. The `AuthenticatedUser` extractor only authorizes at connect;
+/// without this, a user deactivated (or a token family revoked by logout /
+/// rotation) mid-stream keeps receiving events until the client disconnects.
+///
+/// Both SSE loops re-run this every 60s (`MissedTickBehavior::Skip`, first
+/// tick consumed so connect-time authorization is not duplicated). 60s is the
+/// accepted revocation-latency bound for long-lived streams: two cheap
+/// indexed lookups per minute per open stream, and a revoked stream dies
+/// within a minute instead of lasting hours. The revocation check mirrors
+/// `services::auth::is_revoked_in_db`'s family arm inline (rather than making
+/// that file's helper `pub`) — same table, same `expires_at > NOW()` window.
+///
+/// Returns `false` when the stream must be terminated.
+async fn auth_still_valid(pool: &sqlx::PgPool, user_id: &str, token_family: &str) -> bool {
+    let active: Option<bool> = sqlx::query_scalar("SELECT is_active FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
+    if active != Some(true) {
+        return false;
+    }
+    let revoked: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM token_revocations WHERE token_family = $1 AND expires_at > NOW()",
+    )
+    .bind(token_family)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(1); // fail closed: a failed revocation lookup ends the stream
+    revoked == 0
+}
+
+/// Builds the 60s revalidation ticker shared by both SSE loops.
+async fn revalidation_ticker() -> tokio::time::Interval {
+    let mut ticker = tokio::time::interval(Duration::from_secs(60));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    ticker.tick().await; // consume the immediate first tick
+    ticker
+}
+
 /// SSE stream for a single audit job — pushes updates event-driven via tokio broadcast channel.
 /// Queries PostgreSQL once on connection for initial snapshot and auth check, then waits for
 /// broadcast events from the orchestrator and worker pool.
@@ -24,6 +65,8 @@ async fn sse_job(
     let pool = state.pool().clone();
     let user_id = user.user_id.clone();
     let tenant_id = user.tenant_id.clone();
+    let token_family = user.token_family.clone();
+    let mut revalidate = revalidation_ticker().await;
     let mut rx = state.subscribe_job_updates();
 
     let stream = async_stream::stream! {
@@ -71,9 +114,17 @@ async fn sse_job(
         let evt = Event::default().event("update").data(json_str);
         yield Ok(evt);
 
-        // Listen to broadcast events (no DB polling)
+        // Listen to broadcast events (no DB polling). P1-I: `select!` also
+        // polls the 60s revalidation ticker — a deactivated user or revoked
+        // token family ends the stream within the 60s revocation-latency bound.
         loop {
-            match rx.recv().await {
+            tokio::select! {
+                _ = revalidate.tick() => {
+                    if !auth_still_valid(&pool, &user_id, &token_family).await {
+                        break;
+                    }
+                }
+                msg = rx.recv() => match msg {
                 Ok(event) => {
                     if event.job_id == job_id {
                         let payload = serde_json::json!({
@@ -134,6 +185,7 @@ async fn sse_job(
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     break;
                 }
+                }
             }
         }
     };
@@ -155,6 +207,8 @@ async fn sse_dashboard(
     let pool = state.pool().clone();
     let user_id = user.user_id.clone();
     let tenant_id = user.tenant_id.clone();
+    let token_family = user.token_family.clone();
+    let mut revalidate = revalidation_ticker().await;
     let mut rx = state.subscribe_job_updates();
 
     let stream = async_stream::stream! {
@@ -175,9 +229,17 @@ async fn sse_dashboard(
         let evt = Event::default().event("dashboard").data(payload.to_string());
         yield Ok(evt);
 
-        // Listen to broadcast events (no interval polling)
+        // Listen to broadcast events (no interval polling). P1-I: `select!`
+        // also polls the 60s revalidation ticker — a deactivated user or
+        // revoked token family ends the stream within the 60s bound.
         loop {
-            match rx.recv().await {
+            tokio::select! {
+                _ = revalidate.tick() => {
+                    if !auth_still_valid(&pool, &user_id, &token_family).await {
+                        break;
+                    }
+                }
+                msg = rx.recv() => match msg {
                 Ok(event) => {
                     if event.user_id == user_id {
                         let jobs: Vec<crate::models::AuditJob> = sqlx::query_as::<_, crate::models::AuditJob>(
@@ -217,6 +279,7 @@ async fn sse_dashboard(
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                     break;
+                }
                 }
             }
         }

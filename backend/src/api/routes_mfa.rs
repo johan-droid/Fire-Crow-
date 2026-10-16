@@ -138,43 +138,30 @@ pub async fn use_recovery_code(
 
     let mfa_config = mfa_config.ok_or_else(|| AppError::BadRequest("MFA not configured".into()))?;
 
-    let recovery_codes: Vec<crate::models::MfaRecoveryCode> = sqlx::query_as(
-        "SELECT * FROM mfa_recovery_codes WHERE mfa_config_id = $1 AND used_at IS NULL",
+    let unused: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM mfa_recovery_codes WHERE mfa_config_id = $1 AND used_at IS NULL",
     )
     .bind(&mfa_config.id)
-    .fetch_all(state.pool())
+    .fetch_one(state.pool())
     .await
     .map_err(AppError::Database)?;
-
-    if recovery_codes.is_empty() {
+    if unused.0 == 0 {
         return Err(AppError::BadRequest("No recovery codes available".into()));
     }
 
-    let code_hash = crate::services::mfa_service::MfaService::hash_recovery_code(code);
-    let mut valid_code = None;
-    for rc in &recovery_codes {
-        if rc.code_hash == code_hash {
-            valid_code = Some(rc);
-            break;
-        }
-    }
-
-    if let Some(valid_rc) = valid_code {
+    // P0-A: consumption is delegated to the shared atomic helper so the
+    // login-time redemption path and this endpoint cannot drift apart.
+    if try_consume_recovery_code(state.pool(), &user.user_id, code).await? {
         crate::services::auth::clear_login_failures(state.pool(), &rl_key).await?;
-        sqlx::query("UPDATE mfa_recovery_codes SET used_at = NOW() WHERE id = $1")
-            .bind(&valid_rc.id)
-            .execute(state.pool())
-            .await
-            .map_err(AppError::Database)?;
-
-        let _ =
-            sqlx::query("UPDATE mfa_configurations SET backup_codes_consumed = $1 WHERE id = $2")
-                .bind(mfa_config.backup_codes_consumed + 1)
-                .bind(&mfa_config.id)
-                .execute(state.pool())
-                .await
-                .map_err(AppError::Database)?;
-
+        let _ = crate::services::security_log::record_security_event(
+            state.pool(),
+            Some(&user.user_id),
+            None,
+            "mfa_recovery_code_used",
+            None,
+            None,
+        )
+        .await;
         Ok(Json(
             serde_json::json!({"valid": true, "message": "Recovery code used successfully"}),
         ))
@@ -298,6 +285,55 @@ pub async fn admin_enforce(
     Ok(Json(
         serde_json::json!({"status": "enforced", "users_affected": affected.rows_affected()}),
     ))
+}
+
+/// P0-A: shared recovery-code redemption, used by the authenticated recovery
+/// endpoint and by login-time MFA redemption (`POST /auth/login/mfa`).
+/// Returns `true` when a matching unused code was found and consumed; the
+/// caller owns lockout/rate-limit policy so failures are counted uniformly.
+pub(crate) async fn try_consume_recovery_code(
+    pool: &sqlx::PgPool,
+    user_id: &str,
+    code: &str,
+) -> Result<bool> {
+    let mfa_config: Option<crate::models::MfaConfiguration> =
+        sqlx::query_as("SELECT * FROM mfa_configurations WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(AppError::Database)?;
+    let Some(mfa_config) = mfa_config else {
+        return Ok(false);
+    };
+    let code_hash = crate::services::mfa_service::MfaService::hash_recovery_code(code);
+    // Atomic single-use: the WHERE clause makes concurrent redemptions of the
+    // same code race-safe — only one UPDATE can flip used_at.
+    let consumed = sqlx::query(
+        "UPDATE mfa_recovery_codes SET used_at = NOW()
+          WHERE mfa_config_id = $1 AND code_hash = $2 AND used_at IS NULL",
+    )
+    .bind(&mfa_config.id)
+    .bind(&code_hash)
+    .execute(pool)
+    .await
+    .map_err(AppError::Database)?;
+    if consumed.rows_affected() == 0 {
+        return Ok(false);
+    }
+    // FC-RELEASE-017 (review finding 6): the counter increments atomically in
+    // the database. The old read-modify-write bound `backup_codes_consumed + 1`
+    // from a value fetched before the UPDATE, so concurrent redemptions of
+    // different codes lost increments and the remaining-codes report drifted.
+    // (Consumption itself was already safe: the `used_at IS NULL` UPDATE above
+    // is the single-flight gate.)
+    let _ = sqlx::query(
+        "UPDATE mfa_configurations SET backup_codes_consumed = backup_codes_consumed + 1 WHERE id = $1",
+    )
+    .bind(&mfa_config.id)
+    .execute(pool)
+    .await
+    .map_err(AppError::Database)?;
+    Ok(true)
 }
 
 async fn persist_recovery_codes(

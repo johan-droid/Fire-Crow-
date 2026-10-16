@@ -45,7 +45,7 @@ An optional, isolated **Gemini AI narrative layer** synthesizes executive briefi
 
 ```
 Untrusted Code ──▶ Stream Bounded ──▶ Zero-Privilege ──▶ Canonical v1 ──▶ Immutable DB ──▶ Exportable
-  Repository        Intake (50MB)      Containers        Normalizer       Ledger (Pg16)    Artifacts
+  Repository        Intake (150MB)     Containers        Normalizer       Ledger (Pg16)    Artifacts
                                       (Gitleaks/OSV/                                       (PDF/JSON/
                                         Semgrep)                                            HTML)
 ```
@@ -62,7 +62,7 @@ Untrusted Code ──▶ Stream Bounded ──▶ Zero-Privilege ──▶ Canon
     </td>
     <td width="50%">
       <h3>📦 Stream-Bounded Intake (Anti-Bomb)</h3>
-      <p>Hardened ingestion agent applies streaming HTTP chunking, pax inflation bounds, and a strict 50MB unpack ceiling. Protects infrastructure against decompression bombs, symlink attacks, and memory exhaustion before any scanner executes.</p>
+      <p>Hardened ingestion agent applies streaming HTTP chunking, pax inflation bounds, and a strict 150MB unpack ceiling (100MB download cap). Protects infrastructure against decompression bombs, symlink attacks, and memory exhaustion before any scanner executes.</p>
     </td>
   </tr>
   <tr>
@@ -88,7 +88,7 @@ Untrusted Code ──▶ Stream Bounded ──▶ Zero-Privilege ──▶ Canon
   <tr>
     <td width="50%">
       <h3>🍪 Zero-Trust Auth & IDOR Protection</h3>
-      <p>HttpOnly, Secure, SameSite session cookies eliminate exposed tokens in URLs and <code>localStorage</code>. Protected by double-submit CSRF tokens and strict ownership verification gates on every audit resource.</p>
+      <p>HttpOnly, Secure, SameSite session cookies eliminate exposed tokens in URLs and <code>localStorage</code>. Protected by an Origin-header allowlist CSRF guard on all mutating methods and strict ownership verification gates on every audit resource.</p>
     </td>
     <td width="50%">
       <h3>📊 Multi-Format Compliance Artifacts</h3>
@@ -113,13 +113,13 @@ flowchart TD
     subgraph Gateway ["Public API Origin & Defense (Render / Docker)"]
         Axum["Rust Axum 0.7 Service"]
         MW_Auth["Cookie Auth & IDOR Gate"]
-        MW_CSRF["Double-Submit CSRF Guard"]
+        MW_CSRF["Origin-Allowlist CSRF Guard"]
         MW_Rate["Governor Rate Limiter"]
     end
 
     subgraph Intake ["Stream-Bounded Intake Engine"]
         FetchAgent["Repository Fetch Agent (fetch.rs)"]
-        DecompGuard["Pax Decompressor (Max 50MB Ceiling)"]
+        DecompGuard["Pax Decompressor (Max 150MB Ceiling)"]
         SHAGuard["Commit SHA & Branch Validator"]
     end
 
@@ -202,7 +202,7 @@ FireCrow has undergone rigorous formal security hardening. All identified vulner
 | ID | Dimension | Threat Mitigated | Technical Enforcement Mechanism | Verification Test |
 | :---: | :--- | :--- | :--- | :--- |
 | **F1** | **Host Boundary** | Container escape / host takeover | `SandboxManager` denies `/var/run/docker.sock`, privileged mounts, and unauthorized devices | `tests/docker_host_boundary.rs` |
-| **H1** | **Resource Bounds** | Decompression bombs & memory exhaustion | Stream-bounded HTTP chunking with incremental gzip/pax checks; 50MB unpack ceiling | `tests/repo_fetch_bounds.rs` |
+| **H1** | **Resource Bounds** | Decompression bombs & memory exhaustion | Stream-bounded HTTP chunking with incremental gzip/pax checks; 150MB unpack ceiling (100MB download, 20MB per file, 20k files) | `tests/repo_fetch_bounds.rs` |
 | **H2** | **Network Egress** | SSRF & internal network pivoting | Container network policy blocks metadata (`169.254.169.254`), loopback & RFC1918 addresses | `tests/osv_egress_policy.rs` |
 | **H3** | **DB Lifecycle** | State race conditions & skipped stages | PostgreSQL `BEFORE UPDATE` trigger (`audit_jobs_lifecycle_guard_fn`) enforces state transitions | `tests/db_lifecycle_guard.rs` |
 | **H4** | **Session Security** | Token leakage via URLs / storage | REST API uses strictly HttpOnly/Secure/SameSite cookies; refresh token lifetime capped at 7 days | `tests/session_security.rs` |

@@ -30,11 +30,9 @@ pub async fn ask_chat(
         }
     }
 
-    Ok(Json(
-        serde_json::json!({
-            "response": "Chat assistant is not yet implemented in the Rust backend.",
-            "job_id": job_id,
-            "tenant_id": user.tenant_id,
-        }),
-    ))
+    Ok(Json(serde_json::json!({
+        "response": "Chat assistant is not yet implemented in the Rust backend.",
+        "job_id": job_id,
+        "tenant_id": user.tenant_id,
+    })))
 }

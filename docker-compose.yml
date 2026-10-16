@@ -107,6 +107,19 @@ services:
       - firecrow_storage:/app/workspace/storage
     ports:
       - "8000:8000"
+    # ZT-08: read-only rootfs. The backend writes only to the mounted volume
+    # firecrow_storage at /app/workspace/storage (volume mounts stay writable
+    # under read_only); /tmp gets a writable tmpfs below. Scanner containers
+    # are launched via the docker-socket-proxy, so the backend process itself
+    # needs no Linux capabilities.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
     environment:
       DATABASE_URL: "postgres://firecrow:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/firecrow"
       REDIS_URL: "redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379"
@@ -129,7 +142,57 @@ services:
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
       R2_ENDPOINT_URL: ${R2_ENDPOINT_URL:-}
       R2_BUCKET_NAME: ${R2_BUCKET_NAME:-firecrow-artifacts}
+      # G1 (FC-ZT-SEC-001 §4): the OSV scanner rides the internal network
+      # with no external route, so its proxy env must address the sidecar.
+      # Default is the compose sidecar below; override for non-compose
+      # deployments that provide their own filtering proxy. Unset/empty keeps
+      # the fail-closed behavior (scan refuses to run without a proxy).
+      OSV_EGRESS_PROXY: "${OSV_EGRESS_PROXY:-http://egress-proxy:3128}"
+
+  # G1 (FC-ZT-SEC-001 §4): filtering forward-proxy sidecar. The SOLE
+  # straddler: attached to `scanners-internal` (inbound from scanners) and
+  # the default network (outbound to the package databases). Scanner
+  # containers attach ONLY to `scanners-internal`, which has no external
+  # route — a direct socket from a scanner has nowhere to go, with the proxy
+  # running AND with it stopped. Proxy env vars on scanners are addressing,
+  # not the boundary; this topology is.
+  #
+  # No `ports:` — the proxy is reachable only inside Docker networking, never
+  # from the host. Read-only rootfs (writes nothing), no capabilities.
+  egress-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.egress-proxy
+    container_name: firecrow-egress-proxy
+    restart: unless-stopped
+    networks:
+      - scanners-internal
+      - default
+    environment:
+      EGRESS_PROXY_PORT: 3128
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    depends_on: []
 
 volumes:
   postgres_data:
   firecrow_storage:
+
+# G1 topology primitive. `internal: true` = no gateway, no NAT, no external
+# route — containers attached ONLY here cannot leave Docker networking, full
+# stop. `external: true` with a fixed `name:` keeps the name stable across
+# compose project prefixes, which is what the backend's
+# `--network=scanners-internal` argv requires (Docker resolves the exact
+# network name, not a prefixed one).
+#
+# PROVISION (run once per host, before first `up`):
+#   docker network create --driver bridge --internal --subnet 172.28.0.0/16 \
+#     --name scanners-internal
+networks:
+  scanners-internal:
+    name: scanners-internal
+    external: true

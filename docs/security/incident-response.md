@@ -66,11 +66,11 @@ flowchart LR
    ```
 
 ### Phase 4: Recovery & Verification
-1. Deploy hotfix following the [Production Release Checklist](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/deployment/release-checklist.md).
+1. Deploy hotfix following the [Production Release Checklist](../../../../../../docs/deployment/release-checklist.md).
 2. Execute end-to-end smoke tests and database readiness probes.
 3. Restore public audit intake.
 
 ### Phase 5: Post-Mortem & Remediation
 1. Author a comprehensive Root Cause Analysis (RCA) document within 48 hours.
 2. Document timeline of detection, response, containment, and resolution.
-3. Update [Threat Model](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/security/threat-model.md) and security regression test suite.
+3. Update [Threat Model](../../../../../../docs/security/threat-model.md) and security regression test suite.

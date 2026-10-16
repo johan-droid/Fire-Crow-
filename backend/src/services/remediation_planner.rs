@@ -97,7 +97,9 @@ pub fn validate_remediation_dependencies(
 
     while let Some((node, depth)) = queue.pop_front() {
         if depth > MAX_PLAN_DEPTH {
-            return Err(AppError::Internal("Remediation plan depth limit exceeded".into()));
+            return Err(AppError::Internal(
+                "Remediation plan depth limit exceeded".into(),
+            ));
         }
         if !visited.insert(node) {
             continue;
@@ -117,7 +119,9 @@ pub fn validate_remediation_dependencies(
     }
 
     if order.len() < tasks.len() {
-        return Err(AppError::Internal("Cyclic dependency detected in remediation plan".into()));
+        return Err(AppError::Internal(
+            "Cyclic dependency detected in remediation plan".into(),
+        ));
     }
 
     Ok(order)

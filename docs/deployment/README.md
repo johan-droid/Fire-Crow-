@@ -41,10 +41,10 @@ flowchart TD
 
 ## Deployment Documents in this Section
 
-1. [docs/deployment/frontend.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/deployment/frontend.md) — Vercel project configuration, environment variables, security headers, and fail-closed routing rationale.
-2. [docs/deployment/backend.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/deployment/backend.md) — Render configuration, `render.yaml`, multi-stage Dockerfile, health probes, and DB pool tuning.
-3. [docs/deployment/containers.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/deployment/containers.md) — Container sandboxing architecture, exact security flags, and scanner image pinning.
-4. [docs/deployment/release-checklist.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/deployment/release-checklist.md) — Pre-flight, cutover, post-deploy verification, and rollback procedures.
+1. [docs/deployment/frontend.md](../../../../../../docs/deployment/frontend.md) — Vercel project configuration, environment variables, security headers, and fail-closed routing rationale.
+2. [docs/deployment/backend.md](../../../../../../docs/deployment/backend.md) — Render configuration, `render.yaml`, multi-stage Dockerfile, health probes, and DB pool tuning.
+3. [docs/deployment/containers.md](../../../../../../docs/deployment/containers.md) — Container sandboxing architecture, exact security flags, and scanner image pinning.
+4. [docs/deployment/release-checklist.md](../../../../../../docs/deployment/release-checklist.md) — Pre-flight, cutover, post-deploy verification, and rollback procedures.
 
 ---
 

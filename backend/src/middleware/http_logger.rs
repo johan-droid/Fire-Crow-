@@ -4,7 +4,7 @@
 
 use crate::middleware::cloudflare::{peer_ip_of, resolve_client_ip};
 use axum::{
-    body::{to_bytes, Body},
+    body::{to_bytes, Body, HttpBody},
     extract::Request,
     middleware::Next,
     response::Response,
@@ -172,12 +172,25 @@ pub fn safe_payload_snippet(bytes: &[u8], max_len: usize) -> String {
             for re in text_redact_patterns() {
                 text = re.replace_all(&text, "${1}[REDACTED]").to_string();
             }
+            // P2-D (ZT-13-19): non-JSON bodies are attacker-controlled text;
+            // a raw CR/LF (or any other C0/C1 control char, e.g. ANSI ESC)
+            // would let the sender forge additional `http_audit` log lines.
+            // Strip every control character before the line is logged — the
+            // JSON branch already escapes them via serde.
+            text.retain(|c| !c.is_control());
             truncate_utf8_safe(&text, max_len)
         }
     } else {
         format!("<binary data {} bytes>", bytes.len())
     }
 }
+
+/// Body bytes buffered for the audit-log snippet. Bodies that are larger
+/// than this, or whose size is unknown up-front (streaming/chunked), are
+/// forwarded byte-for-byte and logged as a marker only (F-02-10 / ZT-06-10:
+/// buffering used to consume and then discard them, emptying request bodies
+/// and returning empty 200s for large artifact downloads).
+const BODY_CAPTURE_LIMIT: usize = 2 * 1024 * 1024;
 
 /// Middleware that logs every incoming HTTP request and outgoing response cleanly with secret redaction.
 pub async fn http_audit_logger(
@@ -191,19 +204,34 @@ pub async fn http_audit_logger(
 
     // 1. Inspect Request Body
     let (parts, body) = req.into_parts();
-    let (req_bytes, req_body) = if method == axum::http::Method::GET
+    let (req_bytes, req_body, req_omitted) = if method == axum::http::Method::GET
         || method == axum::http::Method::HEAD
         || method == axum::http::Method::OPTIONS
     {
-        (Vec::new(), body)
-    } else {
-        match to_bytes(body, 2 * 1024 * 1024).await {
-            Ok(b) => (b.to_vec(), Body::from(b)),
-            Err(_) => (Vec::new(), Body::empty()),
+        (Vec::new(), body, false)
+    } else if let Some(exact) = body.size_hint().exact() {
+        if exact <= BODY_CAPTURE_LIMIT as u64 {
+            match to_bytes(body, BODY_CAPTURE_LIMIT).await {
+                Ok(b) => (b.to_vec(), Body::from(b), false),
+                // The hint was wrong (liar body): the bytes are consumed and
+                // unrecoverable. Log the fact instead of silently emptying.
+                Err(_) => (Vec::new(), Body::empty(), true),
+            }
+        } else {
+            // F-02-10: oversized — pass the ORIGINAL body through untouched.
+            (Vec::new(), body, true)
         }
+    } else {
+        // F-02-10: unknown size (streaming/chunked) — never buffer what we
+        // cannot bound; pass the ORIGINAL body through untouched.
+        (Vec::new(), body, true)
     };
 
-    let req_payload_summary = safe_payload_snippet(&req_bytes, 800);
+    let req_payload_summary = if req_omitted && req_bytes.is_empty() {
+        "<payload passed through, not logged (over capture limit or unknown size)>".to_string()
+    } else {
+        safe_payload_snippet(&req_bytes, 800)
+    };
 
     info!(target: "http_audit", "[HTTP REQ] {} {} | Client: {} | Payload: {}", method, uri, client_ip, req_payload_summary);
 
@@ -230,16 +258,122 @@ pub async fn http_audit_logger(
 
     // 3. Inspect Response Body for normal JSON/text responses
     let (res_parts, res_body) = res.into_parts();
-    let (res_bytes, new_res_body) = match to_bytes(res_body, 2 * 1024 * 1024).await {
-        Ok(b) => (b.to_vec(), Body::from(b)),
-        Err(_) => (Vec::new(), Body::empty()),
+    let (res_bytes, new_res_body, res_omitted) = match res_body.size_hint().exact() {
+        Some(exact) if exact <= BODY_CAPTURE_LIMIT as u64 => {
+            match to_bytes(res_body, BODY_CAPTURE_LIMIT).await {
+                Ok(b) => (b.to_vec(), Body::from(b), false),
+                Err(_) => (Vec::new(), Body::empty(), true),
+            }
+        }
+        // F-02-10: oversized or unknown-size responses are forwarded intact —
+        // the old code returned an EMPTY 200 for large artifact downloads.
+        _ => (Vec::new(), res_body, true),
     };
 
-    let res_payload_summary = safe_payload_snippet(&res_bytes, 800);
+    let res_payload_summary = if res_omitted && res_bytes.is_empty() {
+        "<payload passed through, not logged (over capture limit or unknown size)>".to_string()
+    } else {
+        safe_payload_snippet(&res_bytes, 800)
+    };
 
     info!(target: "http_audit", "[HTTP RES] {} {} -> {} ({}ms) | Payload: {}", method, uri, status, duration_ms, res_payload_summary);
 
     // Reconstruct Response
     let res = Response::from_parts(res_parts, new_res_body);
     Ok(res)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{http_audit_logger, safe_payload_snippet};
+
+    /// P2-D (ZT-13-19): a non-JSON body must not be able to forge log lines
+    /// by carrying CR/LF (or other control characters) into the audit log.
+    #[test]
+    fn safe_payload_snippet_strips_control_chars_from_text() {
+        let out = safe_payload_snippet(b"a\r\nFAKE [HTTP REQ] injected", 800);
+        assert!(!out.contains('\r'), "CR survived: {out:?}");
+        assert!(!out.contains('\n'), "LF survived: {out:?}");
+        assert!(out.contains("FAKE"), "visible text should remain: {out:?}");
+
+        // Other C0 controls and ANSI ESC are stripped too.
+        let out = safe_payload_snippet(b"x\x1b[31mred\x00y", 800);
+        assert!(
+            !out.chars().any(|c| c.is_control()),
+            "control survived: {out:?}"
+        );
+    }
+
+    /// F-02-10 (ZT-06-10): bodies over the 2 MiB capture limit must pass
+    /// through the audit logger intact in BOTH directions. The old code
+    /// consumed the body via `to_bytes` and, on limit-exceeded, replaced it
+    /// with `Body::empty()` — emptying oversized requests for the handler and
+    /// returning an empty 200 to the client for large artifact downloads.
+    mod body_passthrough {
+        use super::http_audit_logger;
+        use axum::{
+            body::Bytes,
+            middleware,
+            routing::{get, post},
+            Router,
+        };
+        use axum_test::TestServer;
+
+        const THREE_MB: usize = 3 * 1024 * 1024;
+
+        async fn echo_len(body: Bytes) -> String {
+            format!("{}", body.len())
+        }
+
+        async fn big_body() -> Vec<u8> {
+            vec![b'x'; THREE_MB]
+        }
+
+        fn app() -> Router {
+            Router::new()
+                .route("/echo", post(echo_len))
+                .route("/big", get(big_body))
+                // Mirror the real app's explicit body limit (app.rs sets
+                // max_json_body_bytes / RequestBodyLimitLayer); without this
+                // axum's default 2 MiB Bytes-extractor limit rejects the
+                // oversized request before the middleware's behavior matters.
+                .layer(axum::extract::DefaultBodyLimit::max(THREE_MB + 1024))
+                .layer(middleware::from_fn(http_audit_logger))
+        }
+
+        #[tokio::test]
+        async fn oversized_request_body_reaches_handler_intact() {
+            let server = TestServer::new(app()).unwrap();
+            let res = server
+                .post("/echo")
+                .bytes(axum::body::Bytes::from(vec![b'y'; THREE_MB]))
+                .await;
+            assert_eq!(
+                res.text(),
+                THREE_MB.to_string(),
+                "handler must receive every byte of an oversized request body"
+            );
+        }
+
+        #[tokio::test]
+        async fn oversized_response_body_reaches_client_intact() {
+            let server = TestServer::new(app()).unwrap();
+            let res = server.get("/big").await;
+            assert_eq!(
+                res.as_bytes().len(),
+                THREE_MB,
+                "client must receive every byte of an oversized response body"
+            );
+        }
+
+        #[tokio::test]
+        async fn small_bodies_still_round_trip() {
+            let server = TestServer::new(app()).unwrap();
+            let res = server
+                .post("/echo")
+                .bytes(axum::body::Bytes::from_static(b"hello"))
+                .await;
+            assert_eq!(res.text(), "5");
+        }
+    }
 }

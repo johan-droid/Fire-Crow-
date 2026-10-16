@@ -94,7 +94,7 @@ The backend runs as a Docker Web Service on **Render** paired with a Render Post
 ## 4. Agents & Subsystem Architecture
 
 ### Vulnerability Analysis Agents (`backend/src/agents/`)
-- **Repository Fetch Agent (`fetch.rs`)**: Performs stream-bounded repository retrieval, verifying commit SHAs, branch names, pax archive headers, and total decompressed bounds (max 50MB).
+- **Repository Fetch Agent (`fetch.rs`)**: Performs stream-bounded repository retrieval, verifying commit SHAs, branch names, pax archive headers, and total decompressed bounds (max 150MB unpacked; 100MB compressed download cap).
 - **Scanner Agent (`scanner.rs`)**: Controls containerized scanner execution (Gitleaks, OSV, Semgrep). Enforces container isolation, `--cap-drop=ALL`, `--security-opt=no-new-privileges`, `pids-limit=100`, read-only repo mounts, and network egress rules.
 - **AI Narrative Agent (`src/services/llm_provider.rs`)**: Generates executive narrative summaries from canonical audit reports. Strictly isolated so AI output can never mutate scores, severities, or finding counts.
 

@@ -21,13 +21,12 @@ impl PaymentService {
 
         // Idempotency: prevent double-crediting if transaction_reference was already recorded
         if !req.transaction_reference.trim().is_empty() {
-            let existing: Option<PaymentRecord> = sqlx::query_as(
-                "SELECT * FROM payment_records WHERE transaction_reference = $1",
-            )
-            .bind(&req.transaction_reference)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(AppError::Database)?;
+            let existing: Option<PaymentRecord> =
+                sqlx::query_as("SELECT * FROM payment_records WHERE transaction_reference = $1")
+                    .bind(&req.transaction_reference)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(AppError::Database)?;
 
             if let Some(record) = existing {
                 tx.commit().await.map_err(AppError::Database)?;

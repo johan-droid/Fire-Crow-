@@ -12,9 +12,9 @@ This runbook catalogs the top production and development failure modes in FireCr
 | [2. PostgreSQL Connection Refused](#2-postgresql-connection-refused-or-pool-exhaustion) | `500 Internal Server Error` / `connection refused (os error 111)` | Database Tier |
 | [3. Illegal Status Transition Trigger](#3-database-lifecycle-trigger-violation) | `500 Internal Server Error` / `Illegal audit job status transition` | PostgreSQL Trigger |
 | [4. Scanner Execution Timeout](#4-scanner-execution-timeout-300s-exceeded) | `Job status: failed` / `Scanner 'semgrep' timed out after 300s` | Container Sandboxing |
-| [5. Stream Intake Quota Exceeded](#5-stream-intake-50mb-ceiling-exceeded) | `413 Payload Too Large` / `Intake quota exceeded (52428800 bytes)` | Fetch Ingestion |
+| [5. Stream Intake Quota Exceeded](#5-stream-intake-unpack-ceiling-exceeded) | `413 Payload Too Large` (unpack budget: 157,286,400 bytes) | Fetch Ingestion |
 | [6. CORS Origin Rejection](#6-cors-origin-rejection) | Browser error: `No 'Access-Control-Allow-Origin' header present` | Axum Middleware |
-| [7. CSRF Token Mismatch](#7-csrf-token-mismatch) | `403 Forbidden` / `Invalid or missing CSRF token` | Auth Middleware |
+| [7. CSRF Origin Rejection](#7-csrf-origin-rejection) | `403 Forbidden` (mutation rejected by Origin allowlist) | Auth Middleware |
 | [8. Rate Limiter Triggered](#8-rate-limiter-engagement-http-429) | `429 Too Many Requests` / `Rate limit exceeded` | Governor Middleware |
 | [9. Semgrep Rule Mounting Failure](#9-semgrep-rule-file-mount-failure) | `Job status: failed` / `Rule file /rules/firecrow-sast.yml not found` | Docker Bind Mount |
 | [10. Gemini API Failure](#10-gemini-ai-narrative-timeout-or-quota) | `200 OK` (Audit completed with fallback template summary) | AI Narrative Layer |
@@ -104,12 +104,9 @@ This runbook catalogs the top production and development failure modes in FireCr
 
 ---
 
-### 5. Stream Intake 50MB Ceiling Exceeded
-- **Symptom**: User receives `413 Payload Too Large`. Logs indicate:
-  ```
-  ERROR backend::agents::fetch: Repository unpack size exceeded hard ceiling of 52428800 bytes. Ingestion aborted.
-  ```
-- **Root Cause**: Target repository contains large binary assets, video files, or tar archive expansion exceeds the 50MB anti-bomb safety ceiling.
+### 5. Stream Intake Unpack Ceiling Exceeded
+- **Symptom**: User receives `413 Payload Too Large` (error body: `Payload too large`). The intake aborts when the unpacked tree exceeds the 157,286,400-byte (150 MB) budget in `backend/src/agents/fetch.rs` (`MAX_TOTAL_BYTES`).
+- **Root Cause**: Target repository contains large binary assets, video files, or tar archive expansion that exceeds the 150MB anti-bomb safety ceiling (other enforced bounds: 100MB compressed download, 20MB per file, 20,000 files).
 - **Diagnostic Command**:
   ```bash
   # Check unpacked size of repository archive locally
@@ -117,7 +114,7 @@ This runbook catalogs the top production and development failure modes in FireCr
   ```
 - **Remediation**:
   - Use `.gitattributes` or shallow archive tarball excluding large binary files.
-  - If self-hosting for enterprise codebases requiring higher quotas, set `MAX_INTAKE_BYTES=104857600` (100MB) in `backend/.env`.
+  - The bounds are compile-time constants (`MAX_DOWNLOAD_BYTES`, `MAX_TOTAL_BYTES`, `MAX_FILE_BYTES`, `MAX_FILE_COUNT` in `backend/src/agents/fetch.rs`), not environment variables. If self-hosting warrants higher quotas, the constants must be changed in code — note the pinned regression assertion in `backend/tests/repo_fetch_bounds.rs` must be updated with them.
 - **Verify Fix**: Re-run audit; tarball unpack completes successfully.
 
 ---
@@ -140,13 +137,13 @@ This runbook catalogs the top production and development failure modes in FireCr
 
 ---
 
-### 7. CSRF Token Mismatch
-- **Symptom**: `POST /api/audit/run` returns `403 Forbidden` with `{ "error": "Invalid CSRF token" }`.
-- **Root Cause**: The client did not send the `X-CSRF-Token` header, or its value did not match the `fc_csrf` cookie.
-- **Diagnostic Command**: Inspect browser request headers and application cookies in developer tools.
+### 7. CSRF Origin Rejection
+- **Symptom**: `POST /api/audit/run` returns `403 Forbidden`.
+- **Root Cause**: The request's `Origin` header was not in the configured origin allowlist, or the request carried the auth cookies (`fc_access_token` / `fc_access_token_refresh`) with no `Origin` header at all. There is no CSRF token header or cookie; the control is the Origin-header allowlist (`backend/src/middleware/csrf.rs`).
+- **Diagnostic Command**: Inspect the request's `Origin` header in browser developer tools and compare it against the backend's configured origins (`FRONTEND_URL` / `CORS_ORIGINS`).
 - **Remediation**:
-  - In frontend code (`services/api.ts`), ensure `getCookie('fc_csrf')` is passed in `X-CSRF-Token`.
-  - Ensure request includes `credentials: 'include'`.
+  - Ensure the frontend origin is listed in the backend's origin allowlist, and requests include `credentials: 'include'`.
+  - Non-browser clients must authenticate with an `Authorization: Bearer` header instead of cookies (cookie-less mutations are unaffected by the Origin gate).
 - **Verify Fix**: Mutation requests return `200` or `202`.
 
 ---

@@ -221,40 +221,82 @@ pub async fn execute_audit_job(
 
     let engine_available = crate::agents::ENGINE_AVAILABLE;
 
-    // Phase: intake — resolve owner/name from the (already validated) URL.
-    let intake = phase(pool, job_id, exec_id, "intake", async {
-        state.repo_owner = extract_repo_owner(repo_url);
-        state.repo_name = extract_repo_name(repo_url);
-        Ok(())
-    })
-    .await;
+    // P0-D (ZT-10-4): enforce the worker time budget *inside* the lease scope
+    // so a timeout resolves to an `Outcome` while this worker still holds the
+    // lease, and finalization goes through the ownership-checked
+    // `finalize_execution` (a stale worker's write is refused by the DB, not
+    // by trusting a token read from the victim row).
+    //
+    // The old design had `run_audit_job` wrap this whole future in
+    // `tokio::time::timeout`; on expiry the future was dropped mid-flight and
+    // the worker's error path then called the (now-removed)
+    // `fail_running_execution`, which read the running row's `owner_token`
+    // and could fail a *newer* attempt opened by a different worker after this
+    // one was reaped. With the budget enforced here, that zombie path is gone:
+    // a timeout finalizes through this worker's own lease, and a lease it no
+    // longer holds matches zero rows.
+    //
+    // The budget is 1740s (29 min), leaving a 60s margin for atomic
+    // finalization before the worker's outer 1800s guard.
+    const PIPELINE_BUDGET_SECS: u64 = 1740;
+    let pipeline = async {
+        // Phase: intake — resolve owner/name from the (already validated) URL.
+        let intake = phase(pool, job_id, exec_id, "intake", async {
+            state.repo_owner = extract_repo_owner(repo_url);
+            state.repo_name = extract_repo_name(repo_url);
+            Ok(())
+        })
+        .await;
 
-    let outcome = match intake {
-        Ok(()) => {
-            if engine_available {
-                run_pipeline(pool, job_id, &lease, &mut state, &input).await
-            } else {
-                state.current_phase = "engine_unavailable".into();
-                state.analysis_performed = false;
-                state.security_score = None;
-                state.risk_summary = serde_json::json!({
-                    "score": null,
-                    "risk_level": "unknown",
-                    "total_findings": 0,
-                    "analysis_performed": false,
-                });
-                log_phase_skipped(
-                    pool,
-                    job_id,
-                    exec_id,
-                    "engine_unavailable",
-                    crate::agents::ENGINE_UNAVAILABLE_REASON,
-                )
-                .await?;
-                Outcome::Ok
+        match intake {
+            Ok(()) => {
+                if engine_available {
+                    run_pipeline(pool, job_id, &lease, &mut state, &input).await
+                } else {
+                    state.current_phase = "engine_unavailable".into();
+                    state.analysis_performed = false;
+                    state.security_score = None;
+                    state.risk_summary = serde_json::json!({
+                        "score": null,
+                        "risk_level": "unknown",
+                        "total_findings": 0,
+                        "analysis_performed": false,
+                    });
+                    // Non-propagating on purpose: after the lease is open this
+                    // function must resolve to an `Outcome`, never an `Err`
+                    // (an `Err` here would leave a running execution the
+                    // worker can no longer close through its own lease).
+                    if let Err(e) = log_phase_skipped(
+                        pool,
+                        job_id,
+                        exec_id,
+                        "engine_unavailable",
+                        crate::agents::ENGINE_UNAVAILABLE_REASON,
+                    )
+                    .await
+                    {
+                        tracing::warn!(
+                            "[orchestrator] Job {job_id} could not log skipped phase: {e}"
+                        );
+                    }
+                    Outcome::Ok
+                }
             }
+            Err(e) => Outcome::Failed("intake".into(), e.to_string()),
         }
-        Err(e) => Outcome::Failed("intake".into(), e.to_string()),
+    };
+
+    let outcome = match tokio::time::timeout(
+        tokio::time::Duration::from_secs(PIPELINE_BUDGET_SECS),
+        pipeline,
+    )
+    .await
+    {
+        Ok(outcome) => outcome,
+        Err(_) => Outcome::Failed(
+            "timeout".into(),
+            format!("Job timed out after {} seconds", PIPELINE_BUDGET_SECS),
+        ),
     };
 
     // Failure wins over cancellation; cancellation wins over completion. An

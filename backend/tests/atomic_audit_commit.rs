@@ -1624,10 +1624,15 @@ async fn phase121_api_reconstructs_finalized_audit_from_postgres(pool: PgPool) {
 
 #[sqlx::test(migrations = "./migrations")]
 async fn phase121_worker_failure_closes_execution(pool: PgPool) {
-    use firecrow_backend::orchestrator::execution::fail_running_execution;
+    use firecrow_backend::orchestrator::execution::{
+        fail_job_if_unowned, finalize_without_findings,
+    };
+    // An owning worker fails its own execution through its own lease.
     let job = seed_job(&pool, JobStatus::Running).await;
     let lease = begin_execution(&pool, &job).await.unwrap();
-    fail_running_execution(&pool, &job, "boom").await.unwrap();
+    finalize_without_findings(&pool, &lease, "failed", "boom")
+        .await
+        .unwrap();
     let e: (String,) = sqlx::query_as("SELECT status FROM audit_executions WHERE id=$1")
         .bind(&lease.execution_id)
         .fetch_one(&pool)
@@ -1640,8 +1645,9 @@ async fn phase121_worker_failure_closes_execution(pool: PgPool) {
         .unwrap();
     assert_eq!(e.0, "failed");
     assert_eq!(j.0, "failed");
+    // A claim-time failure (no execution ever opened) fails the job only.
     let job2 = seed_job(&pool, JobStatus::Queued).await;
-    fail_running_execution(&pool, &job2, "claim blew up")
+    fail_job_if_unowned(&pool, &job2, "claim blew up")
         .await
         .unwrap();
     let j2: (String,) = sqlx::query_as("SELECT status FROM audit_jobs WHERE id=$1")
@@ -1650,4 +1656,92 @@ async fn phase121_worker_failure_closes_execution(pool: PgPool) {
         .await
         .unwrap();
     assert_eq!(j2.0, "failed");
+}
+
+/// P0-D (ZT-10-4) regression: a stale worker whose attempt was reaped and
+/// superseded must not be able to fail the successor's execution. The old
+/// `fail_running_execution` read the victim row's `owner_token` and finalized
+/// through it, so a zombie worker could kill a newer attempt it never owned.
+#[sqlx::test(migrations = "./migrations")]
+async fn stale_worker_cannot_fail_newer_attempt(pool: PgPool) {
+    use firecrow_backend::orchestrator::execution::{
+        fail_job_if_unowned, finalize_without_findings,
+    };
+    // Worker A opens attempt 1, then goes stale and its attempt is reaped
+    // (closed as failed; `begin_execution` requeues the job on the next claim).
+    let job = seed_job(&pool, JobStatus::Running).await;
+    let attempt1 = begin_execution(&pool, &job).await.unwrap();
+    finalize_without_findings(&pool, &attempt1, "failed", "owner stopped heartbeating")
+        .await
+        .unwrap();
+
+    // Worker B opens a newer attempt and is actively running it.
+    let attempt2 = begin_execution(&pool, &job).await.unwrap();
+    assert_ne!(
+        attempt1.execution_id, attempt2.execution_id,
+        "successor must be a distinct attempt"
+    );
+
+    // Worker A (stale, holding no lease for attempt 2) now tries to fail the job.
+    fail_job_if_unowned(&pool, &job, "zombie worker failure")
+        .await
+        .unwrap();
+
+    // Worker B's execution and the job must be untouched.
+    let e2: (String,) = sqlx::query_as("SELECT status FROM audit_executions WHERE id=$1")
+        .bind(&attempt2.execution_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        e2.0, "running",
+        "stale worker must not fail a successor's execution"
+    );
+    let j: (String,) = sqlx::query_as("SELECT status FROM audit_jobs WHERE id=$1")
+        .bind(&job)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        j.0, "running",
+        "job stays running while a live execution exists"
+    );
+
+    // Worker B can still complete its own attempt normally.
+    finalize_without_findings(&pool, &attempt2, "completed", "")
+        .await
+        .unwrap();
+    let e2b: (String,) = sqlx::query_as("SELECT status FROM audit_executions WHERE id=$1")
+        .bind(&attempt2.execution_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        e2b.0, "completed",
+        "successor finalizes its own attempt normally"
+    );
+}
+
+/// P0-D: `fail_job_if_unowned` is a no-op when a live execution exists — it
+/// must never clobber a running job just because the caller knows its id.
+#[sqlx::test(migrations = "./migrations")]
+async fn unowned_failure_leaves_running_execution_untouched(pool: PgPool) {
+    use firecrow_backend::orchestrator::execution::fail_job_if_unowned;
+    let job = seed_job(&pool, JobStatus::Running).await;
+    let lease = begin_execution(&pool, &job).await.unwrap();
+    fail_job_if_unowned(&pool, &job, "should be ignored")
+        .await
+        .unwrap();
+    let e: (String,) = sqlx::query_as("SELECT status FROM audit_executions WHERE id=$1")
+        .bind(&lease.execution_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(e.0, "running");
+    let j: (String,) = sqlx::query_as("SELECT status FROM audit_jobs WHERE id=$1")
+        .bind(&job)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(j.0, "running");
 }

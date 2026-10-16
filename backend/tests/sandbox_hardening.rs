@@ -159,8 +159,14 @@ fn network_is_denied_unless_a_scanner_declares_an_exception() {
 #[test]
 fn a_declared_exception_renders_bridge_never_host() {
     // `host` would expose the host's interfaces and metadata service. The
-    // weakest exception that still works is `bridge`, and it is the only one
-    // that exists.
+    // only networked exception is `Filtered` (the internal network + proxy
+    // sidecar); `bridge` renders for historical records but is approved for
+    // no current scanner. Neither may ever render `host`.
+    assert_eq!(
+        NetworkMode::Filtered.as_docker_arg(),
+        "--network=scanners-internal"
+    );
+    assert_eq!(NetworkMode::Filtered.as_str(), "filtered");
     assert_eq!(NetworkMode::Bridge.as_docker_arg(), "--network=bridge");
     assert_eq!(NetworkMode::None.as_docker_arg(), "--network=none");
     assert_eq!(NetworkMode::Bridge.as_str(), "bridge");
@@ -191,7 +197,11 @@ fn a_declared_exception_renders_bridge_never_host() {
 fn exactly_one_network_flag_is_emitted() {
     // Two contradictory network flags would make the effective mode depend on
     // Docker's parsing order.
-    for network in [NetworkMode::None, NetworkMode::Bridge] {
+    for network in [
+        NetworkMode::None,
+        NetworkMode::Bridge,
+        NetworkMode::Filtered,
+    ] {
         let mut s = spec();
         s.network = network;
         let argv = docker_argv(&s, "n");

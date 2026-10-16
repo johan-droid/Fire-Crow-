@@ -173,11 +173,8 @@ fn const_strings(auth: &str, name: &str) -> Vec<String> {
     for line in body[..end].lines() {
         let mut parts = line.split('"');
         let _ = parts.next(); // text before the first quote
-        loop {
-            match (parts.next(), parts.next()) {
-                (Some(lit), Some(_)) => out.push(lit.to_string()),
-                _ => break,
-            }
+        while let (Some(lit), Some(_)) = (parts.next(), parts.next()) {
+            out.push(lit.to_string());
         }
     }
     out

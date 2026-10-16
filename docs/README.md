@@ -51,34 +51,34 @@ docs/
 Choose your persona to navigate directly to the relevant documentation:
 
 ### 1. New Developer / Onboarding
-1. [docs/development/getting-started.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/development/getting-started.md) — Set up your machine, Docker, Rust, and Node.js; run `./scripts/dev.sh`.
-2. [docs/architecture/repository-map.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/architecture/repository-map.md) — Understand where files live and use the change-routing matrix.
-3. [docs/development/testing.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/development/testing.md) — Run the test suites and verify your local build.
-4. [CONTRIBUTING.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/CONTRIBUTING.md) — Read branch policies, commit conventions, and PR requirements.
+1. [docs/development/getting-started.md](../../../../../docs/development/getting-started.md) — Set up your machine, Docker, Rust, and Node.js; run `./scripts/dev.sh`.
+2. [docs/architecture/repository-map.md](../../../../../docs/architecture/repository-map.md) — Understand where files live and use the change-routing matrix.
+3. [docs/development/testing.md](../../../../../docs/development/testing.md) — Run the test suites and verify your local build.
+4. [CONTRIBUTING.md](../../../../../CONTRIBUTING.md) — Read branch policies, commit conventions, and PR requirements.
 
 ### 2. Backend & Systems Engineer
-1. [docs/architecture/overview.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/architecture/overview.md) — System context, actor model, and data ownership boundaries.
-2. [docs/development/backend.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/development/backend.md) — Axum 0.7 handlers, stream intake, Docker orchestration, and database triggers.
-3. [docs/api/README.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/api/README.md) — API contract definitions, headers, and rate limits.
-4. [docs/development/maintenance.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/development/maintenance.md) — Schema evolution and scanner integrations.
+1. [docs/architecture/overview.md](../../../../../docs/architecture/overview.md) — System context, actor model, and data ownership boundaries.
+2. [docs/development/backend.md](../../../../../docs/development/backend.md) — Axum 0.7 handlers, stream intake, Docker orchestration, and database triggers.
+3. [docs/api/README.md](../../../../../docs/api/README.md) — API contract definitions, headers, and rate limits.
+4. [docs/development/maintenance.md](../../../../../docs/development/maintenance.md) — Schema evolution and scanner integrations.
 
 ### 3. Frontend & UI Engineer
-1. [docs/development/frontend.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/development/frontend.md) — React 19 architecture, view routing, API client, and theme tokens.
-2. [docs/architecture/repository-map.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/architecture/repository-map.md) — Locate views, components, and shared styles.
-3. [docs/deployment/frontend.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/deployment/frontend.md) — Vercel preview environments and build specifications.
+1. [docs/development/frontend.md](../../../../../docs/development/frontend.md) — React 19 architecture, view routing, API client, and theme tokens.
+2. [docs/architecture/repository-map.md](../../../../../docs/architecture/repository-map.md) — Locate views, components, and shared styles.
+3. [docs/deployment/frontend.md](../../../../../docs/deployment/frontend.md) — Vercel preview environments and build specifications.
 
 ### 4. Security Auditor & Compliance Officer
-1. [docs/security/README.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/security/README.md) — Core security invariants and zero-trust posture.
-2. [docs/security/threat-model.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/security/threat-model.md) — STRIDE threat analysis, trust boundaries, and mitigations.
-3. [docs/architecture/adr/001-scanner-first-architecture.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/architecture/adr/001-scanner-first-architecture.md) — Architectural proof of scanner authority over AI narrative.
-4. [docs/architecture/adr/003-execution-lifecycle.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/architecture/adr/003-execution-lifecycle.md) — State machine guarantees enforced by database triggers.
+1. [docs/security/README.md](../../../../../docs/security/README.md) — Core security invariants and zero-trust posture.
+2. [docs/security/threat-model.md](../../../../../docs/security/threat-model.md) — STRIDE threat analysis, trust boundaries, and mitigations.
+3. [docs/architecture/adr/001-scanner-first-architecture.md](../../../../../docs/architecture/adr/001-scanner-first-architecture.md) — Architectural proof of scanner authority over AI narrative.
+4. [docs/architecture/adr/003-execution-lifecycle.md](../../../../../docs/architecture/adr/003-execution-lifecycle.md) — State machine guarantees enforced by database triggers.
 
 ### 5. Production Reliability & DevOps Engineer
-1. [docs/deployment/README.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/deployment/README.md) — Multi-cloud architecture (Vercel + Render + Neon/Postgres).
-2. [docs/deployment/backend.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/deployment/backend.md) & [docs/deployment/frontend.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/deployment/frontend.md) — Host-level configurations.
-3. [docs/configuration/environment.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/configuration/environment.md) — Mandatory and optional environment variables.
-4. [docs/operations/troubleshooting.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/operations/troubleshooting.md) — Diagnostic commands, triage procedures, and recovery paths.
-5. [docs/deployment/release-checklist.md](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/deployment/release-checklist.md) — Pre-flight, cutover, and post-deploy checks.
+1. [docs/deployment/README.md](../../../../../docs/deployment/README.md) — Multi-cloud architecture (Vercel + Render + Neon/Postgres).
+2. [docs/deployment/backend.md](../../../../../docs/deployment/backend.md) & [docs/deployment/frontend.md](../../../../../docs/deployment/frontend.md) — Host-level configurations.
+3. [docs/configuration/environment.md](../../../../../docs/configuration/environment.md) — Mandatory and optional environment variables.
+4. [docs/operations/troubleshooting.md](../../../../../docs/operations/troubleshooting.md) — Diagnostic commands, triage procedures, and recovery paths.
+5. [docs/deployment/release-checklist.md](../../../../../docs/deployment/release-checklist.md) — Pre-flight, cutover, and post-deploy checks.
 
 ---
 
@@ -89,5 +89,5 @@ Every engineer working on FireCrow must uphold the following inviolable principl
 1. **Scanner-First Truth**: Findings are produced exclusively by deterministic scanners (`gitleaks`, `semgrep`, `osv-scanner`). The LLM synthesis layer has zero authority to create, suppress, or modify findings.
 2. **Failure Is Never Clean (`failure != clean`)**: If a scanner engine crashes, encounters a syntax error, or times out, FireCrow records incomplete scan states. It never issues a false clean audit.
 3. **Database-Authoritative Lifecycle**: Audit state transitions are strictly governed by PostgreSQL `BEFORE UPDATE` trigger (`audit_jobs_lifecycle_guard_fn`). Applications cannot bypass state transition rules.
-4. **Bounded Stream Intake**: Repositories are streamed in fixed chunks up to 50MB and decompressed with pax-header validation, symlink traversal prevention, and hard quota limits to defend against decompression bombs.
+4. **Bounded Stream Intake**: Repositories are streamed in bounded chunks (100MB download ceiling) and decompressed under a 150MB unpack ceiling with pax-header validation, symlink traversal prevention, and hard quota limits to defend against decompression bombs.
 5. **Zero-Privilege Ephemeral Execution**: All scanner containers execute with `--cap-drop=ALL`, `--security-opt=no-new-privileges`, read-only workspace volume mounts, PID limits (100), and disconnected egress networks.

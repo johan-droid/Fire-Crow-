@@ -103,7 +103,7 @@ impl HousekeepingService {
                   SELECT 1 FROM audit_executions e
                   WHERE e.job_id = j.id AND e.status = 'running'
               )
-            "#
+            "#,
         )
         .bind(cutoff.naive_utc())
         .fetch_all(pool)

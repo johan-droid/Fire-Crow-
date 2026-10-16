@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1
+# Filtering forward-proxy sidecar for scanner egress (G1, FC-ZT-SEC-001 §4).
+#
+# The proxy is a second binary in the backend workspace
+# (`backend/src/bin/egress_proxy.rs`) wrapping the existing egress policy as
+# its sole authority. This image carries ONLY that binary: no scanner
+# tooling, no Docker CLI, no workspace directories (the proxy writes
+# nothing — pure socket relay), no shell-visible secrets.
+#
+# Pins mirror the backend image (rust:1-bookworm builder,
+# debian:bookworm-slim runner, UID 10001) so the two images share the same
+# supply-chain posture. CANNOT be built in the offline campaign environment
+# (needs network for the base pull + crates.io); build in an authorized
+# environment. `docker compose config` validates the wiring without building.
+FROM rust:1-bookworm AS builder
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/Cargo.toml backend/Cargo.lock ./
+COPY backend/src ./src
+
+# The proxy binary only. `--locked` pins the audited dependency set.
+RUN cargo build --release --locked --bin egress_proxy
+
+# Runtime stage: minimal relay. No workspace, no mounts, no capabilities.
+FROM debian:bookworm-slim AS runner
+
+# ca-certificates: the proxy relays TLS (it never terminates it), and the
+# runner needs no other packages — notably no curl, no shell tooling beyond
+# the base, no Docker client.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 firecrow \
+    && useradd --system --uid 10001 --gid firecrow --no-create-home \
+        --shell /bin/false firecrow
+
+COPY --from=builder /app/target/release/egress_proxy /usr/local/bin/egress_proxy
+
+# The proxy listens on EGRESS_PROXY_PORT (default 3128, matching the
+# http://egress-proxy:3128 container wiring). The port is NOT published to
+# the host: scanners reach it over the internal network only.
+EXPOSE 3128
+USER 10001:10001
+
+# Exec form: no shell wrapper to inject through.
+ENTRYPOINT ["/usr/local/bin/egress_proxy"]

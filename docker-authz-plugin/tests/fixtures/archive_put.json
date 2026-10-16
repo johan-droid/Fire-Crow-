@@ -1,0 +1,10 @@
+{
+ "RequestMethod": "PUT",
+ "RequestUri": "/v1.52/containers/4e5968fbac29b8c5b2856c0c8f744d512ec5a98376d54e4bccd7fd2f862a83d2/archive?path=/tmp",
+ "RequestHeaders": {
+  "Accept": "*/*",
+  "Content-Length": "10240",
+  "Content-Type": "application/x-tar",
+  "User-Agent": "curl/8.5.0"
+ }
+}

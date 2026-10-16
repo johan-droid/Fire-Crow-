@@ -9,7 +9,7 @@ Thank you for your interest in contributing to **FireCrow**! As an enterprise-gr
 Every contribution must preserve the fundamental system invariants:
 1. **Scanner-First Truth**: All vulnerability findings originate exclusively from deterministic scanners. No AI layer may generate or alter findings.
 2. **`failure != clean`**: Incomplete or crashed scanner runs must never report a clean bill of health.
-3. **Stream-Bounded Intake**: Ingestion limits (50MB unpack ceiling, symlink rejection) must never be bypassed.
+3. **Stream-Bounded Intake**: Ingestion limits (150MB unpack ceiling, 100MB download cap, symlink rejection) must never be bypassed.
 4. **Database-Authoritative Lifecycle**: State transitions are enforced by database triggers; application code must conform.
 
 ---
@@ -73,7 +73,7 @@ cargo clippy -- -D warnings
 3. **Database Migrations**: If your PR modifies the database schema:
    - Include both migration and rollback SQL files in `backend/migrations/`.
    - Update `audit_jobs_lifecycle_guard_fn` if status transitions changed.
-4. **Documentation**: Update the relevant guides in `docs/` and the [Repository Map](file:///home/ashutoshsahoo/Downloads/Fire-Crow-/docs/architecture/repository-map.md).
+4. **Documentation**: Update the relevant guides in `docs/` and the [Repository Map](../../../../docs/architecture/repository-map.md).
 
 ---
 

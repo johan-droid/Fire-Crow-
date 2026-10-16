@@ -16,7 +16,7 @@ COPY backend/migrations ./migrations
 COPY backend/scanners ./scanners
 
 # Build release binary with optimization
-RUN cargo build --release --bin firecrow-backend
+RUN cargo build --release --locked --bin firecrow-backend
 
 # Runtime stage
 FROM debian:bookworm-slim AS runner
@@ -24,10 +24,16 @@ FROM debian:bookworm-slim AS runner
 WORKDIR /app
 
 # Install runtime dependencies including docker CLI for containerized scanner execution
+# F-G2-05: The bundled Docker CLI must speak API >= 1.44 (daemon MinAPIVersion).
+# Debian bookworm's docker.io package is pinned to 20.10/24.0 (API 1.41/1.43),
+# which is below the minimum. Download the official Docker CLI binary instead.
+ARG DOCKER_CLI_VERSION=29.1.3
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    docker.io \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" \
+    | tar -xz -C /usr/local/bin --strip-components=1 docker/docker \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a dedicated non-root runtime user and application directories.
@@ -39,7 +45,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN groupadd --system --gid 10001 firecrow \
     && useradd --system --uid 10001 --gid firecrow --no-create-home \
         --shell /bin/false firecrow \
-    && mkdir -p /app/workspace/storage /app/scanners/semgrep \
+    # All four workspace dirs the app creates at boot (config::ensure_workspace_dirs)
+    # must pre-exist here: the compose profile runs this image with
+    # `read_only: true`, so create_dir_all at startup would hit EROFS and abort.
+    # Only workspace/storage is a mounted volume; the rest are boot-time
+    # layout only (runtime temp goes to /tmp, a tmpfs).
+    && mkdir -p /app/workspace/storage /app/workspace/reports /app/workspace/temp /app/workspace/scans /app/scanners/semgrep \
     && chown -R 10001:10001 /app/workspace /app/scanners
 
 # Copy compiled binary from builder
@@ -51,7 +62,6 @@ COPY --from=builder /app/scanners /app/scanners
 
 ENV HOST=0.0.0.0
 ENV PORT=8000
-ENV WORKSPACE_DIR=/app
 
 EXPOSE 8000
 

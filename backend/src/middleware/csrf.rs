@@ -48,9 +48,18 @@ fn carries_auth_cookies(headers: &HeaderMap, cookie_name: &str) -> bool {
     };
     let access = format!("{cookie_name}=");
     let refresh = format!("{cookie_name}_refresh=");
-    cookie_header
-        .split(';')
-        .any(|pair| pair.trim().starts_with(&access) || pair.trim().starts_with(&refresh))
+    // P2-A (ZT-03-15): the refresh endpoint also accepts a legacy cookie
+    // literally named `refresh_token` (routes_auth::refresh_token reads
+    // `jar.get("refresh_token")`), so it must count as an auth cookie here
+    // too — otherwise a mutation carrying only the legacy cookie passes the
+    // no-Origin gate. The trailing `=` gives the same boundary safety as the
+    // derived names: `refresh_token=` cannot match a cookie that merely
+    // shares the prefix.
+    let legacy_refresh = "refresh_token=";
+    cookie_header.split(';').any(|pair| {
+        let pair = pair.trim();
+        pair.starts_with(&access) || pair.starts_with(&refresh) || pair.starts_with(legacy_refresh)
+    })
 }
 
 pub async fn csrf_middleware(

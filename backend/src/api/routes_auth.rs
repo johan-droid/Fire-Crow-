@@ -1,6 +1,6 @@
 use crate::error::{AppError, Result};
 use axum::{
-    extract::{Query, State},
+    extract::{ConnectInfo, Query, State},
     http::StatusCode,
     response::Redirect,
     routing::{get, post},
@@ -29,6 +29,7 @@ pub fn router() -> Router<Arc<crate::AppState>> {
         .route("/policy-events", post(create_policy_event))
         .route("/register", post(register))
         .route("/login", post(login))
+        .route("/login/mfa", post(login_mfa))
         .route("/logout", post(logout))
         .route("/github", get(github_login))
         .route("/github/callback", get(github_callback))
@@ -67,60 +68,41 @@ pub async fn exchange_token(
         .and_then(|u| u.tenant_id.clone())
         .unwrap_or_default();
 
-    // V2: one session family shared by both tokens, so revoking the family
-    // (logout, rotation, reuse containment) kills the whole session.
-    let token_family = uuid::Uuid::new_v4().to_string();
-    let (access_token_str, _) = crate::services::auth::create_access_token(
-        &user_id,
-        &username,
-        &state.settings().secret_key,
-        &tenant_id,
-        &token_family,
-        state.settings().jwt_access_token_expire_minutes,
-    )?;
-    let (refresh_token_str, _) = crate::services::auth::create_refresh_token(
-        &user_id,
-        &username,
-        &state.settings().secret_key,
-        &tenant_id,
-        &token_family,
-    )?;
+    // P0-A (ZT-01-1 / ZT-01-5): cookies only; tokens are never echoed in the
+    // body. An exchange code is only a *first* factor (it proves the caller
+    // completed the upstream OAuth step), so an MFA-enabled account must still
+    // redeem a second factor before a session is minted — otherwise GitHub
+    // login would bypass TOTP entirely. Mirrors the login() MFA branch.
+    let user_mfa_enabled = db_user.as_ref().map(|u| u.mfa_enabled).unwrap_or(false);
+    if user_mfa_enabled {
+        let (challenge, _) = crate::services::auth::create_mfa_challenge_token(
+            &user_id,
+            &username,
+            &state.settings().secret_key,
+            &tenant_id,
+        )?;
+        let _ = crate::services::security_log::record_security_event(
+            state.pool(),
+            Some(&user_id),
+            None,
+            "mfa_challenge_issued",
+            Some("{\"via\":\"exchange\"}"),
+            None,
+        )
+        .await;
+        return Ok((
+            jar,
+            Json(serde_json::json!({
+                "status": "mfa_required",
+                "mfa_token": challenge,
+                "username": username,
+            })),
+        ));
+    }
 
-    let cookie_name = state.settings().auth_cookie_name.clone();
-    let samesite = get_cookie_samesite(&state);
-    let is_secure = is_cookie_secure(&state, samesite);
-    let access_cookie = Cookie::build((cookie_name.clone(), access_token_str.clone()))
-        .path("/")
-        .http_only(true)
-        .secure(is_secure)
-        .same_site(samesite)
-        .build();
-
-    let refresh_cookie = Cookie::build((
-        format!("{}_refresh", cookie_name),
-        refresh_token_str.clone(),
-    ))
-    .path("/")
-    .http_only(true)
-    .secure(is_secure)
-    .same_site(samesite)
-    .build();
-
-    let jar = jar.add(access_cookie).add(refresh_cookie);
-
+    // `session_response` mints the shared-family token pair and both cookies.
     let email = db_user.as_ref().and_then(|u| u.email.clone());
-
-    Ok((
-        jar,
-        Json(serde_json::json!({
-            "token_type": "bearer",
-            "access_token": access_token_str,
-            "refresh_token": refresh_token_str,
-            "username": username,
-            "user_id": user_id,
-            "email": email
-        })),
-    ))
+    session_response(&state, jar, &user_id, &username, &tenant_id, email)
 }
 
 pub async fn refresh_token(
@@ -206,12 +188,12 @@ pub async fn refresh_token(
 
     let jar = jar.add(access_cookie).add(refresh_cookie);
 
+    // P0-A (ZT-01-5, finding 5): tokens live only in HttpOnly cookies, like
+    // every other session-issuing path — refresh bodies no longer echo them.
     Ok((
         jar,
         Json(serde_json::json!({
             "token_type": "bearer",
-            "access_token": access_token_str,
-            "refresh_token": refresh_token_str,
             "username": claims.claims.username,
             "user_id": claims.claims.sub
         })),
@@ -222,6 +204,8 @@ pub async fn register(
     State(state): State<Arc<crate::AppState>>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>> {
+    // P0-A (ZT-01-23): registration is a credential-abuse surface too.
+    enforce_turnstile(&state, &payload).await?;
     let username = payload
         .get("username")
         .and_then(|v| v.as_str())
@@ -291,11 +275,41 @@ pub async fn register(
     }
 }
 
+/// Resolve the lockout keys for one login attempt: the per-account key plus an
+/// OPTIONAL per-IP key.
+///
+/// The IP dimension is `Some` only when the client identity is proven — the
+/// peer is a trusted proxy / Cloudflare edge (so `client_ip` is XFF-derived
+/// through a trustworthy hop), or the operator explicitly attests a direct
+/// deploy (`TRUST_DIRECT_PEER`). Every other topology (Render-style or
+/// unknown shared ingress, unverified peer) yields `None`: an IP key over a
+/// shared address would be a GLOBAL lockout, and aliasing it to the account
+/// key double-records each failure and halves the documented limit.
+/// `None` is unrepresentable as either defect (FC-RELEASE-017 findings 1+2).
+fn resolve_lockout_keys(
+    peer_is_proxy: bool,
+    direct_peer_trusted: bool,
+    client_ip: &str,
+    normalized: &str,
+) -> (String, Option<String>) {
+    let account_key = format!("login:{}", normalized);
+    let ip_key = if peer_is_proxy || direct_peer_trusted {
+        Some(format!("login_ip:{}", client_ip))
+    } else {
+        None
+    };
+    (account_key, ip_key)
+}
+
 pub async fn login(
     State(state): State<Arc<crate::AppState>>,
     jar: CookieJar,
+    headers: axum::http::HeaderMap,
+    connect_info: Option<ConnectInfo<std::net::SocketAddr>>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<(CookieJar, Json<serde_json::Value>)> {
+    // P0-A (ZT-01-23): mandatory credential-abuse gate when enabled.
+    enforce_turnstile(&state, &payload).await?;
     let username = payload
         .get("username")
         .and_then(|v| v.as_str())
@@ -305,16 +319,82 @@ pub async fn login(
         .and_then(|v| v.as_str())
         .ok_or_else(|| AppError::BadRequest("Missing password".into()))?;
     let normalized = username.trim().to_lowercase();
-    let lockout_key = format!("login:{}", normalized);
-    if crate::services::auth::check_login_lockout(
-        state.pool(),
-        &lockout_key,
-        state.settings().login_failure_window_minutes,
-        state.settings().login_failure_limit,
-    )
-    .await?
-    {
-        return Err(AppError::AccountLocked);
+    // P2-B (ZT-01-16): layered lockout — per-account (targeted brute force)
+    // AND per verified client IP. The IP is derived through the trusted-proxy
+    // rules, never blindly from spoofable headers.
+    //
+    // FC-RELEASE-017 (review findings 1+2, plus the independent-review catch
+    // below): the extractor MUST be the bare `ConnectInfo` that
+    // `into_make_service_with_connect_info` inserts — wrapping it in
+    // `Extension` never matches, silently yields `None` on every request, and
+    // would turn the attested path into a global `login_ip:unresolved` key.
+    let peer_ip = connect_info.map(|ci| ci.0.ip());
+    let client_ip = crate::middleware::cloudflare::resolve_client_ip(&headers, peer_ip);
+    // P1-B follow-up: the per-IP lockout is only meaningful when `client_ip`
+    // identifies a single client. When the peer is a shared ingress, every
+    // user resolves to the SAME address, so an IP-keyed lockout becomes a
+    // GLOBAL lockout. In that configuration the per-account key still
+    // enforces the lockout and the 5/min rate limiter still throttles, so the
+    // IP dimension is skipped rather than made global. When proxies ARE
+    // configured the IP key is per-client and is enforced.
+    let peer_is_proxy = peer_ip
+        .map(|ip| {
+            crate::middleware::cloudflare::is_cloudflare_peer(ip)
+                || crate::middleware::cloudflare::is_trusted_proxy_ip(
+                    ip,
+                    crate::middleware::cloudflare::trusted_proxies(),
+                )
+        })
+        .unwrap_or(false);
+    // A raw (non-proxy) peer is the real client on a direct deploy, but it is
+    // Render's SHARED ingress when TRUSTED_PROXY_CIDRS is empty — identical
+    // for every caller, so an IP-keyed lockout there would be a global
+    // lockout. The RENDER signal is the same one config.rs uses to warn about
+    // this topology; without it we assume a direct deploy and keep the IP
+    // dimension. (Other platforms with an unrecognized shared ingress keep the
+    // existing coarse-but-spoof-proof posture; documented in the campaign
+    // report.)
+    // FC-RELEASE-017 (review findings 1+2): the per-IP lockout dimension exists
+    // only when the client identity is PROVEN — the peer is a trusted proxy /
+    // Cloudflare edge (so `client_ip` is XFF-derived through a trustworthy
+    // hop), or the operator explicitly attests a direct deploy with
+    // TRUST_DIRECT_PEER set to a truthy value (`1`/`true`/`yes`; presence
+    // alone is NOT enough, so `TRUST_DIRECT_PEER=0` cannot enable it by
+    // accident). Otherwise there is NO IP key at all (`None`):
+    // behind an unrecognized shared ingress the peer address is identical
+    // for every caller, so an IP key would be a GLOBAL lockout; and aliasing
+    // the IP key to the account key double-records each failure and halves
+    // the documented limit. The per-account key and the rate limiter still
+    // enforce in every topology. This rule subsumes the old RENDER
+    // special-case: a shared ingress peer is simply never a proven client.
+    let direct_peer_trusted = std::env::var("TRUST_DIRECT_PEER")
+        .map(|v| matches!(v.trim().to_lowercase().as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false);
+    let (lockout_key, ip_lockout_key) =
+        resolve_lockout_keys(peer_is_proxy, direct_peer_trusted, &client_ip, &normalized);
+    for key in std::iter::once(&lockout_key).chain(ip_lockout_key.as_ref()) {
+        if crate::services::auth::check_login_lockout(
+            state.pool(),
+            key,
+            state.settings().login_failure_window_minutes,
+            state.settings().login_failure_limit,
+        )
+        .await?
+        {
+            let _ = crate::services::security_log::record_security_event(
+                state.pool(),
+                None,
+                None,
+                "login_lockout",
+                // P2-D companion (finding 6): the key embeds the submitted
+                // username, which is attacker-controlled — build the JSON
+                // through serde so quotes/backslashes can't forge the field.
+                Some(&serde_json::json!({ "key": key }).to_string()),
+                None,
+            )
+            .await;
+            return Err(AppError::AccountLocked);
+        }
     }
     let user: Option<crate::models::User> = sqlx::query_as::<_, crate::models::User>(
         "SELECT * FROM users WHERE LOWER(username)=$1 OR LOWER(email)=$1",
@@ -327,77 +407,357 @@ pub async fn login(
         Some(u) => u,
         None => {
             crate::services::auth::record_login_failure(state.pool(), &lockout_key).await?;
+            // The IP dimension records only when it exists (`Some`): recording
+            // an aliased-or-shared key twice is exactly the double-count and
+            // global-lockout defects this resolution removed.
+            if let Some(ip_key) = &ip_lockout_key {
+                let _ = crate::services::auth::record_login_failure(state.pool(), ip_key).await;
+            }
+            let _ = crate::services::security_log::record_security_event(
+                state.pool(),
+                None,
+                None,
+                "login_failed",
+                // FC-RELEASE-017 (independent review): built through serde like
+                // the neighboring lockout event — one refactor away from an
+                // injection if this ever stops being an IpAddr/`"unresolved"`.
+                Some(
+                    &serde_json::json!({ "identifier_found": false, "ip": client_ip }).to_string(),
+                ),
+                None,
+            )
+            .await;
             return Err(AppError::InvalidCredentials);
         }
     };
     if !user.is_active {
         crate::services::auth::record_login_failure(state.pool(), &lockout_key).await?;
+        if let Some(ip_key) = &ip_lockout_key {
+            let _ = crate::services::auth::record_login_failure(state.pool(), ip_key).await;
+        }
+        let _ = crate::services::security_log::record_security_event(
+            state.pool(),
+            Some(&user.id),
+            None,
+            "login_failed",
+            Some("{\"reason\":\"deactivated\"}"),
+            None,
+        )
+        .await;
         return Err(AppError::Forbidden("Account is deactivated".into()));
     }
     let password_hash = user.password_hash.as_deref().unwrap_or("");
     if !crate::services::auth::verify_password(password, password_hash)? {
         crate::services::auth::record_login_failure(state.pool(), &lockout_key).await?;
+        if let Some(ip_key) = &ip_lockout_key {
+            let _ = crate::services::auth::record_login_failure(state.pool(), ip_key).await;
+        }
+        let _ = crate::services::security_log::record_security_event(
+            state.pool(),
+            Some(&user.id),
+            None,
+            "login_failed",
+            Some("{\"reason\":\"bad_password\"}"),
+            None,
+        )
+        .await;
         return Err(AppError::InvalidCredentials);
     }
     crate::services::auth::clear_login_failures(state.pool(), &lockout_key).await?;
-    // V2: one session family shared by both tokens (see exchange_token).
-    let token_family = uuid::Uuid::new_v4().to_string();
-    let tenant_id = user.tenant_id.clone().unwrap_or_default();
-    let (access_token_str, _) = crate::services::auth::create_access_token(
-        &user.id,
-        &user.username,
-        &state.settings().secret_key,
-        &tenant_id,
-        &token_family,
-        state.settings().jwt_access_token_expire_minutes,
-    )?;
-    let (refresh_token_str, _) = crate::services::auth::create_refresh_token(
-        &user.id,
-        &user.username,
-        &state.settings().secret_key,
-        &tenant_id,
-        &token_family,
-    )?;
+    if let Some(ip_key) = &ip_lockout_key {
+        crate::services::auth::clear_login_failures(state.pool(), ip_key).await?;
+    }
+
+    // P0-A (ZT-01-1/5): an MFA-enabled account gets a short-lived,
+    // single-purpose challenge — NOT a session. No cookies are set and no
+    // access/refresh token exists; the full session is minted only by
+    // `POST /auth/login/mfa` after the second factor verifies.
+    if user.mfa_enabled {
+        let tenant_id = user.tenant_id.clone().unwrap_or_default();
+        let (challenge, _) = crate::services::auth::create_mfa_challenge_token(
+            &user.id,
+            &user.username,
+            &state.settings().secret_key,
+            &tenant_id,
+        )?;
+        let _ = crate::services::security_log::record_security_event(
+            state.pool(),
+            Some(&user.id),
+            None,
+            "mfa_challenge_issued",
+            None,
+            None,
+        )
+        .await;
+        return Ok((
+            jar,
+            Json(serde_json::json!({
+                "status": "mfa_required",
+                "mfa_token": challenge,
+                "username": user.username,
+            })),
+        ));
+    }
+
     sqlx::query("UPDATE users SET last_login_at=$1 WHERE id=$2")
         .bind(chrono::Utc::now().naive_utc())
         .bind(&user.id)
         .execute(state.pool())
         .await
         .ok();
+    let _ = crate::services::security_log::record_security_event(
+        state.pool(),
+        Some(&user.id),
+        None,
+        "login_success",
+        None,
+        None,
+    )
+    .await;
+    let tenant_id = user.tenant_id.clone().unwrap_or_default();
+    session_response(
+        &state,
+        jar,
+        &user.id,
+        &user.username,
+        &tenant_id,
+        user.email.clone(),
+    )
+}
+
+/// P0-A (ZT-01-1): redeem an MFA challenge for a full session. The challenge
+/// is HMAC-signed, purpose-bound (`Mfachallenge` — rejected for both Access
+/// and Refresh), short-lived, and single-use. The second factor is a TOTP
+/// code or an unused recovery code; there is no password-only path here.
+pub async fn login_mfa(
+    State(state): State<Arc<crate::AppState>>,
+    jar: CookieJar,
+    Json(payload): Json<serde_json::Value>,
+) -> Result<(CookieJar, Json<serde_json::Value>)> {
+    let challenge = payload
+        .get("mfa_token")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::BadRequest("Missing MFA challenge".into()))?;
+    let code = payload
+        .get("code")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::BadRequest("Missing MFA code".into()))?;
+
+    // Signature + expiry + anti-replay (Redis with authoritative DB
+    // fallback), then purpose: an access or refresh token presented here is
+    // rejected, and a redeemed challenge can never be replayed.
+    let claims = crate::services::auth::validate_token_with_anti_replay(
+        challenge,
+        &state.settings().secret_key,
+        state.redis(),
+        state.pool(),
+    )
+    .await?;
+    crate::services::auth::require_token_type(
+        &claims,
+        crate::services::auth::TokenType::Mfachallenge,
+    )?;
+
+    let user: Option<crate::models::User> =
+        sqlx::query_as::<_, crate::models::User>("SELECT * FROM users WHERE id = $1")
+            .bind(&claims.claims.sub)
+            .fetch_optional(state.pool())
+            .await
+            .map_err(AppError::Database)?;
+    let user = user.ok_or(AppError::InvalidCredentials)?;
+    if !user.is_active {
+        return Err(AppError::Forbidden("Account is deactivated".into()));
+    }
+    // Challenges are only minted for MFA-enabled accounts. If MFA was
+    // disabled between mint and redemption, fail closed — never downgrade to
+    // a password-only session.
+    if !user.mfa_enabled {
+        return Err(AppError::Forbidden(
+            "MFA is no longer enabled for this account".into(),
+        ));
+    }
+
+    let rl_key = format!("mfa_login:{}", user.id);
+    if crate::services::auth::check_login_lockout(state.pool(), &rl_key, 10, 5).await? {
+        return Err(AppError::RateLimited);
+    }
+
+    let totp_ok = match user.mfa_secret.as_deref() {
+        Some(encrypted) => match state.crypto().decrypt_secret(encrypted) {
+            Ok(secret) => crate::services::mfa_service::MfaService::verify_totp(&secret, code),
+            // Malformed secret state: TOTP cannot verify, but recovery
+            // codes remain a valid second factor (never a bypass). Finding 8:
+            // this fail-closed state (key rotation, corrupt row) used to be
+            // silent — emit an event so it is visible in the audit trail.
+            Err(e) => {
+                let _ = crate::services::security_log::record_security_event(
+                    state.pool(),
+                    Some(&user.id),
+                    None,
+                    "mfa_secret_decrypt_failed",
+                    Some(&serde_json::json!({ "reason": e.to_string() }).to_string()),
+                    None,
+                )
+                .await;
+                false
+            }
+        },
+        None => false,
+    };
+    let factor_ok = if totp_ok {
+        true
+    } else {
+        crate::api::routes_mfa::try_consume_recovery_code(state.pool(), &user.id, code).await?
+    };
+    if !factor_ok {
+        let _ = crate::services::auth::record_login_failure(state.pool(), &rl_key).await;
+        let _ = crate::services::security_log::record_security_event(
+            state.pool(),
+            Some(&user.id),
+            None,
+            "mfa_login_failed",
+            None,
+            None,
+        )
+        .await;
+        return Err(AppError::InvalidCredentials);
+    }
+    crate::services::auth::clear_login_failures(state.pool(), &rl_key).await?;
+
+    // Single-use: retire the challenge family so the same challenge cannot
+    // mint a second session (replay protection beyond the 5-minute TTL).
+    let family = &claims.claims.token_family;
+    let challenge_ttl = crate::services::auth::MFA_CHALLENGE_TTL_MINUTES * 60 + 3600;
+    // Finding 7: validation above is a READ — two concurrent redemptions with
+    // a valid code could both pass it and both reach session issuance.
+    // consume_jti_once is atomic (SET NX / INSERT ... ON CONFLICT DO
+    // NOTHING), so exactly one caller claims the challenge; the loser fails
+    // with a replay error even though its factor verified.
+    let claimed = crate::services::auth::consume_jti_once(
+        state.redis(),
+        state.pool(),
+        &claims.claims.jti,
+        family,
+        challenge_ttl,
+    )
+    .await?;
+    if !claimed {
+        return Err(AppError::TokenRevoked);
+    }
+    if let Some(redis) = state.redis() {
+        let _ =
+            crate::services::auth::revoke_token_jti(redis, &claims.claims.jti, challenge_ttl).await;
+        let _ = crate::services::auth::revoke_token_family(redis, family, challenge_ttl).await;
+    }
+    let _ = crate::services::auth::revoke_token_in_db(
+        state.pool(),
+        &claims.claims.jti,
+        family,
+        challenge_ttl,
+    )
+    .await;
+
+    sqlx::query("UPDATE users SET last_login_at=$1 WHERE id=$2")
+        .bind(chrono::Utc::now().naive_utc())
+        .bind(&user.id)
+        .execute(state.pool())
+        .await
+        .ok();
+    let _ = crate::services::security_log::record_security_event(
+        state.pool(),
+        Some(&user.id),
+        None,
+        "mfa_login_success",
+        None,
+        None,
+    )
+    .await;
+    let tenant_id = user.tenant_id.clone().unwrap_or_default();
+    session_response(
+        &state,
+        jar,
+        &user.id,
+        &user.username,
+        &tenant_id,
+        user.email.clone(),
+    )
+}
+
+/// P0-A (ZT-01-5): the browser contract is HttpOnly-cookie authentication.
+/// Every session-issuing path returns identity metadata only — access and
+/// refresh tokens are never echoed in JSON bodies.
+fn session_response(
+    state: &crate::AppState,
+    jar: CookieJar,
+    user_id: &str,
+    username: &str,
+    tenant_id: &str,
+    email: Option<String>,
+) -> Result<(CookieJar, Json<serde_json::Value>)> {
+    // One session family shared by both tokens (see exchange_token): a
+    // single family revocation (logout, rotation, reuse containment) kills
+    // the whole session.
+    let token_family = uuid::Uuid::new_v4().to_string();
+    let (access_token_str, _) = crate::services::auth::create_access_token(
+        user_id,
+        username,
+        &state.settings().secret_key,
+        tenant_id,
+        &token_family,
+        state.settings().jwt_access_token_expire_minutes,
+    )?;
+    let (refresh_token_str, _) = crate::services::auth::create_refresh_token(
+        user_id,
+        username,
+        &state.settings().secret_key,
+        tenant_id,
+        &token_family,
+    )?;
 
     let cookie_name = state.settings().auth_cookie_name.clone();
-    let samesite = get_cookie_samesite(&state);
-    let is_secure = is_cookie_secure(&state, samesite);
-    let access_cookie = Cookie::build((cookie_name.clone(), access_token_str.clone()))
+    let samesite = get_cookie_samesite(state);
+    let is_secure = is_cookie_secure(state, samesite);
+    let access_cookie = Cookie::build((cookie_name.clone(), access_token_str))
         .path("/")
         .http_only(true)
         .secure(is_secure)
         .same_site(samesite)
         .build();
-
-    let refresh_cookie = Cookie::build((
-        format!("{}_refresh", cookie_name),
-        refresh_token_str.clone(),
-    ))
-    .path("/")
-    .http_only(true)
-    .secure(is_secure)
-    .same_site(samesite)
-    .build();
-
+    let refresh_cookie = Cookie::build((format!("{}_refresh", cookie_name), refresh_token_str))
+        .path("/")
+        .http_only(true)
+        .secure(is_secure)
+        .same_site(samesite)
+        .build();
     let jar = jar.add(access_cookie).add(refresh_cookie);
-
     Ok((
         jar,
         Json(serde_json::json!({
             "token_type": "bearer",
-            "access_token": access_token_str,
-            "refresh_token": refresh_token_str,
-            "username": user.username,
-            "user_id": user.id,
-            "email": user.email
+            "username": username,
+            "user_id": user_id,
+            "email": email
         })),
     ))
+}
+
+/// P0-A (ZT-01-23): the Turnstile credential-abuse gate. Default-off keeps
+/// dev/test dependency-free; when enabled the client token is mandatory and
+/// a missing secret key is a hard error — an enabled control never silently
+/// approves unverified requests.
+async fn enforce_turnstile(state: &crate::AppState, payload: &serde_json::Value) -> Result<()> {
+    if !state.settings().cf_turnstile_enabled {
+        return Ok(());
+    }
+    let token = payload
+        .get("turnstile_token")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| AppError::Forbidden("Turnstile challenge required".into()))?;
+    let svc = crate::services::turnstile::TurnstileService::new(
+        state.settings().cf_turnstile_secret_key.clone(),
+        true,
+    );
+    svc.verify_token(token, None).await.map(|_| ())
 }
 
 pub async fn logout(
@@ -425,6 +785,15 @@ pub async fn logout(
         &user.jti,
         &user.token_family,
         family_ttl,
+    )
+    .await;
+    let _ = crate::services::security_log::record_security_event(
+        state.pool(),
+        Some(&user.user_id),
+        None,
+        "logout",
+        None,
+        None,
     )
     .await;
 
@@ -497,7 +866,13 @@ struct GitHubUser {
     email: Option<String>,
 }
 
-fn resolve_backend_base_url(state: &crate::AppState, headers: &axum::http::HeaderMap) -> String {
+/// P1-A (ZT-04-6): public for the `resolve_backend_base_url_ignores_forwarded_headers`
+/// regression test — the OAuth redirect base must come only from operator config
+/// or Render's env, never from request headers.
+pub fn resolve_backend_base_url(
+    state: &crate::AppState,
+    _headers: &axum::http::HeaderMap,
+) -> String {
     let configured = state.settings().backend_base_url.trim_end_matches('/');
     if !configured.is_empty() && configured != "http://localhost:8000" {
         return configured.to_string();
@@ -508,18 +883,14 @@ fn resolve_backend_base_url(state: &crate::AppState, headers: &axum::http::Heade
             return r.to_string();
         }
     }
-    let host = headers
-        .get("x-forwarded-host")
-        .or_else(|| headers.get(axum::http::header::HOST))
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    if !host.is_empty() && host != "localhost:8000" && host != "127.0.0.1:8000" {
-        let proto = headers
-            .get("x-forwarded-proto")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("https");
-        return format!("{}://{}", proto, host);
-    }
+    // P1-A (ZT-04-6): the old fallback built the OAuth `redirect_uri` from
+    // raw `X-Forwarded-Host`/`X-Forwarded-Proto`. Those headers are
+    // attacker-controlled unless a trusted proxy rewrites them, so a forged
+    // value could steer the callback URL. The only remaining sources are the
+    // operator-configured `backend_base_url` and Render's own env var; local
+    // dev falls back to the configured localhost default (fail-closed: an
+    // unconfigured production deployment produces a redirect GitHub rejects
+    // rather than one an attacker can steer).
     configured.to_string()
 }
 
@@ -830,28 +1201,21 @@ pub async fn github_callback(
         }
     };
 
-    // V2: the refresh token below shares this family (declared next), so
-    // logout/rotation revokes the whole GitHub-login session.
-    let token_family = uuid::Uuid::new_v4().to_string();
-    let access_token_str = match crate::services::auth::create_access_token(
-        &user.id,
-        &user.username,
-        &state.settings().secret_key,
-        user.tenant_id.as_deref().unwrap_or(""),
-        &token_family,
-        state.settings().jwt_access_token_expire_minutes,
-    ) {
-        Ok((tok, _)) => tok,
-        Err(e) => return (jar, error_redirect(&format!("Token creation failed: {e}"))),
-    };
-
+    // P0-A (ZT-01-1 / ZT-01-5): the callback does NOT mint session cookies.
+    // It only proves the GitHub OAuth step succeeded and issues a one-time
+    // exchange code; the session (or the MFA challenge, for MFA-enabled
+    // accounts) is issued by POST /auth/exchange. Minting cookies here would
+    // hand a full session to an MFA-enabled account with no second factor.
     let exchange_code = uuid::Uuid::new_v4().to_string();
+    // The exchange flow only consumes user_id/username (the session is minted
+    // fresh in POST /auth/exchange), so no token material needs to be stored —
+    // a plain placeholder goes in; create_exchange_code encrypts it at rest.
     if let Err(e) = crate::services::auth::create_exchange_code(
         state.pool(),
         &exchange_code,
         &user.id,
         &user.username,
-        &access_token_str,
+        "oauth-exchange-no-token",
         120,
         state.crypto(),
     )
@@ -863,40 +1227,15 @@ pub async fn github_callback(
         );
     }
 
-    let refresh_token_str = match crate::services::auth::create_refresh_token(
-        &user.id,
-        &user.username,
-        &state.settings().secret_key,
-        user.tenant_id.as_deref().unwrap_or(""),
-        &token_family,
-    ) {
-        Ok((tok, _)) => tok,
-        Err(e) => {
-            return (
-                jar,
-                error_redirect(&format!("Refresh token creation failed: {e}")),
-            )
-        }
-    };
-
-    let cookie_name = state.settings().auth_cookie_name.clone();
-    let samesite = get_cookie_samesite(&state);
-    let is_secure = is_cookie_secure(&state, samesite);
-    let access_cookie = Cookie::build((cookie_name.clone(), access_token_str.clone()))
-        .path("/")
-        .http_only(true)
-        .secure(is_secure)
-        .same_site(samesite)
-        .build();
-
-    let refresh_cookie = Cookie::build((format!("{}_refresh", cookie_name), refresh_token_str))
-        .path("/")
-        .http_only(true)
-        .secure(is_secure)
-        .same_site(samesite)
-        .build();
-
-    let jar = jar.add(access_cookie).add(refresh_cookie);
+    let _ = crate::services::security_log::record_security_event(
+        state.pool(),
+        Some(&user.id),
+        None,
+        "oauth_github_success",
+        None,
+        None,
+    )
+    .await;
 
     let frontend_redirect = format!("{}/?code={}", frontend_base, exchange_code);
     info!(
@@ -995,4 +1334,55 @@ fn is_cookie_secure(
     state.settings().auth_cookie_secure
         || !state.settings().debug
         || samesite == axum_extra::extract::cookie::SameSite::None
+}
+
+#[cfg(test)]
+mod lockout_key_tests {
+    use super::resolve_lockout_keys;
+
+    /// No topology may ever alias the IP key to the account key: aliasing
+    /// double-records each failure and halves the documented lockout limit
+    /// (FC-RELEASE-017 finding 2).
+    fn assert_no_alias(account: &str, ip: &Option<String>) {
+        assert_ne!(
+            ip.as_deref(),
+            Some(account),
+            "IP key must never equal the account key"
+        );
+    }
+
+    #[test]
+    fn trusted_proxy_peer_enables_a_distinct_ip_key() {
+        let (account, ip) = resolve_lockout_keys(true, false, "203.0.113.7", "analyst");
+        assert_eq!(account, "login:analyst");
+        assert_eq!(ip.as_deref(), Some("login_ip:203.0.113.7"));
+        assert_no_alias(&account, &ip);
+    }
+
+    #[test]
+    fn attested_direct_deploy_enables_a_distinct_ip_key() {
+        let (account, ip) = resolve_lockout_keys(false, true, "198.51.100.9", "analyst");
+        assert_eq!(ip.as_deref(), Some("login_ip:198.51.100.9"));
+        assert_no_alias(&account, &ip);
+    }
+
+    #[test]
+    fn unrecognized_shared_ingress_has_no_ip_key() {
+        // The finding-1 topology: peer is a load balancer nobody configured
+        // (not a trusted proxy, no direct-deploy attestation). The peer
+        // address is identical for every caller, so any IP key here would be
+        // a GLOBAL lockout — hence None.
+        let (account, ip) = resolve_lockout_keys(false, false, "10.0.4.21", "analyst");
+        assert_eq!(account, "login:analyst");
+        assert_eq!(ip, None);
+    }
+
+    #[test]
+    fn render_style_topology_has_no_ip_key() {
+        // Same rule, no RENDER special-case needed: a shared-ingress peer is
+        // simply never a proven client, with or without the env signal.
+        let (account, ip) = resolve_lockout_keys(false, false, "10.0.4.21", "victim");
+        assert_eq!(ip, None);
+        assert_no_alias(&account, &ip);
+    }
 }

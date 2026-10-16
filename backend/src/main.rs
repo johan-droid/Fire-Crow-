@@ -159,7 +159,18 @@ async fn main() -> anyhow::Result<()> {
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(async move {
-        tokio::signal::ctrl_c().await.ok();
+        // F-G2-01: honor both SIGINT (operator ctrl_c) and SIGTERM (compose
+        // stop, swarm/k8s, Render). As container PID 1 the process must handle
+        // SIGTERM explicitly or the signal is discarded and the container is
+        // force-killed without draining the worker pool.
+        let mut sigterm = tokio::signal::unix::signal(
+            tokio::signal::unix::SignalKind::terminate(),
+        )
+        .expect("install SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = sigterm.recv() => {}
+        }
         info!("Shutdown signal received");
         worker_pool.stop().await;
     })

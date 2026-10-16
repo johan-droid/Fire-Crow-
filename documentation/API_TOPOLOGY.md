@@ -49,10 +49,11 @@ API wiring is therefore **per environment**:
 
 ## Cookie, CORS, and CSRF requirements
 
-Authentication is cookie-based: HttpOnly session cookies set by
-`/api/v1/auth/*` (never readable by JavaScript), plus a double-submit CSRF
-token cookie (`backend/src/services/csrf.rs`,
-`backend/src/middleware/csrf.rs`).
+Authentication is cookie-based: HttpOnly session cookies (`fc_access_token`
+and `fc_access_token_refresh`) set by `/api/v1/auth/*` (never readable by
+JavaScript). CSRF protection for mutating methods is an Origin-header
+allowlist (`backend/src/middleware/csrf.rs`); there is no CSRF token
+cookie or header.
 
 - **Same-origin mode (default):** backend defaults apply unchanged —
   `AUTH_COOKIE_SAMESITE=strict`, `AUTH_COOKIE_SECURE=true`,
@@ -61,8 +62,9 @@ token cookie (`backend/src/services/csrf.rs`,
   backend deployment MUST set `AUTH_COOKIE_SAMESITE=none` and
   `AUTH_COOKIE_SECURE=true` (`SameSite=None` without `Secure` is rejected by
   browsers), set `CORS_ORIGINS` to the exact frontend origin, and keep
-  `CSRF_ENABLED=true` — the double-submit token exists precisely for this
-  mode. **Never** disable CSRF or loosen CORS to make a topology work.
+  `CSRF_ENABLED=true` — the Origin allowlist reuses that origin
+  configuration and is precisely what defends cookie auth in this mode.
+  **Never** disable CSRF or loosen CORS to make a topology work.
 
 ## Health and capability endpoints
 
