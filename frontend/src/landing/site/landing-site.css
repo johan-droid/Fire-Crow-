@@ -15,7 +15,16 @@
   --lp-panel-line: #262f3f;
   --lp-on-panel: #f1f5f9;
   --lp-on-panel-muted: #94a3b8;
-  --lp-display: 'Bricolage Grotesque', 'Hanken Grotesk', system-ui, sans-serif;
+  /* Warm ivory editorial surfaces */
+  --lp-ivory: #f7f5f0;
+  --lp-ivory-panel: #ffffff;
+  --lp-ivory-ink: #1a1a18;
+  --lp-ivory-muted: #4a4540;
+  --lp-ivory-line: #e7dfd2;
+  /* Typography: editorial serif display, sans body, restrained cursive */
+  --lp-display: Georgia, 'Times New Roman', Times, 'Bricolage Grotesque', system-ui, serif;
+  --lp-display-serif: Georgia, 'Times New Roman', Times, serif;
+  --lp-cursive: 'Apple Chancery', 'Comic Sans MS', 'Chalkboard SE', 'URW Chancery L', cursive;
   --lp-body: 'Hanken Grotesk', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --lp-code: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
@@ -72,6 +81,17 @@ html:has(.lp) { scroll-behavior: smooth; scroll-padding-top: 84px; /* clear the 
 .lp-eyebrow { display: inline-flex; align-items: center; gap: 9px; font: 600 .75rem/1 var(--lp-code); letter-spacing: .1em; text-transform: uppercase; color: var(--lp-muted); }
 .lp-eyebrow-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--lp-ember); flex: none; }
 .lp-eyebrow-sec { display: block; margin-bottom: 14px; color: var(--lp-ink); }
+
+/* Editorial serif display headlines */
+.lp-serif { font-family: var(--lp-display-serif); font-weight: 800; letter-spacing: -0.03em; line-height: 1.05; }
+/* Restrained cursive accent — selective words only, never body or security claims */
+.lp-cursive-accent { font-family: var(--lp-cursive); font-style: normal; font-weight: 700; letter-spacing: 0.01em; }
+/* Warm ivory editorial section — alternate surface treatment */
+.lp-section-ivory { background: var(--lp-ivory); color: var(--lp-ivory-ink); border-top: 1px solid var(--lp-ivory-line); }
+.lp-section-ivory .lp-muted, .lp-section-ivory .lp-on-panel-muted { color: var(--lp-ivory-muted); }
+.lp-section-ivory .lp-btn-ember { background: var(--lp-ember); color: var(--lp-ember-text); }
+.lp-section-ivory .lp-btn-ember:hover { background: var(--lp-ember-dark); }
+.lp-section-ivory .lp-fineprint { color: var(--lp-ivory-muted); }
 
 /* Hero */
 .lp-hero { padding: clamp(40px, 7vw, 96px) 0 clamp(56px, 8vw, 112px); }
@@ -133,7 +153,7 @@ html:has(.lp) { scroll-behavior: smooth; scroll-padding-top: 84px; /* clear the 
 .lp-section-ink { position: relative; color: var(--lp-on-panel); border-top: 0; background: radial-gradient(130% 150% at 88% 0%, rgba(234, 88, 12, .14), transparent 55%), linear-gradient(180deg, #161c28, #0c111a); box-shadow: inset 0 1px 0 #ffffff0d; }
 .lp-split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 6vw, 96px); align-items: start; }
 .lp-split-head { position: sticky; top: 96px; }
-.lp-split-head h2, .lp-access h2 { font: 700 clamp(1.75rem, 3.2vw, 2.5rem)/1.1 var(--lp-display); letter-spacing: -.02em; max-width: 16ch; }
+.lp-split-head h2, .lp-access h2 { font: 700 clamp(1.75rem, 3.2vw, 2.5rem)/1.1 var(--lp-display-serif); letter-spacing: -.02em; max-width: 16ch; }
 .lp-split-head p { margin-top: 16px; color: var(--lp-muted); max-width: 30em; }
 
 /* Steps */
@@ -262,4 +282,8 @@ html:has(.lp) { scroll-behavior: smooth; scroll-padding-top: 84px; /* clear the 
   .lp-score { flex-direction: column; align-items: flex-start; gap: 8px; }
   .lp-brand small { display: none; }
   .lp-nav-actions .lp-btn-ink { padding: 0 12px; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (max-width: 640px) {
+  .lp-hero-copy h1 { font-size: 2.25rem; }
+  .lp-section-ivory .lp-wrap { padding: 0 16px; }
 }

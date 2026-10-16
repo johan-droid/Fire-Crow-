@@ -199,5 +199,17 @@ export const api = {
       deliveryTimeoutNote('telegram'),
     ),
 
+  // --- account lifecycle ---
+  deletionRequest: () =>
+    requestJson<{
+      status: string;
+      deadline: string;
+      cancel_url: string;
+    }>(authPaths.deletionRequest(), { method: 'POST' }),
+  deletionCancel: (token: string) =>
+    requestJson<{ status: string }>(
+      `${authPaths.deletionCancel()}?token=${encodeURIComponent(token)}`,
+    ),
+
   sseJobUrl: (jobId: string) => `${getApiBase()}${ssePaths.job(jobId)}`,
 };

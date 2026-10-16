@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { BrandMark } from './BrandMark';
 import LandingPage from './LandingPage';
 import LoginPage from './LoginPage';
+import AccountDeletionRequest from './AccountDeletionRequest';
+import AccountDeletionCancel from './AccountDeletionCancel';
 import { useNavigate, useLocation } from 'react-router-dom';
 // Single API-origin contract (FC-DEP-01): base URL resolution, credentials,
 // and error handling live in ./api/client — never re-implemented here.
@@ -1168,6 +1170,30 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
         error={error}
         authFormError={authFormError}
         clearErrors={() => { setError(''); setAuthFormError(''); }}
+      />
+    );
+  }
+
+  // Render account lifecycle views — authenticated only.
+  const isAccountDeletionRequest = location.pathname === '/account/deletion-request';
+  const isAccountDeletionCancel = location.pathname === '/account/deletion-cancel';
+  if (isAccountDeletionRequest || isAccountDeletionCancel) {
+    if (!user && (authState === 'signed_out' || authState === 'error')) {
+      navigate('/login', { state: { returnTo: location.pathname } });
+      return null;
+    }
+    if (isAccountDeletionRequest) {
+      return (
+        <AccountDeletionRequest
+          user={user}
+          onNavigateLogin={() => navigate('/login')}
+          onNavigateLanding={() => navigate('/')}
+        />
+      );
+    }
+    return (
+      <AccountDeletionCancel
+        onNavigateLanding={() => navigate('/')}
       />
     );
   }

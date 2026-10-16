@@ -34,6 +34,8 @@ export const authPaths = {
   session: () => '/auth/session',
   refresh: () => '/auth/refresh',
   exchange: () => '/auth/exchange',
+  deletionRequest: () => '/auth/account/deletion-request',
+  deletionCancel: () => '/auth/account/deletion-cancel',
 };
 
 export const userPaths = {

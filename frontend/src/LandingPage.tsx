@@ -187,7 +187,7 @@ export default function LandingPage({ user, onNavigateLogin, onNavigateConsole }
           <div className="lp-wrap lp-hero-grid">
             <Reveal className="lp-hero-copy">
               <p className="lp-eyebrow"><span className="lp-eyebrow-dot" aria-hidden="true" />Zero-trust deterministic security auditing</p>
-              <h1>Audit results you can prove, not just read.</h1>
+              <h1 className="lp-serif">Find the gaps.<span className="lp-cursive-accent"> Before they become risks.</span></h1>
               <p className="lp-lede">
                 Fire Crow scans your GitHub repository with Gitleaks, Semgrep, and OSV-Scanner inside
                 throwaway containers, then freezes every finding into a ledger no one can edit after the run.
@@ -229,7 +229,7 @@ export default function LandingPage({ user, onNavigateLogin, onNavigateConsole }
           </div>
         </section>
 
-        <section id="guarantees" className="lp-section lp-section-tint">
+        <section id="guarantees" className="lp-section lp-section-ivory">
           <div className="lp-wrap lp-split">
             <Reveal className="lp-split-head">
               <p className="lp-eyebrow lp-eyebrow-sec" aria-hidden="true">02 // Guarantees</p>
@@ -324,7 +324,7 @@ export default function LandingPage({ user, onNavigateLogin, onNavigateConsole }
           </div>
         </section>
 
-        <section id="studio" className="lp-section lp-section-tint">
+        <section id="studio" className="lp-section lp-section-ivory">
           <div className="lp-wrap">
             <Reveal className="lp-studio-head">
               <p className="lp-eyebrow lp-eyebrow-sec" aria-hidden="true">05 // The studio</p>
