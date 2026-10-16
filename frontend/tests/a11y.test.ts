@@ -31,6 +31,9 @@ describe('inspector modal keyboard support', () => {
   });
   it('labels the explorer controls', () => {
     assert.ok(app.includes('aria-label="Search findings"'), 'search label missing');
-    assert.ok(app.includes('aria-label="Filter by severity"'), 'filter label missing');
+    assert.ok(
+      app.includes('aria-label="Filter by severity"') || app.includes('triggerLabel="Filter by severity"'),
+      'filter label missing',
+    );
   });
 });

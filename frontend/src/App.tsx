@@ -26,6 +26,10 @@ import {
 import {
   MetricCard,
   AuditTable,
+  Dropdown,
+  DropdownItem,
+  DropdownOption,
+  needsAttention,
 } from './dashboard';
 import {
   ShieldCheck,
@@ -35,6 +39,9 @@ import {
   Plus,
   RefreshCw,
   GitBranch,
+  ChevronDown,
+  Settings,
+  LogOut,
 } from 'lucide-react';
 
 const API_BASE = getApiBase();
@@ -113,6 +120,10 @@ const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
 // Lightweight in-memory cache for dashboard summary (5 s TTL, avoids duplicate calls on re-render)
 let _dashboardCache: { data: any; ts: number } | null = null;
 const DASH_CACHE_TTL = 5000;
+
+/** Severity filter values for the findings explorer, in display order. */
+const SEVERITY_FILTERS = ['all', 'critical', 'high', 'medium', 'low', 'info', 'unknown'] as const;
+const severityFilterLabel = (s: string): string => (s === 'all' ? 'All severities' : s);
 
 function App() {
   const [view, setView] = useState<'landing' | 'login' | 'dashboard'>('landing');
@@ -1276,14 +1287,32 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
         </button>
 
         <div className="dyn-user">
-          <div className="dyn-avatar" title={user?.username ?? 'Signed in'}>{user?.username ? user.username[0].toUpperCase() : 'U'}</div>
-          <button onClick={handleLogout} className="dyn-logout" title="Sign Out" aria-label="Sign out">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-              <polyline points="16 17 21 12 16 7"/>
-              <line x1="21" y1="12" x2="9" y2="12"/>
-            </svg>
-          </button>
+          <Dropdown
+            label="Account"
+            align="end"
+            triggerClassName="fc-user-btn"
+            triggerLabel={`Account menu for ${user?.username ?? 'signed-in user'}`}
+            trigger={
+              <>
+                <span className="dyn-avatar" aria-hidden="true">
+                  {user?.username ? user.username[0].toUpperCase() : 'U'}
+                </span>
+                <span className="fc-user-name">{user?.username ?? 'Signed in'}</span>
+                <ChevronDown size={14} aria-hidden="true" />
+              </>
+            }
+          >
+            <DropdownItem asHeader>
+              <span className="fc-dropdown-head-name">{user?.username ?? 'Signed in'}</span>
+              <span className="fc-dropdown-head-mail">{user?.email ?? 'No email on file'}</span>
+            </DropdownItem>
+            <DropdownItem icon={<Settings size={15} />} onSelect={() => navigate('/console/settings')}>
+              Settings
+            </DropdownItem>
+            <DropdownItem icon={<LogOut size={15} />} onSelect={handleLogout}>
+              Sign out
+            </DropdownItem>
+          </Dropdown>
         </div>
       </nav>
 
@@ -1474,10 +1503,7 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
                       </div>
                     </div>
                     {(() => {
-                      const attention = jobs
-                        .filter(j => ['failed', 'cancelled', 'partial', 'engine_unavailable', 'running', 'queued'].includes(j.status))
-                        .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
-                        .slice(0, 5);
+                      const attention = needsAttention(jobs, 5);
                       if (attention.length === 0) {
                         return (
                           <p className="fc-calm-note">
@@ -2361,11 +2387,24 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
                         style={{ flex: 1 }}
                         aria-label="Search findings"
                       />
-                      <select className="form-input" value={findingSev} onChange={e => setFindingSev(e.target.value)} aria-label="Filter by severity" style={{ maxWidth: '160px', flex: 'none' }}>
-                        {['all', 'critical', 'high', 'medium', 'low', 'info', 'unknown'].map(s => (
-                          <option key={s} value={s}>{s === 'all' ? 'All severities' : s}</option>
+                      <Dropdown
+                        label="Filter by severity"
+                        align="end"
+                        triggerClassName="fc-select"
+                        triggerLabel="Filter by severity"
+                        trigger={
+                          <>
+                            <span>{severityFilterLabel(findingSev)}</span>
+                            <ChevronDown size={14} aria-hidden="true" />
+                          </>
+                        }
+                      >
+                        {SEVERITY_FILTERS.map(s => (
+                          <DropdownOption key={s} selected={findingSev === s} onSelect={() => setFindingSev(s)}>
+                            {severityFilterLabel(s)}
+                          </DropdownOption>
                         ))}
-                      </select>
+                      </Dropdown>
                     </div>
                     {reportState !== 'ready' && selectedJobDetail.job.status === 'engine_unavailable' && (
                       <div style={{ marginTop: '0.4rem', fontSize: '0.78rem' }}>

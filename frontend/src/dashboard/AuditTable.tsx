@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Clock,
   Shield,
+  ArrowUpDown,
 } from 'lucide-react';
 import {
   ScoreRing,
@@ -19,6 +20,17 @@ import {
   timeAgo,
   repoLabel,
 } from '../dash';
+import { Dropdown, DropdownOption } from './Dropdown';
+import {
+  AUDIT_SORTS,
+  AUDIT_STATUS_FILTERS,
+  auditFilterCounts,
+  filterAudits,
+  sortAudits,
+  sortLabel,
+  type AuditSort,
+  type AuditStatusFilter,
+} from './console';
 
 export interface AuditTableProps {
   jobs: JobResponse[];
@@ -39,30 +51,16 @@ export function AuditTable({
 }: AuditTableProps) {
   const [viewMode, setViewMode] = useState<'table' | 'list'>('table');
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'running' | 'failed'>('all');
+  const [statusFilter, setStatusFilter] = useState<AuditStatusFilter>('all');
+  const [sort, setSort] = useState<AuditSort>('newest');
 
-  // Filtered jobs list based on real data
-  const filteredJobs = useMemo(() => {
-    return jobs.filter((job) => {
-      // Query filter
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const repo = repoLabel(job.repo_url).toLowerCase();
-        const branch = (job.repo_branch || '').toLowerCase();
-        const sha = (job.commit_sha || job.requested_commit_sha || '').toLowerCase();
-        if (!repo.includes(q) && !branch.includes(q) && !sha.includes(q)) {
-          return false;
-        }
-      }
-
-      // Status filter
-      if (statusFilter === 'completed') return job.status === 'completed';
-      if (statusFilter === 'running') return job.status === 'running' || job.status === 'queued';
-      if (statusFilter === 'failed') return job.status === 'failed' || job.status === 'cancelled';
-
-      return true;
-    });
-  }, [jobs, searchQuery, statusFilter]);
+  // One definition of filter + sort (dashboard/console.ts): the view just
+  // renders the result, so the rules cannot drift between surfaces.
+  const filteredJobs = useMemo(
+    () => sortAudits(filterAudits(jobs, { query: searchQuery, status: statusFilter }), sort),
+    [jobs, searchQuery, statusFilter, sort],
+  );
+  const statusCounts = useMemo(() => auditFilterCounts(jobs), [jobs]);
 
   return (
     <div className={`fc-panel fc-audits-panel ${className}`}>
@@ -115,6 +113,27 @@ export function AuditTable({
             </div>
           )}
 
+          {/* Sort: newest / oldest / lowest score */}
+          {jobs.length > 1 && (
+            <Dropdown
+              label="Sort audits"
+              align="end"
+              triggerClassName="fc-select"
+              trigger={
+                <>
+                  <ArrowUpDown size={13} aria-hidden="true" />
+                  <span>{sortLabel(sort)}</span>
+                </>
+              }
+            >
+              {AUDIT_SORTS.map((s) => (
+                <DropdownOption key={s.id} selected={sort === s.id} onSelect={() => setSort(s.id)}>
+                  {s.label}
+                </DropdownOption>
+              ))}
+            </Dropdown>
+          )}
+
           {/* Start Audit CTA */}
           <button
             type="button"
@@ -132,14 +151,7 @@ export function AuditTable({
         /* A filter bar, not a tab set: there are no tabpanels and no arrow-key
            roving focus, so these are toggle buttons with aria-pressed. */
         <div className="fc-filter-tabs-bar" role="group" aria-label="Filter by audit status">
-          {(
-            [
-              { id: 'all', label: 'All', count: jobs.length },
-              { id: 'completed', label: 'Completed', count: jobs.filter((j) => j.status === 'completed').length },
-              { id: 'running', label: 'Running', count: jobs.filter((j) => j.status === 'running' || j.status === 'queued').length },
-              { id: 'failed', label: 'Needs attention', count: jobs.filter((j) => j.status === 'failed' || j.status === 'cancelled').length },
-            ] as const
-          ).map((tab) => (
+          {AUDIT_STATUS_FILTERS.map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -148,7 +160,7 @@ export function AuditTable({
               onClick={() => setStatusFilter(tab.id)}
             >
               <span>{tab.label}</span>
-              <span className="fc-filter-tab-count">{tab.count}</span>
+              <span className="fc-filter-tab-count">{statusCounts[tab.id]}</span>
             </button>
           ))}
         </div>
