@@ -435,13 +435,15 @@ pub async fn deliver_execution_email(
         }
     }
 
-    // SMTP returns no message id, so this channel records none.
+    // SMTP returns no message id, so this channel records none. Resend returns
+    // an id, which is recorded so acceptance can later be correlated with
+    // provider webhook events (delivered / bounced / complained).
     deliver(pool, &key, || async move {
-        mailer
+        let message_id = mailer
             .send_artifact(recipient, artifact)
             .await
             .map_err(delivery_error)?;
-        Ok(None)
+        Ok(message_id)
     })
     .await
 }

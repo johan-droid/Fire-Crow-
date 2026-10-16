@@ -300,7 +300,7 @@ impl EmailService {
         body: &str,
         html_body: Option<&str>,
         idempotency_key: Option<&str>,
-    ) -> std::result::Result<(), DeliveryError> {
+    ) -> std::result::Result<Option<String>, DeliveryError> {
         let attempts = self.max_attempts.clamp(1, MAX_SEND_ATTEMPTS);
         match tokio::time::timeout(
             self.timeout * attempts,
@@ -321,7 +321,7 @@ impl EmailService {
         html_body: Option<&str>,
         idempotency_key: Option<&str>,
         attempts: u32,
-    ) -> std::result::Result<(), DeliveryError> {
+    ) -> std::result::Result<Option<String>, DeliveryError> {
         let mut attempt: u32 = 0;
         loop {
             attempt += 1;
@@ -330,7 +330,7 @@ impl EmailService {
                     let message = self.build_message(to, subject, body, html_body)?;
                     let transport = self.smtp_transport()?;
                     match transport.send(message).await {
-                        Ok(_) => return Ok(()),
+                        Ok(_) => return Ok(None),
                         Err(error) => classify(&error),
                     }
                 }
@@ -352,7 +352,7 @@ impl EmailService {
                         )
                         .await
                     {
-                        Ok(()) => return Ok(()),
+                        Ok(message_id) => return Ok(message_id),
                         Err(error) => error,
                     }
                 }
@@ -383,7 +383,7 @@ impl EmailService {
         body: &str,
         html_body: Option<&str>,
         idempotency_key: Option<&str>,
-    ) -> std::result::Result<(), DeliveryError> {
+    ) -> std::result::Result<Option<String>, DeliveryError> {
         let mut request = client
             .post(format!("{base_url}/emails"))
             .header("Authorization", format!("Bearer {api_key}"))
@@ -400,7 +400,19 @@ impl EmailService {
         let response = request.send().await.map_err(classify_reqwest)?;
         let status = response.status();
         if status.is_success() {
-            return Ok(());
+            // Resend's success body is `{"id": "<message-id>"}`. We keep only the
+            // id (an opaque reference) for the delivery record; the body itself
+            // can echo addresses and must never be logged.
+            let message_id = response
+                .json::<serde_json::Value>()
+                .await
+                .ok()
+                .and_then(|value| {
+                    value
+                        .get("id")
+                        .and_then(|id| id.as_str().map(|id| id.to_string()))
+                });
+            return Ok(message_id);
         }
         // Status code only — the body can echo addresses and must stay out of
         // logs, and the caller gets fixed Fire Crow text, never provider text.
@@ -456,22 +468,23 @@ impl EmailService {
         body: &str,
         html_body: Option<&str>,
         idempotency_key: Option<&str>,
-    ) -> Result<()> {
+    ) -> Result<Option<String>> {
         validate_recipient(to)?;
-        self.send_with_retry(to, subject, body, html_body, idempotency_key)
-            .await?;
-        Ok(())
+        Ok(self
+            .send_with_retry(to, subject, body, html_body, idempotency_key)
+            .await?)
     }
 
     /// Send a rendered [`EmailArtifact`].
     ///
     /// Both parts always travel together, so the plain-text version is never
-    /// contingent on HTML support in the reader.
+    /// contingent on HTML support in the reader. Returns the provider's message
+    /// id when the channel supplies one (Resend), `None` otherwise (SMTP).
     pub async fn send_artifact(
         &self,
         to: &str,
         artifact: &crate::services::email_artifact::EmailArtifact,
-    ) -> Result<()> {
+    ) -> Result<Option<String>> {
         // Deterministic, server-derived idempotency key: the artifact's
         // execution identity, never request input. Resend dedupes provider
         // retries on this key; the delivery state machine remains the

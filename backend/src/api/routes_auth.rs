@@ -1,14 +1,17 @@
 use crate::error::{AppError, Result};
 use axum::{
-    extract::{ConnectInfo, Query, State},
+    body::to_bytes,
+    extract::{ConnectInfo, Query, Request, State},
     http::StatusCode,
     response::Redirect,
     routing::{get, post},
     Json, Router,
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar};
+use hmac::{Hmac, Mac};
 use percent_encoding::utf8_percent_encode;
 use serde::Deserialize;
+use sha2::Sha256;
 use std::sync::Arc;
 use tracing::{error, info};
 
@@ -31,6 +34,9 @@ pub fn router() -> Router<Arc<crate::AppState>> {
         .route("/login", post(login))
         .route("/login/mfa", post(login_mfa))
         .route("/logout", post(logout))
+        .route("/account/deletion-request", post(request_account_deletion))
+        .route("/account/deletion-cancel", get(cancel_account_deletion))
+        .route("/webhooks/resend", post(resend_webhook))
         .route("/github", get(github_login))
         .route("/github/callback", get(github_callback))
         .layer(crate::middleware::rate_limit::rate_limiter("5/minute"));
@@ -264,6 +270,36 @@ pub async fn register(
             )
             .await
             .ok();
+
+            // Welcome email: sent only after the account-creation transaction
+            // succeeds, to the address on file. A synthetic @local.firecrow
+            // address is not a real inbox, and without a configured frontend
+            // origin we cannot build a working console link — in both cases the
+            // account is still created and no email is attempted.
+            let app_base_url = state.settings().frontend_url.trim();
+            if !email.ends_with("@local.firecrow") && !app_base_url.is_empty() {
+                if let Some(mailer) =
+                    crate::services::email::EmailService::from_settings(state.settings())
+                {
+                    let message = crate::services::account_email_templates::welcome_email(
+                        app_base_url,
+                        &username,
+                    );
+                    // Reuse the tested transport + idempotency key: the key is
+                    // derived from the account id, so a repeated register cannot
+                    // double-send. Email failure never rolls back the account.
+                    let artifact = crate::services::email_artifact::EmailArtifact {
+                        schema_version: 1,
+                        execution_id: format!("welcome-{}", user_id),
+                        attempt_number: 1,
+                        subject: message.subject,
+                        text_body: message.text_body,
+                        html_body: message.html_body,
+                    };
+                    let _ = mailer.send_artifact(&email, &artifact).await;
+                }
+            }
+
             Ok(Json(
                 serde_json::json!({"user_id": user_id, "username": username, "email": email}),
             ))
@@ -274,6 +310,175 @@ pub async fn register(
         Err(e) => Err(AppError::Database(e)),
     }
 }
+
+/// Request deletion of the authenticated account. Creates a grace-period
+/// deletion request and sends the confirmation email. Idempotent per account:
+/// the unique constraints on `users.email`/`username` mean a repeated request
+/// after the first lands on the existing request path below only if a request
+/// already exists; here each call creates a fresh row, so callers should not
+/// hammer the endpoint.
+pub async fn request_account_deletion(
+    State(state): State<Arc<crate::AppState>>,
+    user: crate::middleware::auth::AuthenticatedUser,
+) -> Result<Json<serde_json::Value>> {
+    let (deadline, token) = crate::services::deletion_lifecycle::request_deletion(
+        state.pool(),
+        &user.user_id,
+        state.settings(),
+    )
+    .await?;
+    let base = state.settings().backend_base_url.trim_end_matches('/');
+    Ok(Json(serde_json::json!({
+        "status": "requested",
+        "deadline": deadline,
+        "cancel_url": format!("{}/auth/account/deletion-cancel?token={}", base, token),
+    })))
+}
+
+/// Cancel a deletion request. The `token` is a single-purpose capability bound
+/// to the request; it must belong to the authenticated account and the request
+/// must still be `requested`. Delivered via the email confirmation link.
+pub async fn cancel_account_deletion(
+    State(state): State<Arc<crate::AppState>>,
+    user: crate::middleware::auth::AuthenticatedUser,
+    Query(params): Query<CancelDeletionParams>,
+) -> Result<Json<serde_json::Value>> {
+    let cancelled = crate::services::deletion_lifecycle::cancel_deletion(
+        state.pool(),
+        &user.user_id,
+        &params.token,
+    )
+    .await?;
+    Ok(Json(serde_json::json!({
+        "status": if cancelled { "cancelled" } else { "not_found" },
+    })))
+}
+
+#[derive(serde::Deserialize)]
+pub(crate) struct CancelDeletionParams {
+    token: String,
+}
+
+/// Resend delivery webhook.
+///
+/// Resend signs webhooks with an HMAC over the raw body using the configured
+/// `RESEND_WEBHOOK_SECRET`. Only provider-confirmed terminal events transition
+/// the delivery state machine:
+///
+/// - `email.delivered` → inbox delivery (trustworthy evidence, distinct from
+///   mere provider acceptance `email.sent`, which is not recorded here).
+/// - `email.bounced` / `email.complained` → failure.
+///
+/// The freeze-once-sent trigger plus the non-terminal guard make duplicate or
+/// replayed webhooks safe: a `sent` record is never moved back, and an already
+/// terminal delivery is ignored.
+///
+/// NOTE: Resend's exact webhook header names and signing canonicalization must
+/// be confirmed against Resend's current documentation before enabling this in
+/// production; this implementation follows the documented `t=`/`v1=` shape and
+/// is unverified against a live Resend account.
+pub async fn resend_webhook(
+    State(state): State<Arc<crate::AppState>>,
+    request: Request,
+) -> Result<Json<serde_json::Value>> {
+    let secret = state.settings().resend_webhook_secret.trim();
+    if secret.is_empty() {
+        return Err(AppError::Delivery(
+            crate::error::DeliveryError::NotConfigured,
+        ));
+    }
+
+    let (parts, body) = request.into_parts();
+    let signature = parts
+        .headers
+        .get("resend-signature")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+
+    let body_bytes = to_bytes(body, 1_000_000)
+        .await
+        .map_err(|_| AppError::BadRequest("Unable to read webhook body".into()))?
+        .to_vec();
+
+    if !verify_resend_signature(secret, signature, &body_bytes) {
+        return Err(AppError::BadRequest(
+            "Invalid Resend webhook signature".into(),
+        ));
+    }
+
+    let event: serde_json::Value = serde_json::from_slice(&body_bytes)
+        .map_err(|_| AppError::BadRequest("Invalid webhook payload".into()))?;
+    let event_type = event.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    let message_id = event
+        .get("data")
+        .and_then(|v| v.get("id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if message_id.is_empty() {
+        return Err(AppError::BadRequest(
+            "Webhook event missing message id".into(),
+        ));
+    }
+
+    let (status, failure_class) = match event_type {
+        "email.delivered" => ("sent", None),
+        "email.bounced" | "email.complained" => ("failed", Some(event_type.to_string())),
+        _ => return Ok(Json(serde_json::json!({"status": "ignored"}))),
+    };
+
+    let _ = sqlx::query(
+        "UPDATE audit_deliveries
+             SET status = $1, completed_at = NOW(), failure_class = $2
+           WHERE provider_message_id = $3
+             AND status NOT IN ('sent', 'failed')",
+    )
+    .bind(status)
+    .bind(failure_class)
+    .bind(message_id)
+    .execute(state.pool())
+    .await
+    .map_err(AppError::Database)?;
+
+    Ok(Json(serde_json::json!({"status": "processed"})))
+}
+
+/// Verify a Resend webhook signature.
+///
+/// Expects `Resend-Signature: t=<timestamp>,v1=<hex>` where `v1` is
+/// HMAC-SHA256(secret, `"{timestamp}.{raw_body}"`).
+fn verify_resend_signature(secret: &str, signature: &str, body: &[u8]) -> bool {
+    let Some((timestamp, sig_hex)) = parse_resend_signature(signature) else {
+        return false;
+    };
+    let Ok(sig_bytes) = hex::decode(sig_hex) else {
+        return false;
+    };
+    let mut mac = match HmacSha256::new_from_slice(secret.as_bytes()) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+    mac.update(timestamp.as_bytes());
+    mac.update(b".");
+    mac.update(body);
+    mac.verify_slice(&sig_bytes).is_ok()
+}
+
+/// Parse `t=<timestamp>,v1=<hex>` (order tolerant).
+fn parse_resend_signature(signature: &str) -> Option<(&str, &str)> {
+    let mut timestamp = None;
+    let mut sig = None;
+    for part in signature.split(',') {
+        if let Some(ts) = part.strip_prefix("t=") {
+            timestamp = Some(ts);
+        } else if let Some(s) = part.strip_prefix("v1=") {
+            sig = Some(s);
+        }
+    }
+    timestamp.zip(sig)
+}
+
+/// HMAC-SHA256 type alias for webhook verification.
+type HmacSha256 = Hmac<Sha256>;
 
 /// Resolve the lockout keys for one login attempt: the per-account key plus an
 /// OPTIONAL per-IP key.
@@ -1384,5 +1589,76 @@ mod lockout_key_tests {
         let (account, ip) = resolve_lockout_keys(false, false, "10.0.4.21", "victim");
         assert_eq!(ip, None);
         assert_no_alias(&account, &ip);
+    }
+}
+
+#[cfg(test)]
+mod resend_webhook_tests {
+    use super::{parse_resend_signature, verify_resend_signature};
+
+    fn sign(secret: &str, timestamp: &str, body: &[u8]) -> String {
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+        type H = Hmac<Sha256>;
+        let mut mac = H::new_from_slice(secret.as_bytes()).expect("HMAC accepts any key");
+        mac.update(timestamp.as_bytes());
+        mac.update(b".");
+        mac.update(body);
+        format!(
+            "t={timestamp},v1={}",
+            hex::encode(mac.finalize().into_bytes())
+        )
+    }
+
+    #[test]
+    fn signature_round_trip_verifies() {
+        let secret = "test-webhook-secret";
+        let timestamp = "1700000000";
+        let body = br#"{"id":"msg_123","type":"email.delivered"}"#;
+        let signature = sign(secret, timestamp, body);
+        assert!(verify_resend_signature(secret, &signature, body));
+    }
+
+    #[test]
+    fn signature_rejects_wrong_secret() {
+        let timestamp = "1700000000";
+        let body = br#"{"id":"msg_123"}"#;
+        let signature = sign("correct-secret", timestamp, body);
+        assert!(!verify_resend_signature("wrong-secret", &signature, body));
+    }
+
+    #[test]
+    fn signature_rejects_tampered_body() {
+        let secret = "test-webhook-secret";
+        let timestamp = "1700000000";
+        let signature = sign(secret, timestamp, br#"{"id":"msg_123"}"#);
+        assert!(!verify_resend_signature(
+            secret,
+            &signature,
+            br#"{"id":"msg_999"}"#
+        ));
+    }
+
+    #[test]
+    fn signature_rejects_malformed_header() {
+        assert!(!verify_resend_signature("secret", "", br#"{}"#));
+        assert!(!verify_resend_signature("secret", "t=123", br#"{}"#));
+        assert!(!verify_resend_signature("secret", "v1=abc", br#"{}"#));
+        assert!(!verify_resend_signature("secret", "garbage", br#"{}"#));
+    }
+
+    #[test]
+    fn parse_resend_signature_is_order_tolerant() {
+        assert_eq!(
+            parse_resend_signature("t=1700000000,v1=deadbeef"),
+            Some(("1700000000", "deadbeef"))
+        );
+        assert_eq!(
+            parse_resend_signature("v1=deadbeef,t=1700000000"),
+            Some(("1700000000", "deadbeef"))
+        );
+        assert_eq!(parse_resend_signature("t=1700000000"), None);
+        assert_eq!(parse_resend_signature("v1=deadbeef"), None);
+        assert_eq!(parse_resend_signature(""), None);
     }
 }

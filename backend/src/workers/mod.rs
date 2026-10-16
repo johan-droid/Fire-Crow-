@@ -2,6 +2,7 @@ use crate::config::Settings;
 use crate::error::Result;
 use crate::models::AuditJob;
 use crate::orchestrator::execute_audit_job;
+use crate::services::deletion_lifecycle;
 use crate::services::housekeeping::HousekeepingService;
 use sqlx::PgPool;
 use std::sync::Arc;
@@ -500,6 +501,9 @@ impl WorkerPool {
             }
             if let Err(e) = HousekeepingService::run(&pool).await {
                 warn!("Housekeeping failed: {}", e);
+            }
+            if let Err(e) = deletion_lifecycle::process(&pool, &settings).await {
+                warn!("Deletion lifecycle processing failed: {}", e);
             }
         }
     }

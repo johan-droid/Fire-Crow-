@@ -39,7 +39,7 @@ pub struct EmailArtifact {
 /// Findings come from repositories, and a repository can contain
 /// `<script>alert(1)</script>` in a filename. Every interpolated value passes
 /// through here; the renderer has no path that emits raw text into HTML.
-fn escape_html(value: &str) -> String {
+pub(crate) fn escape_html(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for character in value.chars() {
         match character {

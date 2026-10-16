@@ -1,7 +1,9 @@
+pub mod account_email_templates;
 pub mod attack_graph;
 pub mod auth;
 pub mod crypto;
 pub mod csrf;
+pub mod deletion_lifecycle;
 pub mod dodo_payment_service;
 pub mod domain_verify;
 pub mod egress_policy;

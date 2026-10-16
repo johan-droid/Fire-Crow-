@@ -239,7 +239,6 @@ cmd_setup() {
     {
       printf '# Local development only. Never commit. See frontend/.env.example.\n'
       printf 'VITE_API_URL="/api/v1"\n'
-      printf 'VITE_APP_NAME="Fire Crow Security Console"\n'
     } > "$FRONTEND_ENV"
     log "wrote frontend/.env.local with VITE_API_URL=/api/v1 (same-origin via vite proxy)"
   fi

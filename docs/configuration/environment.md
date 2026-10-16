@@ -44,8 +44,6 @@ Vite exposes environment variables prefixed with `VITE_` to client-side code:
 | Variable Name | Type | Default | Required? | Description & Failure Impact |
 | :--- | :--- | :--- | :---: | :--- |
 | `VITE_API_URL` | String | `""` (Empty string) | No | Base URL for the backend API (e.g. `https://api.firecrow.dev`). If empty, requests default to `/api`. |
-| `VITE_APP_NAME` | String | `"FireCrow"` | No | Brand display name rendered in headers and title tags. |
-| `VITE_ENABLE_ANALYTICS`| Boolean| `false` | No | Controls telemetry and client-side error reporting. |
 
 ---
 

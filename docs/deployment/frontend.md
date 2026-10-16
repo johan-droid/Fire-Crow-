@@ -23,7 +23,6 @@ Set these variables in the **Vercel Project Settings ➔ Environment Variables**
 | Variable | Target Environment | Production Example | Description |
 | :--- | :--- | :--- | :--- |
 | `VITE_API_URL` | Production & Preview | `https://api.firecrow.dev` | Fully qualified domain of the Axum backend service. |
-| `VITE_APP_NAME` | All Environments | `FireCrow` | Display name for header and title tags. |
 
 ---
 
