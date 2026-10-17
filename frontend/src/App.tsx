@@ -127,17 +127,6 @@ const DASH_CACHE_TTL = 5000;
 const SEVERITY_FILTERS = ['all', 'critical', 'high', 'medium', 'low', 'info', 'unknown'] as const;
 const severityFilterLabel = (s: string): string => (s === 'all' ? 'All severities' : s);
 
-function App() {
-  const [view, setView] = useState<'landing' | 'login' | 'dashboard'>('landing');
-  void view; void setView;
-  const [user, setUser] = useState<UserProfile | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState('');
-  // Explicit session lifecycle: initializing (blocking splash) → signed_out |
-  // authenticated | error. Distinct from data-loading flags elsewhere.
-  type AuthState = 'initializing' | 'signed_out' | 'authenticated' | 'error';
-  const [authState, setAuthState] = useState<AuthState>('initializing');
-
 // Console navigation: the developer security workspace. Legacy admin routes
 // (jobs, diagnostics, sso, pam, iam, domains, mfa, activity) resolve to the
 // closest workspace window so old links and history entries keep working.
@@ -153,6 +142,18 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
   mfa: 'settings',
   activity: 'settings',
 };
+
+function App() {
+  const [view, setView] = useState<'landing' | 'login' | 'dashboard'>('landing');
+  void view; void setView;
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  // Explicit session lifecycle: initializing (blocking splash) → signed_out |
+  // authenticated | error. Distinct from data-loading flags elsewhere.
+  type AuthState = 'initializing' | 'signed_out' | 'authenticated' | 'error';
+  const [authState, setAuthState] = useState<AuthState>('initializing');
+
   const navigate = useNavigate();
   const location = useLocation();
   const getWindowFromPath = useCallback((path: string): ConsoleWindow => {
@@ -160,7 +161,7 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
     if (['overview', 'repositories', 'audits', 'findings', 'settings'].includes(seg)) return seg as ConsoleWindow;
     if (seg in LEGACY_WINDOWS) return LEGACY_WINDOWS[seg];
     return 'overview';
-  }, [LEGACY_WINDOWS]);
+  }, []);
   const activeWindow = getWindowFromPath(location.pathname);
   // keep dashTab for internal handlers; sync from router
   const [dashTab, setDashTabRaw] = useState<ConsoleWindow>('overview');
@@ -172,7 +173,7 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
     if (location.pathname === '/console' || location.pathname === '/console/') navigate('/console/overview', { replace: true });
     const seg = location.pathname.replace(/^\/console\/?/, '').split('/')[0];
     if (seg in LEGACY_WINDOWS) navigate(`/console/${LEGACY_WINDOWS[seg]}`, { replace: true });
-  }, [location.pathname, dashTab, navigate, getWindowFromPath, LEGACY_WINDOWS]);
+  }, [location.pathname, dashTab, navigate, getWindowFromPath]);
 
   // Live Backend Data States
   const [jobs, setJobs] = useState<JobResponse[]>([]);
@@ -611,7 +612,7 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
         const res = await fetch(`${API_BASE}/health/deep`, { credentials: 'include' });
         const body = (await res.json()) as { docker?: unknown };
         if (!cancelled) {
-          setScanEngine(body?.docker === 'configured' ? 'configured' : 'unavailable');
+          setScanEngine(body?.docker === 'ready' ? 'configured' : 'unavailable');
         }
       } catch {
         /* leave 'unknown' — an unprobeable backend must not block the form */

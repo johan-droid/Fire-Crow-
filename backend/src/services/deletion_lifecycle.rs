@@ -55,7 +55,7 @@ pub async fn request_deletion(
              (id, user_id, deadline, status, cancellation_token, created_at)
          VALUES ($1, $2, $3, 'requested', $4, NOW())",
     )
-    .bind(&Uuid::new_v4().to_string())
+    .bind(Uuid::new_v4().to_string())
     .bind(user_id)
     .bind(deadline)
     .bind(&token)

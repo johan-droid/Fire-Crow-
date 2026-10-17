@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
     "frontend": "npm --prefix frontend run dev",
-    "backend": "cd backend && cargo run",
+    "backend": "cd backend && cargo run --bin firecrow-backend",
     "build": "npm --prefix frontend install --include=dev && npm --prefix frontend run build",
     "cargo:check": "cargo check --manifest-path backend/Cargo.toml",
     "vercel-build": "npm --prefix frontend install --include=dev && npm --prefix frontend run build"

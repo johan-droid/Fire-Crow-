@@ -340,10 +340,8 @@ fn non_tls_authn_method_is_denied() {
 #[test]
 fn forged_identity_headers_are_ignored() {
     // Caller-supplied identity claims must never influence the decision.
-    let json = format!(
-        r#"{{"RequestMethod":"GET","RequestUri":"/version","UserAuthNMethod":"TLS","User":"other-admin","RequestHeaders":{{"X-Forwarded-User":"firecrow-backend","X-Auth-User":"firecrow-backend","Authorization":"Bearer firecrow-backend"}}}}"#
-    );
-    assert_eq!(deny_rule(&json), "identity-not-allowed");
+    let json = r#"{"RequestMethod":"GET","RequestUri":"/version","UserAuthNMethod":"TLS","User":"other-admin","RequestHeaders":{"X-Forwarded-User":"firecrow-backend","X-Auth-User":"firecrow-backend","Authorization":"Bearer firecrow-backend"}}"#;
+    assert_eq!(deny_rule(json), "identity-not-allowed");
 }
 
 #[test]

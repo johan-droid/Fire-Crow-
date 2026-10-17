@@ -18,6 +18,7 @@ fn run_backend(database_url: &str, extra: &[(&str, &str)]) -> (i32, String) {
     let mut cmd = Command::new(BINARY);
     cmd.env_clear()
         .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("FIRECROW_SKIP_DOTENV", "1")
         .env("SECRET_KEY", support::TEST_SECRET_KEY)
         .env("ENCRYPTION_KEY", support::TEST_ENCRYPTION_KEY)
         .env("FRONTEND_URL", "https://app.firecrow.test")
@@ -206,6 +207,7 @@ fn startup_rejects_missing_required_secret() {
     let mut cmd = Command::new(BINARY);
     cmd.env_clear()
         .env("PATH", std::env::var("PATH").unwrap_or_default())
+        .env("FIRECROW_SKIP_DOTENV", "1")
         .env("DATABASE_URL", server_url().unwrap())
         .env("FRONTEND_URL", "https://app.firecrow.test")
         .env("CORS_ORIGINS", "https://app.firecrow.test")

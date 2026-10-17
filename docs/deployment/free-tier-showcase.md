@@ -85,58 +85,44 @@ Review and complete the environment variables in the Render Dashboard under **fi
 
 ---
 
-## 3. Providing the Docker Daemon for Ephemeral Scanners
+## 3. Scanner Execution on Render — Not Supported
 
-Fire Crow requires access to a Docker daemon to launch isolated micro-containers for **Gitleaks**, **Semgrep**, and **OSV-Scanner**. Because Render Free Tier web services do not run host Docker engines or allow `/var/run/docker.sock` mounts, you provide Docker access through `DOCKER_HOST`.
-
-> **Important — scanner isolation is unavailable on Render.** The G1
+> **Render Free Tier cannot run Fire Crow's scanner workload.** The G1
 > egress-isolation control depends on Docker network primitives
 > (`internal: true` networks + a proxy sidecar). Render provides no equivalent,
-> so **Render is not a supported platform for the scanner workload**. The
-> guidance below describes how to point the *backend* at a Docker daemon, but
-> doing so does not reproduce the enforced egress boundary that the supported
-> Docker Compose architecture provides. See the egress acceptance report in
-> `evidence/FC-FINAL-20261016/FC-EGRESS-ACCEPTANCE.md`.
+> and its free-tier web services cannot configure the host Docker daemon with
+> Fire Crow's authorization plugin or run a privileged nested daemon.
+
+**Real scanner execution is BLOCKED on Render.** This is a hard limitation, not
+a configuration gap. Do not present Render free tier as a supported
+real-scanning environment.
+
+### What this means in practice
+
+- The frontend health probe (`/api/v1/health/deep`) returns `"docker": "unavailable"`.
+- The scan modal displays an error: "Scan engine unavailable in this deployment —
+  the backend cannot reach a Docker daemon, so audits cannot run here."
+- If a scan is somehow submitted, the pipeline runs, scanners fail at the
+  `docker run` step, and the job finalizes as `failed` — never as a clean result.
+
+### Supported deployment architecture
+
+Real scanner execution requires a Docker-capable host where the operator controls
+the daemon configuration. See **`docs/deployment/backend.md`** for the full
+guide, including:
+
+- mTLS authentication between backend and daemon
+- Docker authorization plugin (content-level boundary)
+- Scanner image pinning (gitleaks v8.18.4, OSV v2.2.4, Semgrep 1.96.0)
+- Restricted networking (`scanners-internal` network + egress-proxy sidecar)
+- Resource limits (CPU, memory, PID ceilings)
+- Container cleanup (`--rm` + force-remove on timeout/cancel)
 
 ### Hard requirement: no public Docker endpoint
 
-The Docker API has no meaningful authentication of its own. A plain `tcp://` port `2375` endpoint reachable from the public internet is a full host-compromise vector — **even behind TLS**, because TLS only encrypts the channel: it grants no authorization, so anyone who can complete the handshake has unrestricted Docker API access. Never publish the daemon or the socket proxy on a public IP, and never front it with a public tunnel URL. Instead:
+The Docker API has no meaningful authentication of its own. A plain `tcp://` port `2375` endpoint reachable from the public internet is a full host-compromise vector — **even behind TLS**, because TLS only encrypts the channel: it grants no authorization. Never publish the daemon or the socket proxy on a public IP.
 
-- Reach the daemon only through an **authenticated, mutually-authenticated (mTLS) private channel**, with the daemon's authorization plugin enabled.
-- The **Docker authorization plugin** (`docker-authz-plugin/`) is the actual content boundary: it inspects request bodies at the daemon and denies privileged creates, host binds, capability additions, and dangerous endpoints. A path/method socket proxy alone is a category filter, not a containment boundary — it cannot see request bodies.
-- Reach the daemon only through an **authenticated private channel** (the two options below).
 
-The authorization plugin plus mTLS is the boundary in both options: the backend never touches `/var/run/docker.sock` directly, and the plugin's deny-by-default policy (`Privileged: false`, `CapDrop: [ALL]`, approved images only, `firecrow-scan-*` names only) caps what a compromised backend could ask Docker to do — but only if the endpoint is unreachable except through the mTLS channel.
-
-### Option A: Free Cloud Virtual Machine (Oracle Cloud / AWS EC2 / Fly.io)
-Deploy the daemon with the authorization plugin on an unmetered free tier Linux instance (e.g., Oracle Cloud Always Free 1-4 OCPU ARM instance or AWS EC2 t4g.small):
-
-1. Clone `Fire-Crow-` on the instance, generate certificates, and start the daemon with the plugin:
-   ```bash
-   scripts/generate-docker-tls-certs.sh certs/docker-tls
-   # daemon flags: --authorization-plugin=firecrow --tlsverify --tlscacert/--tlscert/--tlskey
-   ```
-2. The TLS listener stays bound to the instance's private interface only — do **not** publish port `2376` to the public internet.
-3. Join the Render backend and the instance to the same private mesh network (e.g., Tailscale or WireGuard), then set in Render:
-   ```env
-   DOCKER_HOST=tcp://<daemon-mesh-hostname>:2376
-   DOCKER_TLS_VERIFY=1
-   DOCKER_CERT_PATH=/etc/firecrow/docker-tls
-   ```
-   The hostname must only resolve and connect inside the authenticated mesh.
-
-### Option B: Cloudflare Tunnel / Tailscale to Local Docker (For Live Demos)
-If showcasing Fire Crow live during an interview, portfolio review, or hackathon:
-
-1. Start the daemon with the authorization plugin and mTLS locally (bound to a private interface only):
-   ```bash
-   scripts/generate-docker-tls-certs.sh certs/docker-tls
-   ```
-2. Reach it over an authenticated private channel only:
-   - **Tailscale**: add the machine to your tailnet and point `DOCKER_HOST` at the daemon's tailnet address (peers must be logged into your tailnet to connect).
-   - **cloudflared**: use a Cloudflare Tunnel with an Access-protected **private network** route, so only members with valid Access credentials can connect.
-   - Do **not** run `cloudflared tunnel --url tcp://localhost:2376` or any other public quick-tunnel URL: that republishes a Docker endpoint for anyone on the internet.
-3. Set the private endpoint in Render as `DOCKER_HOST=tcp://<daemon-mesh-hostname>:2376` with the TLS variables above.
 
 ---
 

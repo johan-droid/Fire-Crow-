@@ -155,7 +155,7 @@ fn b64_decode(s: &str) -> Option<Vec<u8>> {
         }
     };
     let bytes: Vec<u8> = s.bytes().filter(|b| !b.is_ascii_whitespace()).collect();
-    if bytes.is_empty() || bytes.len() % 4 != 0 {
+    if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
         return None;
     }
     // `=` is padding: it may only terminate the input (last 1-2 bytes), may

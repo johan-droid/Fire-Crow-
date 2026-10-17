@@ -126,4 +126,76 @@ databases:
 | **Docker Socket** | Mounted `/var/run/docker.sock` | Mounted `/var/run/docker.sock` |
 
 > [!IMPORTANT]
-> **Docker Daemon Access**: Because the Axum backend spawns ephemeral Docker micro-containers for Gitleaks, Semgrep, and OSV-Scanner, the host runner must have the Docker daemon running and the socket accessible. On Render, select an environment with Docker engine support or deploy on a Linux Virtual Machine (e.g. AWS EC2 / DigitalOcean Droplet / Hetzner).
+> **Docker Daemon Access**: Because the Axum backend spawns ephemeral Docker micro-containers for Gitleaks, Semgrep, and OSV-Scanner, the host runner must have the Docker daemon running and reachable. **Render Free Tier is NOT supported** — its web services cannot configure the host Docker daemon with the required authorization plugin or enforce the network isolation boundary. Deploy on a Docker-capable host you control (e.g. AWS EC2 / DigitalOcean Droplet / Hetzner / Oracle Cloud free tier).
+
+## 5. Supported Docker-Host Deployment Architecture
+
+Real scanner execution requires a host where the operator controls the Docker daemon configuration. The backend connects to the daemon exclusively through an mTLS channel; it never mounts `/var/run/docker.sock` directly.
+
+### 5.1 mTLS Authentication
+
+The backend authenticates to the Docker daemon with a client certificate:
+
+```bash
+scripts/generate-docker-tls-certs.sh certs/docker-tls
+# Daemon flags: --authorization-plugin=firecrow --tlsverify --tlscacert/--tlscert/--tlskey
+```
+
+The backend's environment:
+
+```env
+DOCKER_HOST=tcp://<daemon-host>:2376
+DOCKER_TLS_VERIFY=1
+DOCKER_CERT_PATH=/etc/firecrow/docker-tls
+```
+
+`DOCKER_TLS_VERIFY` and `DOCKER_CERT_PATH` are fixed constants in `sandbox.rs`; only `DOCKER_HOST` is operator configuration. The certificate is mounted read-only at `/etc/firecrow/docker-tls`.
+
+### 5.2 Docker Authorization Plugin
+
+The daemon runs with `--authorization-plugin=firecrow`. This plugin is the content-level boundary: it inspects request bodies at the daemon and denies privileged creates, host binds, capability additions, and dangerous endpoints. A path/method socket proxy alone is a category filter, not a containment boundary — it cannot see request bodies.
+
+Source: `docker-authz-plugin/` directory. The plugin's deny-by-default policy: `Privileged: false`, `CapDrop: [ALL]`, approved images only, `firecrow-scan-*` names only.
+
+### 5.3 Scanner Image Pinning
+
+Three scanners run in ephemeral containers, all pinned to explicit versions (never `latest`):
+
+| Scanner | Image | Network |
+|---------|-------|---------|
+| Gitleaks (secrets) | `ghcr.io/gitleaks/gitleaks:v8.18.4` | `--network=none` |
+| OSV-Scanner (dependencies) | `ghcr.io/google/osv-scanner:v2.2.4` | `--network=scanners-internal` |
+| Semgrep (SAST) | `semgrep/semgrep:1.96.0` | `--network=none` |
+
+### 5.4 Restricted Networking
+
+OSV-Scanner is the sole scanner with network access. It attaches **only** to the `scanners-internal` network (`internal: true`, no external route). Egress flows solely through the filtering-proxy sidecar (`egress-proxy` on port 3128). Scanner containers have no direct external route — the sidecar is the only path out.
+
+The OSV egress proxy enforces a strict allowlist: `api.osv.dev` and `osv.dev` on ports 443/53 only. All other destinations are blocked (loopback, RFC1918, cloud metadata, documentation ranges).
+
+Provision the network before first `up`:
+```bash
+docker network create --driver bridge --internal --subnet 172.28.0.0/16 --name scanners-internal
+```
+
+### 5.5 Resource Limits
+
+Every scanner run is bounded:
+
+| Resource | Gitleaks | OSV-Scanner | Semgrep |
+|----------|----------|-------------|---------|
+| CPU | 1.0 | 1.0 | 2.0 |
+| Memory | 512m | 512m | 2g |
+| PID limit | 256 | 256 | 512 |
+| Timeout | 300s | 300s | 600s |
+| stdout cap | 16MB | 16MB | 16MB |
+| stderr cap | 1MB | 1MB | 1MB |
+
+The sandbox also enforces: `--read-only`, `--cap-drop=ALL`, `--security-opt=no-new-privileges`, `--user=65534:65534` (nobody), `--init` (tini as PID 1), and `--rm` (auto-remove on exit).
+
+### 5.6 Container Cleanup
+
+- `--rm` flag: Docker removes the container on normal exit.
+- On timeout or cancellation: the backend force-removes the container by name (`docker rm -f <name>`).
+- Output streams are capped during streaming (not buffered), so a scanner cannot exhaust worker memory.
+- A scanner that floods stdout/stderr is reported as `FAILED`, never as a result.

@@ -74,20 +74,10 @@ fn handle_conn(stream: UnixStream, plugin: Arc<Plugin>) {
         Err(_) => return,
     };
     let mut writer = stream;
-    loop {
-        match read_request(&mut reader) {
-            Ok(Some(req)) => {
-                let (resp, close) = dispatch(&plugin, &req);
-                if writer.write_all(&resp).is_err() || writer.flush().is_err() {
-                    break;
-                }
-                if close {
-                    break;
-                }
-            }
-            // EOF or malformed input: close the connection. The daemon treats
-            // an unusable plugin as a failure and denies (fail closed, M7).
-            _ => break,
+    while let Ok(Some(req)) = read_request(&mut reader) {
+        let (resp, close) = dispatch(&plugin, &req);
+        if writer.write_all(&resp).is_err() || writer.flush().is_err() || close {
+            break;
         }
     }
 }

@@ -5,6 +5,7 @@ edition = "2021"
 authors = ["Fire Crow"]
 description = "Agentic Security Intelligence Platform Backend — Rust rewrite"
 license = "MIT"
+default-run = "firecrow-backend"
 
 [dependencies]
 tokio = { version = "1.43", features = ["full"] }

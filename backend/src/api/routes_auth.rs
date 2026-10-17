@@ -283,7 +283,7 @@ pub async fn register(
                 {
                     let message = crate::services::account_email_templates::welcome_email(
                         app_base_url,
-                        &username,
+                        username,
                     );
                     // Reuse the tested transport + idempotency key: the key is
                     // derived from the account id, so a repeated register cannot
@@ -355,8 +355,8 @@ pub async fn cancel_account_deletion(
 }
 
 #[derive(serde::Deserialize)]
-pub(crate) struct CancelDeletionParams {
-    token: String,
+pub struct CancelDeletionParams {
+    pub token: String,
 }
 
 /// Resend delivery webhook.
