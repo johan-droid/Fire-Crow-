@@ -40,6 +40,11 @@ impl S3StorageBackend {
         let mut builder = ConfigBuilder::new()
             .credentials_provider(credentials)
             .region(Region::new(reg_str))
+            // The AWS SDK requires an explicit behavior version; without it,
+            // `build()` panics at startup whenever R2 is fully configured. Set
+            // it here so a configured R2 initializes cleanly instead of
+            // crashing the process.
+            .behavior_version_latest()
             .force_path_style(true);
 
         if let Some(ep) = &endpoint {
@@ -239,6 +244,22 @@ pub struct StorageService {
 }
 
 impl StorageService {
+    /// Build the storage service, selecting the backend **explicitly**.
+    ///
+    /// Durable (R2/S3) storage is used only when it is *fully* configured. The
+    /// failure modes that used to silently fall back to local disk are now
+    /// startup errors:
+    ///
+    /// * Partially configured R2 (some fields set, others empty) → error. A
+    ///   half-configured deployment is a misconfiguration, not a license to
+    ///   store artifacts somewhere the operator did not choose.
+    /// * Fully configured but uninitialized R2 → the constructor error is
+    ///   propagated, not swallowed into local disk.
+    ///
+    /// When *no* R2 field is set at all, local storage is selected deliberately
+    /// (the development default) and logged as EPHEMERAL so an operator can
+    /// never mistake it for durable storage. See the module docs: Render's
+    /// local filesystem is not durable.
     pub async fn new(
         endpoint: Option<String>,
         access_key: &str,
@@ -246,19 +267,41 @@ impl StorageService {
         bucket: &str,
         local_dir: impl AsRef<std::path::Path>,
         region: &str,
-    ) -> Self {
-        let s3_backend = if endpoint.is_some() && !access_key.is_empty() {
-            S3StorageBackend::new(endpoint, access_key, secret_key, bucket, region)
-                .await
-                .ok()
+    ) -> Result<Self> {
+        let set = |s: &str| !s.trim().is_empty();
+        let endpoint_set = endpoint.as_deref().is_some_and(set);
+        let access_set = set(access_key);
+        let secret_set = set(secret_key);
+        let bucket_set = set(bucket);
+        let any = endpoint_set || access_set || secret_set || bucket_set;
+        let all = endpoint_set && access_set && secret_set && bucket_set;
+
+        if any && !all {
+            return Err(AppError::StorageError(
+                "Durable R2 storage is partially configured: set R2_ENDPOINT_URL, \
+                 R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, and R2_BUCKET_NAME together, or set \
+                 none to use local (ephemeral) storage."
+                    .into(),
+            ));
+        }
+
+        let s3_backend = if all {
+            Some(S3StorageBackend::new(endpoint, access_key, secret_key, bucket, region).await?)
         } else {
+            // Explicit local-only mode (development). Artifacts here are
+            // EPHEMERAL — lost on restart, redeploy, or instance replacement.
+            tracing::warn!(
+                "R2 storage is not configured; artifacts are stored on the LOCAL filesystem and \
+                 are EPHEMERAL. Configure R2_* for durable storage in production."
+            );
             None
         };
-        Self {
+
+        Ok(Self {
             s3_backend,
             local_backend: LocalStorageBackend::new(local_dir),
             bucket: bucket.into(),
-        }
+        })
     }
 
     pub async fn upload_artifact(
@@ -387,6 +430,71 @@ mod tests {
                 AppError::StorageError(_)
             ),
             "non-key failures must stay server errors"
+        );
+    }
+
+    /// Durable-storage selection is explicit and fail-closed: a *partially*
+    /// configured R2 (some fields set, others empty) is a startup error, never
+    /// a silent fall-back to ephemeral local disk.
+    #[tokio::test]
+    async fn partial_r2_configuration_fails_closed() {
+        // Endpoint present, but the access key is missing.
+        let err = StorageService::new(
+            Some("https://account.r2.cloudflarestorage.com".into()),
+            "", // missing access key
+            "secret",
+            "bucket",
+            std::env::temp_dir(),
+            "auto",
+        )
+        .await;
+        assert!(
+            err.is_err(),
+            "partial R2 config must be rejected, not silently local"
+        );
+
+        // Access key present, but the endpoint is missing.
+        let err = StorageService::new(
+            None,
+            "access",
+            "secret",
+            "bucket",
+            std::env::temp_dir(),
+            "auto",
+        )
+        .await;
+        assert!(err.is_err(), "partial R2 config must be rejected");
+    }
+
+    /// With no R2 field set at all, local storage is selected deliberately (the
+    /// development default) and no S3 backend is built.
+    #[tokio::test]
+    async fn no_r2_config_selects_local_explicitly() {
+        let svc = StorageService::new(None, "", "", "", std::env::temp_dir(), "auto")
+            .await
+            .expect("local-only mode must build");
+        assert!(
+            svc.s3_backend.is_none(),
+            "no R2 configured means no S3 backend"
+        );
+    }
+
+    /// A fully configured R2 selects the S3 backend (no silent local fallback).
+    #[tokio::test]
+    async fn full_r2_config_selects_the_s3_backend() {
+        let svc = StorageService::new(
+            Some("https://account.r2.cloudflarestorage.com".into()),
+            "access",
+            "secret",
+            "bucket",
+            std::env::temp_dir(),
+            "auto",
+        )
+        .await
+        .expect("full R2 config must build");
+        assert!(
+            svc.s3_backend.is_some(),
+            "full R2 config must select S3, not local"
         );
     }
 }

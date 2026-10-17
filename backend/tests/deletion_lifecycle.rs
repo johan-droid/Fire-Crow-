@@ -274,7 +274,7 @@ async fn deletion_cancel_route_requires_token(pool: PgPool) {
 
     // No token -> 400 (the cancellation token is a required query parameter).
     let res = app
-        .get("/api/v1/auth/account/deletion-cancel")
+        .post("/api/v1/auth/account/deletion-cancel")
         .add_header("authorization", bearer_for(&pool, &user.id).await)
         .await;
     assert_eq!(
@@ -291,7 +291,7 @@ async fn deletion_cancel_route_requires_token(pool: PgPool) {
         .expect("request");
 
     let res = app
-        .get("/api/v1/auth/account/deletion-cancel")
+        .post("/api/v1/auth/account/deletion-cancel")
         .add_query_param("token", &token)
         .add_header("authorization", bearer_for(&pool, &user.id).await)
         .await;

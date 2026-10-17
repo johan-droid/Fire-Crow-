@@ -203,6 +203,12 @@ pub struct Settings {
     pub privacy_policy_version: String,
     #[serde(default)]
     pub terms_version: String,
+    /// Scanner execution backend: `"container"` (Docker daemon, full
+    /// isolation) or `"native"` (direct subprocesses, reduced isolation,
+    /// opt-in). Validated fail-closed at startup; `ExecutionMode::resolve`
+    /// defaults anything unset to the strongest boundary (`container`).
+    #[serde(default = "default_scanner_execution_mode")]
+    pub scanner_execution_mode: String,
 }
 
 /// Secret-safe `Debug`: credentials and credential-bearing URLs render as
@@ -296,6 +302,7 @@ impl std::fmt::Debug for Settings {
             .field("max_json_body_bytes", &self.max_json_body_bytes)
             .field("privacy_policy_version", &self.privacy_policy_version)
             .field("terms_version", &self.terms_version)
+            .field("scanner_execution_mode", &self.scanner_execution_mode)
             .finish()
     }
 }
@@ -368,6 +375,11 @@ fn default_gemini_max_prompt_chars() -> i32 {
 }
 fn default_max_active_jobs() -> i32 {
     2
+}
+fn default_scanner_execution_mode() -> String {
+    // Safe default: the container boundary. `native` requires an explicit,
+    // validated opt-in — it is never the implicit choice.
+    "container".into()
 }
 fn default_housekeeping_interval() -> i64 {
     3600
@@ -462,6 +474,21 @@ impl Settings {
                 "housekeeping_interval_seconds must be greater than 0, got {}",
                 settings.housekeeping_interval_seconds
             )));
+        }
+
+        // The scanner execution mode must be a recognized value. An unknown
+        // string is a typo that would otherwise silently fall back to the
+        // container path while the operator believes they enabled native mode
+        // (or vice versa). Reject it at startup so the deployment's actual
+        // isolation boundary is never ambiguous.
+        {
+            let mode = settings.scanner_execution_mode.trim();
+            if mode != "container" && mode != "native" {
+                return Err(ConfigError::Message(format!(
+                    "SCANNER_EXECUTION_MODE must be \"container\" or \"native\", got {:?}",
+                    settings.scanner_execution_mode
+                )));
+            }
         }
 
         // CRIT-02: SECRET_KEY and ENCRYPTION_KEY must never be identical.
@@ -753,7 +780,13 @@ mod port_contract_tests {
     #[test]
     fn every_render_yaml_env_key_is_read_by_the_backend() {
         // Read directly via std::env, not through Settings.
-        const DIRECT_ENV: &[&str] = &["DOCKER_HOST"];
+        const DIRECT_ENV: &[&str] = &[
+            "DOCKER_HOST",
+            "SCANNER_EXECUTION_MODE",
+            "GITLEAKS_BIN",
+            "OSV_SCANNER_BIN",
+            "SEMGREP_BIN",
+        ];
 
         let manifest = env!("CARGO_MANIFEST_DIR");
         let render = std::fs::read_to_string(format!("{manifest}/../render.yaml"))

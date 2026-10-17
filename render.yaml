@@ -43,9 +43,28 @@ services:
         value: "none"
       - key: AUTH_COOKIE_SECURE
         value: "true"
-      # Scanner execution (FC-DEP-04): points Axum backend to Docker daemon / proxy
-      # e.g., tcp://<host>:2375 (remote Docker engine, cloud VPS, or tunnel)
+      # Scanner execution backend. "container" (default) runs pinned scanner
+      # images through a Docker daemon; "native" runs the pinned scanner
+      # binaries directly as hardened subprocesses and needs NO daemon — this is
+      # the path for Render free tier, which has no Docker-in-Docker. Native
+      # mode is opt-in and reports reduced (process-level) isolation; see
+      # docs/deployment/native-scanning.md. Leave unset for container mode.
+      - key: SCANNER_EXECUTION_MODE
+        sync: false
+      # Scanner execution, CONTAINER MODE ONLY (FC-DEP-04): points the Axum
+      # backend to a Docker daemon / proxy, e.g. tcp://<host>:2375 (remote
+      # Docker engine, cloud VPS, or tunnel). Ignored in native mode.
       - key: DOCKER_HOST
+        sync: false
+      # Native-mode scanner binary locations (optional). When unset, each
+      # scanner is looked up on PATH. Set these only if the binaries live
+      # somewhere non-standard; a configured-but-missing path fails that
+      # scanner closed (reported unavailable), never silently substituted.
+      - key: GITLEAKS_BIN
+        sync: false
+      - key: OSV_SCANNER_BIN
+        sync: false
+      - key: SEMGREP_BIN
         sync: false
       # AI Executive narrative generation
       - key: GEMINI_API_KEY

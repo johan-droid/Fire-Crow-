@@ -1783,6 +1783,7 @@ dependencies = [
  "jsonwebtoken",
  "lazy_static",
  "lettre",
+ "libc",
  "mime_guess",
  "openssl",
  "otpauth",

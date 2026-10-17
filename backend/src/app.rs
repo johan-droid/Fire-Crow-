@@ -263,7 +263,7 @@ pub async fn build_state(
             format!("{}/workspace/storage", crate::config::WORKSPACE_DIR),
             "auto",
         )
-        .await,
+        .await?,
     );
 
     Ok(Arc::new(AppState {

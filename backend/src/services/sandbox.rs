@@ -943,7 +943,11 @@ pub fn docker_argv(spec: &SandboxSpec, name: &str) -> Vec<String> {
 ///
 /// Streaming with an incremental cap check, so a flood is stopped at the cap
 /// rather than being buffered first.
-async fn read_capped<R>(mut reader: R, cap: usize, stream: &'static str) -> Result<Vec<u8>>
+pub(crate) async fn read_capped<R>(
+    mut reader: R,
+    cap: usize,
+    stream: &'static str,
+) -> Result<Vec<u8>>
 where
     R: tokio::io::AsyncRead + Unpin,
 {
@@ -979,12 +983,68 @@ enum Stop {
 
 /// Runs sandboxed commands. Holds no configuration: the hardened flag set is
 /// not caller-selectable, so no caller can weaken it.
-#[derive(Debug, Default)]
-pub struct SandboxManager;
+///
+/// Carries the [`ExecutionMode`] decided at startup so a single instance drives
+/// either backend. `new()` resolves the mode from `SCANNER_EXECUTION_MODE`
+/// (defaulting to the strongest boundary, `Container`); `with_mode` lets tests
+/// pin a mode explicitly.
+#[derive(Debug)]
+pub struct SandboxManager {
+    mode: ExecutionMode,
+}
+
+/// How scanners are executed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ExecutionMode {
+    /// Pinned containers reached through the Docker daemon (full isolation).
+    #[default]
+    Container,
+    /// Direct subprocesses (reduced isolation; opt-in only). See
+    /// [`crate::services::native_exec`] for the exact, honest boundary.
+    Native,
+}
+
+impl ExecutionMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Container => "container",
+            Self::Native => "native",
+        }
+    }
+
+    /// Resolve the mode from `SCANNER_EXECUTION_MODE`.
+    ///
+    /// Unset or anything other than the exact string `native` selects
+    /// [`ExecutionMode::Container`]. That default is deliberate and fail-safe:
+    /// the container is the *strongest* boundary, so a typo or a missing value
+    /// can never silently downgrade isolation. `Settings::validate` rejects an
+    /// unrecognized value at startup, so by the time a scan runs the value is
+    /// known-good; this resolver only ever upgrades to `native` on an explicit,
+    /// exact opt-in.
+    pub fn resolve() -> Self {
+        match std::env::var("SCANNER_EXECUTION_MODE") {
+            Ok(v) if v.trim() == "native" => Self::Native,
+            _ => Self::Container,
+        }
+    }
+}
 
 impl SandboxManager {
     pub fn new() -> Self {
-        Self
+        Self {
+            mode: ExecutionMode::resolve(),
+        }
+    }
+
+    /// Pin the execution mode explicitly (tests, or an operator path that has
+    /// already resolved and validated it).
+    pub fn with_mode(mode: ExecutionMode) -> Self {
+        Self { mode }
+    }
+
+    /// The execution backend this instance drives.
+    pub fn mode(&self) -> ExecutionMode {
+        self.mode
     }
 
     /// Run `spec` under the hardened sandbox, aborting if `cancel()` goes true.

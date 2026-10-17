@@ -36,6 +36,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     | tar -xz -C /usr/local/bin --strip-components=1 docker/docker \
     && rm -rf /var/lib/apt/lists/*
 
+# Native scanner binaries for the docker-free execution mode
+# (SCANNER_EXECUTION_MODE=native). Pinned to the SAME versions as the container
+# images, and each verified against its published SHA-256 before installation —
+# a swapped or corrupted download fails the build rather than shipping a
+# tampered scanner. Semgrep is deliberately NOT installed here: it is a large
+# Python toolchain whose runtime memory footprint exceeds the free tier, so
+# native mode reports it unavailable (partial coverage, never clean) rather than
+# bloating the image. See docs/deployment/native-scanning.md.
+ARG GITLEAKS_VERSION=8.18.4
+ARG GITLEAKS_SHA256=ba6dbb656933921c775ee5a2d1c13a91046e7952e9d919f9bac4cec61d628e7d
+ARG OSV_SCANNER_VERSION=2.2.4
+ARG OSV_SCANNER_SHA256=7702cd1e5d9f5059dd9570f4ad967f27d3c5f5391b371ec937b384c238177f55
+RUN set -eu; \
+    curl -fsSL -o /tmp/gitleaks.tgz \
+      "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"; \
+    echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tgz" | sha256sum -c -; \
+    tar -xzf /tmp/gitleaks.tgz -C /usr/local/bin gitleaks; \
+    rm -f /tmp/gitleaks.tgz; \
+    curl -fsSL -o /usr/local/bin/osv-scanner \
+      "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"; \
+    echo "${OSV_SCANNER_SHA256}  /usr/local/bin/osv-scanner" | sha256sum -c -; \
+    chmod 0755 /usr/local/bin/gitleaks /usr/local/bin/osv-scanner
+
 # Create a dedicated non-root runtime user and application directories.
 # Phase A (F1): the backend reaches Docker only through the mTLS channel
 # (DOCKER_HOST=tcp://...:2376); it holds no Docker socket mount and needs no

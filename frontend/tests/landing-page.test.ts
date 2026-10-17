@@ -32,9 +32,13 @@ describe('free-tier preview disclosure', () => {
     assert.match(page, /className="lp-demo-note"/, 'disclosure element must exist');
   });
 
-  it('states the wake delay and that scanning is disabled (never implies it works)', () => {
+  it('states the wake delay and describes the execution mode honestly', () => {
     assert.match(page, /take up to a minute to wake/i);
-    assert.match(page, /scanner execution stays disabled/i);
+    // The preview runs on the free tier: it discloses the execution mode and
+    // warns about native mode's reduced isolation rather than claiming scanning
+    // is always available or always fully isolated.
+    assert.match(page, /reduced-isolation/i);
+    assert.doesNotMatch(page, /guaranteed clean|always secure|zero risk/i);
   });
 
   it('stays visible, not merely decorative CSS', () => {

@@ -57,6 +57,10 @@ hkdf = "0.12"
 hex = "0.4"
 percent-encoding = "2.3"
 lazy_static = "1.4"
+# Native scanner execution: per-process resource ceilings (setrlimit) and
+# no-new-privs. Already in the dependency graph transitively via tokio; made a
+# direct dependency only for the docker-free executor's hardening syscalls.
+libc = "0.2"
 # Phase 20 dependency audit: this is the only metrics crate actually used
 # (services/telemetry.rs). `prometheus_exporter` and `axum-prometheus` were
 # declared but never referenced, and dragged in hyper 0.12, h2 0.1, tokio 0.1,

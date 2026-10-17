@@ -183,7 +183,7 @@ export function HeroScene() {
         </div>
         <div className="hero-float-badge float-badge-2">
           <span className="badge-dot purple" />
-          <span>Docker Sandbox Verified</span>
+          <span>Pinned Scanner Engines</span>
         </div>
         <div className="hero-float-badge float-badge-3">
           <span className="badge-dot blue" />

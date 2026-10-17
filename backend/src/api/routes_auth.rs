@@ -35,7 +35,11 @@ pub fn router() -> Router<Arc<crate::AppState>> {
         .route("/login/mfa", post(login_mfa))
         .route("/logout", post(logout))
         .route("/account/deletion-request", post(request_account_deletion))
-        .route("/account/deletion-cancel", get(cancel_account_deletion))
+        // State-changing cancellation is a POST, not a GET: a GET link in a
+        // confirmation email can be prefetched or triggered by an email
+        // security scanner, and GETs are exempt from CSRF. The frontend renders
+        // a confirmation page (a safe GET) that issues this deliberate POST.
+        .route("/account/deletion-cancel", post(cancel_account_deletion))
         .route("/webhooks/resend", post(resend_webhook))
         .route("/github", get(github_login))
         .route("/github/callback", get(github_callback))
@@ -337,7 +341,12 @@ pub async fn request_account_deletion(
 
 /// Cancel a deletion request. The `token` is a single-purpose capability bound
 /// to the request; it must belong to the authenticated account and the request
-/// must still be `requested`. Delivered via the email confirmation link.
+/// must still be `requested`.
+///
+/// This is a POST (state-changing), so it is CSRF-protected and cannot be
+/// triggered by merely loading a link. The email confirmation link opens a
+/// frontend confirmation page (a safe GET), which issues this POST only after
+/// the user deliberately confirms.
 pub async fn cancel_account_deletion(
     State(state): State<Arc<crate::AppState>>,
     user: crate::middleware::auth::AuthenticatedUser,

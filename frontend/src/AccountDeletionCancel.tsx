@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { BrandMark } from './BrandMark';
 import { api } from './api/client';
+import { ApiError } from './api/errors';
 
 interface AccountDeletionCancelProps {
   onNavigateLanding: () => void;
@@ -11,9 +12,11 @@ interface AccountDeletionCancelProps {
 /**
  * Account deletion cancellation page (Phase 3B).
  *
- * Reached via the single-purpose cancellation token in the confirmation
- * email. Authenticated users can cancel a pending deletion request before
- * the grace-period deadline passes.
+ * Reached via the single-purpose cancellation token in the confirmation email.
+ * The page itself is a safe GET: it only renders a confirmation prompt. The
+ * state-changing cancellation runs only when the user clicks the button, which
+ * issues a POST bound to the token and the authenticated session. This keeps a
+ * prefetched or security-scanner-triggered GET from ever cancelling a deletion.
  */
 export default function AccountDeletionCancel({
   onNavigateLanding,
@@ -25,14 +28,15 @@ export default function AccountDeletionCancel({
   );
   const [error, setError] = useState('');
 
-  useEffect(() => {
+  const handleConfirm = () => {
     if (!token) {
       setStatus('error');
       setError('No cancellation token provided.');
       return;
     }
     setStatus('checking');
-    api.deletionCancel(token)
+    api
+      .deletionCancel(token)
       .then((body) => {
         if (body.status === 'cancelled') {
           setStatus('cancelled');
@@ -43,11 +47,17 @@ export default function AccountDeletionCancel({
       })
       .catch((err: unknown) => {
         setStatus('error');
-        setError(
-          err instanceof Error ? err.message : 'Could not cancel deletion request.',
-        );
+        if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+          setError(
+            'Please sign in to your account, then open this link again to complete the cancellation.',
+          );
+        } else {
+          setError(
+            err instanceof Error ? err.message : 'Could not cancel deletion request.',
+          );
+        }
       });
-  }, [token]);
+  };
 
   return (
     <div
@@ -66,6 +76,76 @@ export default function AccountDeletionCancel({
           Cancel account deletion
         </h1>
       </header>
+
+      {status === 'idle' && !token && (
+        <section
+          style={{
+            background: '#fef2f2',
+            border: '1px solid #fecaca',
+            borderRadius: 12,
+            padding: 24,
+            color: '#991b1b',
+          }}
+        >
+          <AlertCircle size={28} style={{ marginBottom: 12 }} />
+          <strong style={{ color: '#1a1a18' }}>Missing cancellation token.</strong>
+          <p style={{ marginTop: 8 }}>
+            This link is incomplete. Open the cancellation link from your email
+            again.
+          </p>
+        </section>
+      )}
+
+      {status === 'idle' && token && (
+        <section
+          style={{
+            background: '#fffbeb',
+            border: '1px solid #fde68a',
+            borderRadius: 12,
+            padding: 24,
+            color: '#92400e',
+          }}
+        >
+          <AlertCircle size={28} style={{ marginBottom: 12 }} />
+          <strong style={{ color: '#1a1a18' }}>Cancel your pending deletion?</strong>
+          <p style={{ marginTop: 8 }}>
+            Confirm below to cancel the account deletion request. You must be
+            signed in to this account for the cancellation to apply.
+          </p>
+          <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+            <button
+              type="button"
+              onClick={handleConfirm}
+              style={{
+                background: '#1a1a18',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 10,
+                padding: '12px 24px',
+                font: '600 1rem var(--lp-body)',
+                cursor: 'pointer',
+              }}
+            >
+              Yes, cancel deletion
+            </button>
+            <button
+              type="button"
+              onClick={onNavigateLanding}
+              style={{
+                background: 'transparent',
+                color: '#1a1a18',
+                border: '1px solid #d1d5db',
+                borderRadius: 10,
+                padding: '12px 24px',
+                font: '600 1rem var(--lp-body)',
+                cursor: 'pointer',
+              }}
+            >
+              Keep my account
+            </button>
+          </div>
+        </section>
+      )}
 
       {status === 'checking' && (
         <p style={{ color: '#6b7280' }}>Processing your cancellation request…</p>

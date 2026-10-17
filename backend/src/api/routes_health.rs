@@ -64,7 +64,50 @@ async fn docker_daemon_reachable() -> bool {
 
 pub async fn health_deep(State(state): State<Arc<crate::AppState>>) -> impl IntoResponse {
     let db_ok = sqlx::query("SELECT 1").execute(state.pool()).await.is_ok();
-    let docker_ready = docker_daemon_reachable().await;
+    let mode = crate::services::sandbox::ExecutionMode::resolve();
+
+    // Scanner capability is reported per backend. In container mode the real
+    // Docker probe decides `docker`; in native mode there is no daemon, so
+    // `docker` is `not_required` and each scanner's availability is whether its
+    // pinned binary is actually present and runnable.
+    let (docker, scanner_block) = match mode {
+        crate::services::sandbox::ExecutionMode::Container => {
+            let ready = docker_daemon_reachable().await;
+            let docker_label = if ready { "ready" } else { "unavailable" };
+            // In container mode a scanner's availability tracks the daemon.
+            let avail = |_: &str| if ready { "available" } else { "unavailable" };
+            (
+                docker_label,
+                serde_json::json!({
+                    "mode": "container",
+                    // Honest isolation label: a container boundary, not a claim
+                    // of VM-grade isolation.
+                    "isolation": "container",
+                    "gitleaks": avail("gitleaks"),
+                    "osv": avail("osv"),
+                    "semgrep": avail("semgrep"),
+                }),
+            )
+        }
+        crate::services::sandbox::ExecutionMode::Native => {
+            let mut obj = serde_json::json!({
+                "mode": "native",
+                // Honest isolation label: process-level hardening only. This is
+                // NOT equivalent to a container boundary; see the native_exec
+                // module docs for the exact residual risk.
+                "isolation": "process",
+            });
+            for (name, available) in crate::services::native_exec::availability() {
+                obj[name] = serde_json::Value::String(if available {
+                    "available".into()
+                } else {
+                    "unavailable".into()
+                });
+            }
+            ("not_required", obj)
+        }
+    };
+
     let status = if db_ok {
         StatusCode::OK
     } else {
@@ -77,12 +120,14 @@ pub async fn health_deep(State(state): State<Arc<crate::AppState>>) -> impl Into
             "status": if db_ok { "healthy" } else { "unhealthy" },
             "database": if db_ok { "ok" } else { "error" },
             "local_storage": "ok",
-            // Capability honesty (FC-DEP-04): scanner execution needs a Docker
-            // daemon that is actually reachable. The probe verifies connectivity,
-            // not just configuration — a set-but-unreachable DOCKER_HOST is
-            // reported as "unavailable" so the frontend shows the truth before
-            // anyone submits a job. The daemon's own errors are never exposed.
-            "docker": if docker_ready { "ready" } else { "unavailable" },
+            // Capability honesty (FC-DEP-04): scanner execution needs a real
+            // boundary that is actually reachable. The body — not the HTTP
+            // status — carries capability, so a broken scanner never marks the
+            // instance unhealthy (which would trigger a restart loop) but is
+            // reported truthfully so the frontend can gate submission before
+            // anyone starts a scan.
+            "docker": docker,
+            "scanner": scanner_block,
             "version": env!("CARGO_PKG_VERSION")
         })),
     )

@@ -72,7 +72,7 @@ const NAV = [
  */
 const DEMO_NOTE = {
   tag: 'Preview environment',
-  body: 'This deployment runs on the free tier as a demo: the API may take up to a minute to wake on the first request, and live scanner execution stays disabled until the audited Docker boundary is provisioned.',
+  body: 'This deployment runs on the free tier as a demo: the API may take up to a minute to wake on the first request. Scanners run either in an isolated container or as hardened native subprocesses depending on the deployment — the console shows the live execution mode and any reduced-isolation warning before you audit.',
 };
 
 const STUDIO_PILLARS = [

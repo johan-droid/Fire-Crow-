@@ -218,12 +218,19 @@ function App() {
   const [activeMonitorJobId, setActiveMonitorJobId] = useState<string | null>(null);
   const [monitorPhases, setMonitorPhases] = useState<PhaseLedgerEntry[]>([]);
 
-  // Capability honesty (FC-DEP-04): the scan phase needs a Docker endpoint.
-  // On a deployment without one, every submitted job dies at the scan phase
-  // with a 500 ("no result can be reported"), so probe /health/deep once and
-  // gate the form instead of letting the user submit into a guaranteed
+  // Capability honesty (FC-DEP-04): the scan phase needs a real execution
+  // boundary. On a deployment with no scanner and no Docker daemon, every
+  // submitted job dies at the scan phase with a 500, so probe /health/deep once
+  // and gate the form instead of letting the user submit into a guaranteed
   // failure. 'unknown' (probe failed / not run) never blocks.
   const [scanEngine, setScanEngine] = useState<'unknown' | 'configured' | 'unavailable'>('unknown');
+  // Execution backend reported by the backend: 'container' (full isolation),
+  // 'native' (process-level, reduced isolation), or 'unknown'. Drives the
+  // reduced-isolation warning shown before a scan in native mode.
+  const [scanCapability, setScanCapability] = useState<{
+    mode: 'container' | 'native' | 'unknown';
+    scanners: Record<string, 'available' | 'unavailable'>;
+  }>({ mode: 'unknown', scanners: {} });
 
   // Dashboard state machine: loading → ready | error, with sync telemetry
   const [dashLoad, setDashLoad] = useState<LoadState>('loading');
@@ -603,15 +610,36 @@ function App() {
 
   // Probe the scan capability once per signed-in session. A probe failure
   // leaves the state 'unknown' and never blocks the form: the gate is applied
-  // only when the backend explicitly reports `docker: unavailable`.
+  // only when the backend explicitly reports that no scanner can run.
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
     void (async () => {
       try {
         const res = await fetch(`${API_BASE}/health/deep`, { credentials: 'include' });
-        const body = (await res.json()) as { docker?: unknown };
-        if (!cancelled) {
+        const body = (await res.json()) as {
+          docker?: unknown;
+          scanner?: {
+            mode?: unknown;
+            gitleaks?: unknown;
+            osv?: unknown;
+            semgrep?: unknown;
+          };
+        };
+        if (cancelled) return;
+        const scanner = body?.scanner;
+        if (scanner && typeof scanner === 'object') {
+          const mode = scanner.mode === 'native' ? 'native' : scanner.mode === 'container' ? 'container' : 'unknown';
+          const scanners: Record<string, 'available' | 'unavailable'> = {
+            gitleaks: scanner.gitleaks === 'available' ? 'available' : 'unavailable',
+            osv: scanner.osv === 'available' ? 'available' : 'unavailable',
+            semgrep: scanner.semgrep === 'available' ? 'available' : 'unavailable',
+          };
+          const anyAvailable = Object.values(scanners).some(s => s === 'available');
+          setScanCapability({ mode, scanners });
+          setScanEngine(anyAvailable ? 'configured' : 'unavailable');
+        } else {
+          // Legacy fallback: only the docker flag is present.
           setScanEngine(body?.docker === 'ready' ? 'configured' : 'unavailable');
         }
       } catch {
@@ -863,9 +891,9 @@ function App() {
     }
     if (isSubmitting) return; // duplicate-click guard
     if (scanEngine === 'unavailable') {
-      // Fail before the request: the backend has no Docker daemon, so this
-      // job would be accepted and then fail at the scan phase.
-      setModalError('Audits are unavailable in this deployment: the backend cannot reach a Docker daemon (see /api/v1/health/deep → docker). Deploy the backend on a Docker-capable host.');
+      // Fail before the request: the backend has no scanner and no execution
+      // boundary, so this job would be accepted and then fail at the scan phase.
+      setModalError('Audits are unavailable in this deployment: no scanner can run (see /api/v1/health/deep → scanner). Enable native mode or deploy the backend on a Docker-capable host.');
       return;
     }
 
@@ -2210,8 +2238,29 @@ function App() {
               <div className="modal-body">
                 {scanEngine === 'unavailable' && (
                   <div className="error-box" role="alert" style={{ marginBottom: '1rem' }}>
-                    Scan engine unavailable in this deployment — the backend cannot reach a Docker
-                    daemon, so audits cannot run here. Deploy the backend on a Docker-capable host.
+                    Scan engine unavailable in this deployment — no scanner can run here, so
+                    audits cannot start. Enable native scanner mode or deploy on a Docker-capable host.
+                  </div>
+                )}
+                {scanCapability.mode === 'native' && scanEngine !== 'unavailable' && (
+                  <div className="fc-calm-note" role="note" style={{ marginBottom: '1rem' }}>
+                    <strong>Reduced isolation (native mode).</strong> Scanners run as hardened
+                    subprocesses rather than in containers. This is a weaker boundary than container
+                    isolation; prefer trusted repositories here and review the native-scanning
+                    security model before auditing untrusted code.
+                  </div>
+                )}
+                {scanEngine !== 'unavailable' && (
+                  <div className="fc-calm-note" style={{ marginBottom: '1rem' }}>
+                    Scanners:&nbsp;
+                    {(['gitleaks', 'osv', 'semgrep'] as const).map((n, i) => (
+                      <span key={n}>
+                        {i > 0 && ' · '}
+                        <span title={scanCapability.scanners[n] === 'available' ? `${n} is available` : `${n} is unavailable in this deployment`}>
+                          {scanCapability.scanners[n] === 'available' ? '✓' : '✕'} {n}
+                        </span>
+                      </span>
+                    ))}
                   </div>
                 )}
                 <div className="fc-modal-repo-picker">

@@ -209,6 +209,7 @@ export const api = {
   deletionCancel: (token: string) =>
     requestJson<{ status: string }>(
       `${authPaths.deletionCancel()}?token=${encodeURIComponent(token)}`,
+      { method: 'POST' },
     ),
 
   sseJobUrl: (jobId: string) => `${getApiBase()}${ssePaths.job(jobId)}`,

@@ -37,6 +37,7 @@ const ENV_KEYS: &[&str] = &[
     "RESEND_API_KEY",
     "RESEND_FROM_EMAIL",
     "SENDER_EMAIL",
+    "SCANNER_EXECUTION_MODE",
 ];
 
 struct Env {
@@ -645,5 +646,38 @@ fn sender_email_alone_satisfies_the_resend_sender_check() {
     assert!(
         Settings::new().is_ok(),
         "SENDER_EMAIL alone must satisfy the Resend sender check"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scanner execution mode: fail-closed on unknown values
+// ---------------------------------------------------------------------------
+
+#[test]
+fn scanner_execution_mode_must_be_container_or_native() {
+    let env = Env::clean();
+    env.with_valid_keys();
+
+    // Unset defaults to the safe container boundary.
+    assert_eq!(
+        Settings::new().unwrap().scanner_execution_mode,
+        "container",
+        "unset SCANNER_EXECUTION_MODE must default to container"
+    );
+
+    env.set("SCANNER_EXECUTION_MODE", "native");
+    assert_eq!(Settings::new().unwrap().scanner_execution_mode, "native");
+
+    env.set("SCANNER_EXECUTION_MODE", "container");
+    assert_eq!(Settings::new().unwrap().scanner_execution_mode, "container");
+
+    // An unknown value is a typo that would make the deployment's real
+    // isolation boundary ambiguous; it must fail startup, not silently fall
+    // back to one mode or the other.
+    env.set("SCANNER_EXECUTION_MODE", "docker");
+    let err = Settings::new().expect_err("unknown SCANNER_EXECUTION_MODE must fail closed");
+    assert!(
+        err.to_string().contains("SCANNER_EXECUTION_MODE"),
+        "error must name the offending variable: {err}"
     );
 }

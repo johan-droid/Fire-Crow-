@@ -28,8 +28,8 @@ use crate::models::Severity;
 use crate::schemas::audit_state::Finding;
 use crate::services::redaction::redact_text;
 use crate::services::sandbox::{
-    NetworkMode, ResourceLimits, SandboxManager, SandboxMount, SandboxOutput, SandboxSpec,
-    MAX_STDERR_BYTES, MAX_STDOUT_BYTES, SCAN_MOUNT,
+    ExecutionMode, NetworkMode, ResourceLimits, SandboxManager, SandboxMount, SandboxOutput,
+    SandboxSpec, MAX_STDERR_BYTES, MAX_STDOUT_BYTES, SCAN_MOUNT,
 };
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
@@ -454,7 +454,16 @@ pub async fn execute(
     if cancel() {
         return cancelled_result(scanner, input);
     }
-    let run = sandbox.run(&input.sandbox_spec(scanner), cancel).await;
+    // Dispatch to the configured backend. Both return the same
+    // `Result<SandboxOutput>`, so `classify` (and the entire Canonical Audit
+    // contract) is identical whether the tool ran in a container or as a
+    // hardened native subprocess.
+    let run = match sandbox.mode() {
+        ExecutionMode::Native => {
+            crate::services::native_exec::run_native(scanner, input, cancel).await
+        }
+        ExecutionMode::Container => sandbox.run(&input.sandbox_spec(scanner), cancel).await,
+    };
     // A cancellation that arrived mid-execution wins over whatever the tool
     // managed to emit; partial output is not a result.
     if cancel() {

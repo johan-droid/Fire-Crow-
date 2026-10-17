@@ -18,6 +18,7 @@ pub mod llm;
 pub mod llm_provider;
 pub mod mfa_service;
 pub mod narrative;
+pub mod native_exec;
 pub mod pam_service;
 pub mod payment_service;
 pub mod privacy_audit_service;
