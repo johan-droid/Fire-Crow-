@@ -103,6 +103,9 @@ certs/
 .fleet/
 .claude/
 .agents/
+.gemini/
+.continue/
+.freebuff/
 .opencode/
 .cursor/
 .playwright-mcp/
@@ -113,6 +116,9 @@ certs/
 *.njsproj
 *.sln
 *.code-workspace
+*.sublime-project
+*.sublime-workspace
+*~
 
 # OS Metadata
 .DS_Store
@@ -129,6 +135,18 @@ desktop.ini
 *.sqlite3
 *.db
 *.db-journal
+
+# Python & Linter Tooling Caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+.eslintcache
 
 # Misc
 *.bak
