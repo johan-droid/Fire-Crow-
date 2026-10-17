@@ -217,6 +217,13 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
   const [activeMonitorJobId, setActiveMonitorJobId] = useState<string | null>(null);
   const [monitorPhases, setMonitorPhases] = useState<PhaseLedgerEntry[]>([]);
 
+  // Capability honesty (FC-DEP-04): the scan phase needs a Docker endpoint.
+  // On a deployment without one, every submitted job dies at the scan phase
+  // with a 500 ("no result can be reported"), so probe /health/deep once and
+  // gate the form instead of letting the user submit into a guaranteed
+  // failure. 'unknown' (probe failed / not run) never blocks.
+  const [scanEngine, setScanEngine] = useState<'unknown' | 'configured' | 'unavailable'>('unknown');
+
   // Dashboard state machine: loading → ready | error, with sync telemetry
   const [dashLoad, setDashLoad] = useState<LoadState>('loading');
   const [dashError, setDashError] = useState<string | null>(null);
@@ -593,6 +600,26 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
     }
   }, [user, isScanModalOpen, activeWindow, fetchUserRepos]);
 
+  // Probe the scan capability once per signed-in session. A probe failure
+  // leaves the state 'unknown' and never blocks the form: the gate is applied
+  // only when the backend explicitly reports `docker: unavailable`.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/health/deep`, { credentials: 'include' });
+        const body = (await res.json()) as { docker?: unknown };
+        if (!cancelled) {
+          setScanEngine(body?.docker === 'configured' ? 'configured' : 'unavailable');
+        }
+      } catch {
+        /* leave 'unknown' — an unprobeable backend must not block the form */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
+
   const oauthHandledRef = useRef(false);
   const sessionCheckedRef = useRef(false);
 
@@ -834,6 +861,12 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
       return;
     }
     if (isSubmitting) return; // duplicate-click guard
+    if (scanEngine === 'unavailable') {
+      // Fail before the request: the backend has no Docker daemon, so this
+      // job would be accepted and then fail at the scan phase.
+      setModalError('Audits are unavailable in this deployment: the backend cannot reach a Docker daemon (see /api/v1/health/deep → docker). Deploy the backend on a Docker-capable host.');
+      return;
+    }
 
     setModalError('');
     setIsSubmitting(true);
@@ -2174,6 +2207,12 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
 
             <form onSubmit={handleStartScan}>
               <div className="modal-body">
+                {scanEngine === 'unavailable' && (
+                  <div className="error-box" role="alert" style={{ marginBottom: '1rem' }}>
+                    Scan engine unavailable in this deployment — the backend cannot reach a Docker
+                    daemon, so audits cannot run here. Deploy the backend on a Docker-capable host.
+                  </div>
+                )}
                 <div className="fc-modal-repo-picker">
                   <div className="fc-modal-repo-header">
                     <div className="fc-modal-repo-labels">
@@ -2273,7 +2312,7 @@ const LEGACY_WINDOWS: Record<string, ConsoleWindow> = {
                 <button type="button" onClick={() => setIsScanModalOpen(false)} className="fc-btn-cancel">
                   Cancel
                 </button>
-                <button type="submit" className="fc-btn-submit-job" disabled={isSubmitting || !newRepoUrl.trim()}>
+                <button type="submit" className="fc-btn-submit-job" disabled={isSubmitting || scanEngine === 'unavailable' || !newRepoUrl.trim()}>
                   {isSubmitting ? 'Submitting…' : 'Submit Job'}
                 </button>
               </div>
